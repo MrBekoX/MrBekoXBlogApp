@@ -36,8 +36,13 @@ if [ -z "$POSTGRES_PASSWORD" ] || [ "$POSTGRES_PASSWORD" = "your_strong_password
     exit 1
 fi
 
-if [ -z "$JWT_SECRET" ] || [ "$JWT_SECRET" = "your_super_secret_key_at_least_32_characters_long_change_this" ]; then
+if [ -z "$JWT_SECRET" ] || [ "$JWT_SECRET" = "your_super_secret_key_at_least_64_characters_long_change_this_now" ]; then
     echo -e "${RED}❌ JWT_SECRET must be set in .env file!${NC}"
+    exit 1
+fi
+
+if [ -z "$ADMIN_PASSWORD" ] || [ "$ADMIN_PASSWORD" = "your_strong_admin_password_min_12_chars" ]; then
+    echo -e "${RED}❌ ADMIN_PASSWORD must be set in .env file!${NC}"
     exit 1
 fi
 

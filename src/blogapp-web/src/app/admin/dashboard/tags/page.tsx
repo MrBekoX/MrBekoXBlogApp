@@ -1,0 +1,163 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { tagsApi } from '@/lib/api';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from 'sonner';
+import { Plus, Trash2, Tag } from 'lucide-react';
+import type { Tag as TagType } from '@/types';
+
+export default function TagsPage() {
+  const [tags, setTags] = useState<TagType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+
+  const fetchTags = async () => {
+    try {
+      const response = await tagsApi.getAll();
+      if (response.success && response.data) {
+        setTags(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch tags:', error);
+      toast.error('Etiketler yüklenemedi');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTags();
+  }, []);
+
+  const handleCreate = async () => {
+    if (!newTagName.trim()) {
+      toast.error('Etiket adı gerekli');
+      return;
+    }
+
+    try {
+      const response = await tagsApi.create({ name: newTagName });
+      if (response.success) {
+        toast.success('Etiket oluşturuldu');
+        setNewTagName('');
+        setIsCreating(false);
+        fetchTags();
+      } else {
+        toast.error(response.message || 'Etiket oluşturulamadı');
+      }
+    } catch (error) {
+      toast.error('Etiket oluşturulamadı');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Bu etiketi silmek istediğinize emin misiniz?')) return;
+
+    try {
+      const response = await tagsApi.delete(id);
+      if (response.success) {
+        toast.success('Etiket silindi');
+        fetchTags();
+      } else {
+        toast.error(response.message || 'Etiket silinemedi');
+      }
+    } catch (error) {
+      toast.error('Etiket silinemedi');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Etiketler</h1>
+          <p className="text-muted-foreground">Blog yazılarınız için etiketleri yönetin</p>
+        </div>
+        {!isCreating && (
+          <Button onClick={() => setIsCreating(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Yeni Etiket
+          </Button>
+        )}
+      </div>
+
+      {isCreating && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Yeni Etiket</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Ad</Label>
+              <Input
+                id="name"
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                placeholder="Etiket adı"
+                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleCreate}>Oluştur</Button>
+              <Button variant="outline" onClick={() => { setIsCreating(false); setNewTagName(''); }}>
+                İptal
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Tüm Etiketler</CardTitle>
+          <CardDescription>
+            {tags.length} etiket bulunuyor
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-24" />
+              ))}
+            </div>
+          ) : tags.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {tags.map((tag) => (
+                <div
+                  key={tag.id}
+                  className="group flex items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted"
+                >
+                  <Tag className="h-3 w-3 text-primary" />
+                  <span>{tag.name}</span>
+                  <button
+                    onClick={() => handleDelete(tag.id)}
+                    className="ml-1 opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3 w-3 text-destructive hover:text-destructive/80" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-8 text-center">
+              <Tag className="mx-auto h-12 w-12 text-muted-foreground" />
+              <p className="mt-4 text-muted-foreground">Henüz etiket yok</p>
+              <Button className="mt-4" onClick={() => setIsCreating(true)}>
+                İlk etiketi oluşturun
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+

@@ -1,0 +1,87 @@
+# Environment files
+.env
+.env.local
+.env.production
+.env.*.local
+deploy/.env
+
+# ASP.NET Core Sensitive Configuration
+# Development appsettings (contains secrets)
+**/appsettings.Development.json
+**/appsettings.Production.json
+**/appsettings.Staging.json
+**/appsettings.Local.json
+
+# Keep base template and example files
+!**/appsettings.json
+!**/appsettings.*.Example.json
+
+# User Secrets (Windows)
+%APPDATA%/Microsoft/UserSecrets/
+
+# User Secrets (Linux/Mac)
+~/.microsoft/usersecrets/
+
+# SSL Certificates and Keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+deploy/ssl/
+ssl/
+
+# Secrets
+secrets/
+*.secret
+
+# Uploads
+uploads/
+src/BlogApp.Server/BlogApp.Server.Api/uploads/
+deploy/uploads/
+
+# Logs
+*.log
+logs/
+src/BlogApp.Server/BlogApp.Server.Api/logs/
+
+# Build outputs
+**/bin/
+**/obj/
+**/.next/
+**/out/
+**/dist/
+**/build/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node modules (already in frontend .gitignore but adding here too)
+node_modules/
+.pnp
+.pnp.js
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker
+.dockerignore
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+

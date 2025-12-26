@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: blogapp-postgres-prod
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-blogapp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-blogdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - blogapp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-blogapp_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: blogapp-redis-prod
+    volumes:
+      - redis_data:/data
+    networks:
+      - blogapp-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ../src/BlogApp.Server
+      dockerfile: Dockerfile
+    container_name: blogapp-api-prod
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB:-blogdb};Username=${POSTGRES_USER:-blogapp_user};Password=${POSTGRES_PASSWORD}
+      - ConnectionStrings__Redis=redis:6379
+      - JwtSettings__Secret=${JWT_SECRET}
+      - JwtSettings__Issuer=${JWT_ISSUER:-BlogApp}
+      - JwtSettings__Audience=${JWT_AUDIENCE:-BlogApp}
+      - JwtSettings__ExpirationMinutes=${JWT_EXPIRATION_MINUTES:-60}
+      - CorsOrigins__0=${FRONTEND_URL:-http://localhost:3000}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - blogapp-network
+    restart: unless-stopped
+    volumes:
+      - ./uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ../src/blogapp-web
+      dockerfile: Dockerfile
+    container_name: blogapp-frontend-prod
+    environment:
+      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:8080/api}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - api
+    networks:
+      - blogapp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginx:alpine
+    container_name: blogapp-nginx-prod
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - api
+    networks:
+      - blogapp-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  blogapp-network:
+    driver: bridge
+

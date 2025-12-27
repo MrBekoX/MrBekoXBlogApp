@@ -1,5 +1,9 @@
 using System.Reflection;
 using BlogApp.Server.Application.Common.Behaviors;
+using BlogApp.Server.Application.Features.AuthFeature.Rules;
+using BlogApp.Server.Application.Features.CategoryFeature.Rules;
+using BlogApp.Server.Application.Features.PostFeature.Rules;
+using BlogApp.Server.Application.Features.TagFeature.Rules;
 using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,9 +28,19 @@ public static class DependencyInjection
         // FluentValidation
         services.AddValidatorsFromAssembly(assembly);
 
+        // AutoMapper
+        services.AddAutoMapper(cfg => cfg.AddMaps(assembly), assembly);
+
         // Pipeline Behaviors
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CachingBehavior<,>));
+
+        // Business Rules
+        services.AddScoped<ICategoryBusinessRules, CategoryBusinessRules>();
+        services.AddScoped<ITagBusinessRules, TagBusinessRules>();
+        services.AddScoped<IPostBusinessRules, PostBusinessRules>();
+        services.AddScoped<IAuthBusinessRules, AuthBusinessRules>();
 
         return services;
     }

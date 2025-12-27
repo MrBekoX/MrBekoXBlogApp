@@ -1,14 +1,14 @@
 using BlogApp.Server.Application.Common.Models;
-using BlogApp.Server.Application.DTOs.Posts;
-using BlogApp.Server.Application.Features.Posts.Commands.CreatePost;
-using BlogApp.Server.Application.Features.Posts.Commands.DeletePost;
-using BlogApp.Server.Application.Features.Posts.Commands.PublishPost;
-using BlogApp.Server.Application.Features.Posts.Commands.SaveDraft;
-using BlogApp.Server.Application.Features.Posts.Commands.UpdatePost;
-using BlogApp.Server.Application.Features.Posts.Queries.GetPostById;
-using BlogApp.Server.Application.Features.Posts.Queries.GetPostBySlug;
-using BlogApp.Server.Application.Features.Posts.Queries.GetPostsList;
-using BlogApp.Server.Application.Features.Posts.Queries.GetMyPosts;
+using BlogApp.Server.Application.Features.PostFeature.Commands.CreatePostCommand;
+using BlogApp.Server.Application.Features.PostFeature.Commands.DeletePostCommand;
+using BlogApp.Server.Application.Features.PostFeature.Commands.PublishPostCommand;
+using BlogApp.Server.Application.Features.PostFeature.Commands.SaveDraftCommand;
+using BlogApp.Server.Application.Features.PostFeature.Commands.UpdatePostCommand;
+using BlogApp.Server.Application.Features.PostFeature.DTOs;
+using BlogApp.Server.Application.Features.PostFeature.Queries.GetMyPostsQuery;
+using BlogApp.Server.Application.Features.PostFeature.Queries.GetPostByIdQuery;
+using BlogApp.Server.Application.Features.PostFeature.Queries.GetPostBySlugQuery;
+using BlogApp.Server.Application.Features.PostFeature.Queries.GetPostsListQuery;
 using BlogApp.Server.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,46 +25,68 @@ public class PostsController : ApiControllerBase
     /// Get paginated list of posts
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(ApiResponse<PaginatedList<PostDto>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetPosts([FromQuery] GetPostsListQuery query)
+    [ProducesResponseType(typeof(ApiResponse<PaginatedList<PostListQueryDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPosts(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? searchTerm = null,
+        [FromQuery] Guid? categoryId = null,
+        [FromQuery] Guid? tagId = null,
+        [FromQuery] Guid? authorId = null,
+        [FromQuery] PostStatus? status = null,
+        [FromQuery] bool? isFeatured = null,
+        [FromQuery] string sortBy = "CreatedAt",
+        [FromQuery] bool sortDescending = true)
     {
-        var result = await Mediator.Send(query);
+        var response = await Mediator.Send(new GetPostsListQueryRequest
+        {
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+            SearchTerm = searchTerm,
+            CategoryId = categoryId,
+            TagId = tagId,
+            AuthorId = authorId,
+            Status = status,
+            IsFeatured = isFeatured,
+            SortBy = sortBy,
+            SortDescending = sortDescending
+        });
 
-        return Ok(ApiResponse<PaginatedList<PostDto>>.SuccessResult(
-            result,
-            PaginationMeta.FromPaginatedList(result)));
+        return Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(
+            response.Result,
+            PaginationMeta.FromPaginatedList(response.Result)));
     }
 
     /// <summary>
     /// Get post by ID
     /// </summary>
     [HttpGet("{id:guid}")]
-    [ProducesResponseType(typeof(ApiResponse<PostDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PostDetailQueryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetPost(Guid id)
     {
-        var result = await Mediator.Send(new GetPostByIdQuery(id));
+        var response = await Mediator.Send(new GetPostByIdQueryRequest { Id = id });
 
-        if (result is null)
-            return NotFound(ApiResponse<PostDetailDto>.FailureResult("Post not found"));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
 
-        return Ok(ApiResponse<PostDetailDto>.SuccessResult(result));
+        return Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(response.Result.Value!));
     }
 
     /// <summary>
     /// Get post by slug
     /// </summary>
     [HttpGet("slug/{slug}")]
-    [ProducesResponseType(typeof(ApiResponse<PostDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PostDetailQueryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetPostBySlug(string slug)
     {
-        var result = await Mediator.Send(new GetPostBySlugQuery(slug));
+        var response = await Mediator.Send(new GetPostBySlugQueryRequest { Slug = slug });
 
-        if (result is null)
-            return NotFound(ApiResponse<PostDetailDto>.FailureResult("Post not found"));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
 
-        return Ok(ApiResponse<PostDetailDto>.SuccessResult(result));
+        return Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(response.Result.Value!));
     }
 
     /// <summary>
@@ -72,23 +94,26 @@ public class PostsController : ApiControllerBase
     /// </summary>
     [HttpPost]
     [Authorize(Roles = "Admin,Editor,Author")]
-    [ProducesResponseType(typeof(ApiResponse<PostDetailDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<PostDetailQueryDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> CreatePost([FromBody] CreatePostCommand command)
+    public async Task<IActionResult> CreatePost([FromBody] CreatePostCommandDto dto)
     {
-        var result = await Mediator.Send(command);
+        var response = await Mediator.Send(new CreatePostCommandRequest
+        {
+            CreatePostCommandRequestDto = dto
+        });
 
-        if (result.IsFailure)
-            return BadRequest(ApiResponse<PostDetailDto>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return BadRequest(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
 
         // Oluşturulan postu getir
-        var post = await Mediator.Send(new GetPostByIdQuery(result.Value));
-        
+        var postResponse = await Mediator.Send(new GetPostByIdQueryRequest { Id = response.Result.Value });
+
         return CreatedAtAction(
             nameof(GetPost),
-            new { id = result.Value },
-            ApiResponse<PostDetailDto>.SuccessResult(post, "Post created successfully"));
+            new { id = response.Result.Value },
+            ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post created successfully"));
     }
 
     /// <summary>
@@ -96,23 +121,25 @@ public class PostsController : ApiControllerBase
     /// </summary>
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "Admin,Editor,Author")]
-    [ProducesResponseType(typeof(ApiResponse<PostDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PostDetailQueryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpdatePost(Guid id, [FromBody] UpdatePostCommand command)
+    public async Task<IActionResult> UpdatePost(Guid id, [FromBody] UpdatePostCommandDto dto)
     {
-        if (id != command.Id)
-            return BadRequest(ApiResponse<PostDetailDto>.FailureResult("ID mismatch"));
+        dto.Id = id;
 
-        var result = await Mediator.Send(command);
+        var response = await Mediator.Send(new UpdatePostCommandRequest
+        {
+            UpdatePostCommandRequestDto = dto
+        });
 
-        if (result.IsFailure)
-            return BadRequest(ApiResponse<PostDetailDto>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return BadRequest(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
 
         // Güncellenen postu getir
-        var post = await Mediator.Send(new GetPostByIdQuery(id));
-        
-        return Ok(ApiResponse<PostDetailDto>.SuccessResult(post, "Post updated successfully"));
+        var postResponse = await Mediator.Send(new GetPostByIdQueryRequest { Id = id });
+
+        return Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post updated successfully"));
     }
 
     /// <summary>
@@ -124,10 +151,10 @@ public class PostsController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeletePost(Guid id)
     {
-        var result = await Mediator.Send(new DeletePostCommand(id));
+        var response = await Mediator.Send(new DeletePostCommandRequest { Id = id });
 
-        if (result.IsFailure)
-            return NotFound(ApiResponse<object>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
 
         return NoContent();
     }
@@ -137,17 +164,17 @@ public class PostsController : ApiControllerBase
     /// </summary>
     [HttpPost("{id:guid}/publish")]
     [Authorize(Roles = "Admin,Editor")]
-    [ProducesResponseType(typeof(ApiResponse<PostDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PostDetailQueryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> PublishPost(Guid id)
     {
-        var result = await Mediator.Send(new PublishPostCommand(id));
+        var response = await Mediator.Send(new PublishPostCommandRequest { Id = id });
 
-        if (result.IsFailure)
-            return NotFound(ApiResponse<PostDetailDto>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
 
-        var post = await Mediator.Send(new GetPostByIdQuery(id));
-        return Ok(ApiResponse<PostDetailDto>.SuccessResult(post, "Post published successfully"));
+        var postResponse = await Mediator.Send(new GetPostByIdQueryRequest { Id = id });
+        return Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post published successfully"));
     }
 
     /// <summary>
@@ -155,17 +182,17 @@ public class PostsController : ApiControllerBase
     /// </summary>
     [HttpPost("{id:guid}/unpublish")]
     [Authorize(Roles = "Admin,Editor")]
-    [ProducesResponseType(typeof(ApiResponse<PostDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PostDetailQueryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UnpublishPost(Guid id)
     {
-        var result = await Mediator.Send(new UnpublishPostCommand(id));
+        var response = await Mediator.Send(new UnpublishPostCommandRequest { Id = id });
 
-        if (result.IsFailure)
-            return NotFound(ApiResponse<PostDetailDto>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
 
-        var post = await Mediator.Send(new GetPostByIdQuery(id));
-        return Ok(ApiResponse<PostDetailDto>.SuccessResult(post, "Post unpublished successfully"));
+        var postResponse = await Mediator.Send(new GetPostByIdQueryRequest { Id = id });
+        return Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post unpublished successfully"));
     }
 
     /// <summary>
@@ -173,37 +200,35 @@ public class PostsController : ApiControllerBase
     /// </summary>
     [HttpPost("{id:guid}/archive")]
     [Authorize(Roles = "Admin,Editor")]
-    [ProducesResponseType(typeof(ApiResponse<PostDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PostDetailQueryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ArchivePost(Guid id)
     {
-        var result = await Mediator.Send(new UnpublishPostCommand(id));
+        var response = await Mediator.Send(new UnpublishPostCommandRequest { Id = id });
 
-        if (result.IsFailure)
-            return NotFound(ApiResponse<PostDetailDto>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
 
-        var post = await Mediator.Send(new GetPostByIdQuery(id));
-        return Ok(ApiResponse<PostDetailDto>.SuccessResult(post, "Post archived successfully"));
+        var postResponse = await Mediator.Send(new GetPostByIdQueryRequest { Id = id });
+        return Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post archived successfully"));
     }
 
     /// <summary>
     /// Get featured posts
     /// </summary>
     [HttpGet("featured")]
-    [ProducesResponseType(typeof(ApiResponse<PaginatedList<PostDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PaginatedList<PostListQueryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetFeaturedPosts([FromQuery] int pageSize = 5)
     {
-        var query = new GetPostsListQuery
+        var response = await Mediator.Send(new GetPostsListQueryRequest
         {
             PageSize = pageSize,
             IsFeatured = true,
             Status = PostStatus.Published,
             SortDescending = true
-        };
+        });
 
-        var result = await Mediator.Send(query);
-
-        return Ok(ApiResponse<PaginatedList<PostDto>>.SuccessResult(result));
+        return Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(response.Result));
     }
 
     /// <summary>
@@ -214,14 +239,17 @@ public class PostsController : ApiControllerBase
     [Authorize(Roles = "Admin,Editor,Author")]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> SaveDraft([FromBody] SaveDraftCommand command)
+    public async Task<IActionResult> SaveDraft([FromBody] SaveDraftCommandDto dto)
     {
-        var result = await Mediator.Send(command);
+        var response = await Mediator.Send(new SaveDraftCommandRequest
+        {
+            SaveDraftCommandRequestDto = dto
+        });
 
-        if (result.IsFailure)
-            return BadRequest(ApiResponse<Guid>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
 
-        return Ok(ApiResponse<Guid>.SuccessResult(result.Value, "Draft saved"));
+        return Ok(ApiResponse<Guid>.SuccessResult(response.Result.Value, "Draft saved"));
     }
 
     /// <summary>
@@ -229,20 +257,18 @@ public class PostsController : ApiControllerBase
     /// </summary>
     [HttpGet("drafts")]
     [Authorize(Roles = "Admin,Editor,Author")]
-    [ProducesResponseType(typeof(ApiResponse<PaginatedList<PostDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PaginatedList<PostListQueryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetDrafts([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var query = new GetPostsListQuery
+        var response = await Mediator.Send(new GetPostsListQueryRequest
         {
             PageNumber = page,
             PageSize = pageSize,
             Status = PostStatus.Draft,
             SortDescending = true
-        };
+        });
 
-        var result = await Mediator.Send(query);
-
-        return Ok(ApiResponse<PaginatedList<PostDto>>.SuccessResult(result));
+        return Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(response.Result));
     }
 
     /// <summary>
@@ -250,24 +276,22 @@ public class PostsController : ApiControllerBase
     /// </summary>
     [HttpGet("my")]
     [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<PaginatedList<PostDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PaginatedList<PostListQueryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMyPosts([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-            return Unauthorized(ApiResponse<PaginatedList<PostDto>>.FailureResult("User not authenticated"));
+            return Unauthorized(ApiResponse<PaginatedList<PostListQueryDto>>.FailureResult("User not authenticated"));
 
-        var query = new GetMyPostsQuery
+        var response = await Mediator.Send(new GetMyPostsQueryRequest
         {
             UserId = userId,
             PageNumber = page,
             PageSize = pageSize
-        };
+        });
 
-        var result = await Mediator.Send(query);
-
-        return Ok(ApiResponse<PaginatedList<PostDto>>.SuccessResult(
-            result,
-            PaginationMeta.FromPaginatedList(result)));
+        return Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(
+            response.Result,
+            PaginationMeta.FromPaginatedList(response.Result)));
     }
 }

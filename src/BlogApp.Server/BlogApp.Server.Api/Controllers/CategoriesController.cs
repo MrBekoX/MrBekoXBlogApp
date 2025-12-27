@@ -1,7 +1,10 @@
 using BlogApp.Server.Application.Common.Models;
-using BlogApp.Server.Application.DTOs.Categories;
-using BlogApp.Server.Application.Features.Categories.Commands;
-using BlogApp.Server.Application.Features.Categories.Queries;
+using BlogApp.Server.Application.Features.CategoryFeature.Commands.CreateCategoryCommand;
+using BlogApp.Server.Application.Features.CategoryFeature.Commands.DeleteCategoryCommand;
+using BlogApp.Server.Application.Features.CategoryFeature.Commands.UpdateCategoryCommand;
+using BlogApp.Server.Application.Features.CategoryFeature.DTOs;
+using BlogApp.Server.Application.Features.CategoryFeature.Queries.GetAllCategoryQuery;
+using BlogApp.Server.Application.Features.CategoryFeature.Queries.GetByIdCategoryQuery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,28 +19,31 @@ public class CategoriesController : ApiControllerBase
     /// Get all categories
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(ApiResponse<List<CategoryDetailDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<IEnumerable<GetAllCategoryQueryDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCategories([FromQuery] bool includeInactive = false)
     {
-        var result = await Mediator.Send(new GetCategoriesQuery { IncludeInactive = includeInactive });
+        var response = await Mediator.Send(new GetAllCategoryQueryRequest { IncludeInactive = includeInactive });
 
-        return Ok(ApiResponse<List<CategoryDetailDto>>.SuccessResult(result));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<IEnumerable<GetAllCategoryQueryDto>>.FailureResult(response.Result.Error!));
+
+        return Ok(ApiResponse<IEnumerable<GetAllCategoryQueryDto>>.SuccessResult(response.Result.Value!));
     }
 
     /// <summary>
     /// Get category by ID
     /// </summary>
     [HttpGet("{id:guid}")]
-    [ProducesResponseType(typeof(ApiResponse<CategoryDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<GetByIdCategoryQueryDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetCategory(Guid id)
     {
-        var result = await Mediator.Send(new GetCategoryByIdQuery(id));
+        var response = await Mediator.Send(new GetByIdCategoryQueryRequest { Id = id });
 
-        if (result is null)
-            return NotFound(ApiResponse<CategoryDetailDto>.FailureResult("Category not found"));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<GetByIdCategoryQueryDto>.FailureResult(response.Result.Error!));
 
-        return Ok(ApiResponse<CategoryDetailDto>.SuccessResult(result));
+        return Ok(ApiResponse<GetByIdCategoryQueryDto>.SuccessResult(response.Result.Value!));
     }
 
     /// <summary>
@@ -47,16 +53,19 @@ public class CategoriesController : ApiControllerBase
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(typeof(ApiResponse<Guid>), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> CreateCategory([FromBody] CreateCategoryCommand command)
+    public async Task<IActionResult> CreateCategory([FromBody] CreateCategoryCommandDto dto)
     {
-        var result = await Mediator.Send(command);
+        var response = await Mediator.Send(new CreateCategoryCommandRequest
+        {
+            CreateCategoryCommandRequestDto = dto
+        });
 
-        if (result.IsFailure)
-            return BadRequest(ApiResponse<Guid>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
 
         return CreatedAtAction(
             nameof(GetCategories),
-            ApiResponse<Guid>.SuccessResult(result.Value, "Category created successfully"));
+            ApiResponse<Guid>.SuccessResult(response.Result.Value!, "Category created successfully"));
     }
 
     /// <summary>
@@ -67,15 +76,17 @@ public class CategoriesController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpdateCategory(Guid id, [FromBody] UpdateCategoryCommand command)
+    public async Task<IActionResult> UpdateCategory(Guid id, [FromBody] UpdateCategoryCommandDto dto)
     {
-        // Set the ID from the URL
-        command = command with { Id = id };
+        dto.Id = id;
 
-        var result = await Mediator.Send(command);
+        var response = await Mediator.Send(new UpdateCategoryCommandRequest
+        {
+            UpdateCategoryCommandRequestDto = dto
+        });
 
-        if (result.IsFailure)
-            return BadRequest(ApiResponse<object>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return BadRequest(ApiResponse<object>.FailureResult(response.Result.Error!));
 
         return NoContent();
     }
@@ -89,10 +100,10 @@ public class CategoriesController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteCategory(Guid id)
     {
-        var result = await Mediator.Send(new DeleteCategoryCommand(id));
+        var response = await Mediator.Send(new DeleteCategoryCommandRequest { Id = id });
 
-        if (result.IsFailure)
-            return NotFound(ApiResponse<object>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
 
         return NoContent();
     }

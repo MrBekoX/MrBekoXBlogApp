@@ -1,9 +1,9 @@
 using BlogApp.Server.Application.Common.Interfaces;
 using BlogApp.Server.Application.Common.Models;
-using BlogApp.Server.Application.DTOs.Auth;
-using BlogApp.Server.Application.Features.Auth.Commands.Login;
-using BlogApp.Server.Application.Features.Auth.Commands.RefreshToken;
-using BlogApp.Server.Application.Features.Auth.Commands.Register;
+using BlogApp.Server.Application.Features.AuthFeature.Commands.LoginCommand;
+using BlogApp.Server.Application.Features.AuthFeature.Commands.RefreshTokenCommand;
+using BlogApp.Server.Application.Features.AuthFeature.Commands.RegisterCommand;
+using BlogApp.Server.Application.Features.AuthFeature.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -28,24 +28,31 @@ public class AuthController : ApiControllerBase
     [HttpPost("login")]
     [ProducesResponseType(typeof(ApiResponse<AuthResponseWithCookiesDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Login([FromBody] LoginCommand command)
+    public async Task<IActionResult> Login([FromBody] LoginCommandDto dto)
     {
-        command = command with { IpAddress = GetIpAddress() };
-        var result = await Mediator.Send(command);
+        var response = await Mediator.Send(new LoginCommandRequest
+        {
+            LoginCommandRequestDto = new LoginCommandDto
+            {
+                Email = dto.Email,
+                Password = dto.Password,
+                IpAddress = GetIpAddress()
+            }
+        });
 
-        if (result.IsFailure)
-            return BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
 
         // Set HttpOnly cookies
-        SetAuthCookies(result.Value!.AccessToken, result.Value.RefreshToken, result.Value.ExpiresAt);
+        SetAuthCookies(response.Result.Value!.AccessToken, response.Result.Value.RefreshToken, response.Result.Value.ExpiresAt);
 
-        var response = new AuthResponseWithCookiesDto
+        var result = new AuthResponseWithCookiesDto
         {
-            ExpiresAt = result.Value.ExpiresAt,
-            User = result.Value.User
+            ExpiresAt = response.Result.Value.ExpiresAt,
+            User = response.Result.Value.User
         };
 
-        return Ok(ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(response, "Login successful"));
+        return Ok(ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(result, "Login successful"));
     }
 
     /// <summary>
@@ -54,26 +61,37 @@ public class AuthController : ApiControllerBase
     [HttpPost("register")]
     [ProducesResponseType(typeof(ApiResponse<AuthResponseWithCookiesDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Register([FromBody] RegisterCommand command)
+    public async Task<IActionResult> Register([FromBody] RegisterCommandDto dto)
     {
-        command = command with { IpAddress = GetIpAddress() };
-        var result = await Mediator.Send(command);
+        var response = await Mediator.Send(new RegisterCommandRequest
+        {
+            RegisterCommandRequestDto = new RegisterCommandDto
+            {
+                UserName = dto.UserName,
+                Email = dto.Email,
+                Password = dto.Password,
+                ConfirmPassword = dto.ConfirmPassword,
+                FirstName = dto.FirstName,
+                LastName = dto.LastName,
+                IpAddress = GetIpAddress()
+            }
+        });
 
-        if (result.IsFailure)
-            return BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(result.Error!));
+        if (!response.Result.IsSuccess)
+            return BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
 
         // Set HttpOnly cookies
-        SetAuthCookies(result.Value!.AccessToken, result.Value.RefreshToken, result.Value.ExpiresAt);
+        SetAuthCookies(response.Result.Value!.AccessToken, response.Result.Value.RefreshToken, response.Result.Value.ExpiresAt);
 
-        var response = new AuthResponseWithCookiesDto
+        var result = new AuthResponseWithCookiesDto
         {
-            ExpiresAt = result.Value.ExpiresAt,
-            User = result.Value.User
+            ExpiresAt = response.Result.Value.ExpiresAt,
+            User = response.Result.Value.User
         };
 
         return CreatedAtAction(
             nameof(Login),
-            ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(response, "Registration successful"));
+            ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(result, "Registration successful"));
     }
 
     /// <summary>
@@ -93,30 +111,31 @@ public class AuthController : ApiControllerBase
             return BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Refresh token not found"));
         }
 
-        var command = new RefreshTokenCommand
+        var response = await Mediator.Send(new RefreshTokenCommandRequest
         {
-            RefreshToken = refreshToken,
-            IpAddress = GetIpAddress()
-        };
+            RefreshTokenCommandRequestDto = new RefreshTokenCommandDto
+            {
+                RefreshToken = refreshToken,
+                IpAddress = GetIpAddress()
+            }
+        });
 
-        var result = await Mediator.Send(command);
-
-        if (result.IsFailure)
+        if (!response.Result.IsSuccess)
         {
             ClearAuthCookies();
-            return BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(result.Error!));
+            return BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
         }
 
         // Set new HttpOnly cookies
-        SetAuthCookies(result.Value!.AccessToken, result.Value.RefreshToken, result.Value.ExpiresAt);
+        SetAuthCookies(response.Result.Value!.AccessToken, response.Result.Value.RefreshToken, response.Result.Value.ExpiresAt);
 
-        var response = new AuthResponseWithCookiesDto
+        var result = new AuthResponseWithCookiesDto
         {
-            ExpiresAt = result.Value.ExpiresAt,
-            User = result.Value.User
+            ExpiresAt = response.Result.Value.ExpiresAt,
+            User = response.Result.Value.User
         };
 
-        return Ok(ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(response, "Token refreshed"));
+        return Ok(ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(result, "Token refreshed"));
     }
 
     /// <summary>

@@ -9,9 +9,9 @@ namespace BlogApp.Server.Infrastructure.Persistence;
 /// <summary>
 /// Application DbContext implementasyonu
 /// </summary>
-public class ApplicationDbContext : DbContext, IApplicationDbContext
+public class AppDbContext : DbContext, IApplicationDbContext
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
     {
     }
 

@@ -17,17 +17,17 @@ public static class DependencyInjection
     {
         // Database
         var connectionString = configuration.GetConnectionString("DefaultConnection");
-        services.AddDbContext<ApplicationDbContext>(options =>
+        services.AddDbContext<AppDbContext>(options =>
         {
             options.UseNpgsql(connectionString, npgsqlOptions =>
             {
-                npgsqlOptions.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName);
+                npgsqlOptions.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
                 npgsqlOptions.EnableRetryOnFailure(3);
             });
         });
 
         services.AddScoped<IApplicationDbContext>(provider =>
-            provider.GetRequiredService<ApplicationDbContext>());
+            provider.GetRequiredService<AppDbContext>());
 
         // Redis Cache
         var redisConnectionString = configuration.GetConnectionString("Redis");
@@ -48,8 +48,8 @@ public static class DependencyInjection
         // Repositories
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped(typeof(IRepository<>), typeof(EfCoreRepository<>));
-        services.AddScoped(typeof(IReadRepository<>), typeof(EfCoreRepository<>));
-        services.AddScoped(typeof(IWriteRepository<>), typeof(EfCoreRepository<>));
+        services.AddScoped(typeof(IReadRepository<>), typeof(EfCoreReadRepository<>));
+        services.AddScoped(typeof(IWriteRepository<>), typeof(EfCoreWriteRepository<>));
 
         // Services
         services.AddScoped<IJwtTokenService, JwtTokenService>();

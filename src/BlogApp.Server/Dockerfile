@@ -24,9 +24,10 @@ RUN dotnet publish "BlogApp.Server.Api.csproj" -c Release -o /app/publish /p:Use
 FROM base AS final
 WORKDIR /app
 
-# Create non-root user for security
-RUN addgroup --gid 1001 appgroup && \
-    adduser --uid 1001 --gid 1001 --disabled-password --gecos "" appuser
+
+# Create non-root user for security (Debian/Ubuntu way)
+RUN groupadd --gid 1001 appgroup && \
+    useradd --uid 1001 --gid 1001 --shell /bin/sh --create-home appuser
 
 COPY --from=publish /app/publish .
 

@@ -32,9 +32,10 @@ public static class DependencyInjection
         services.AddAutoMapper(cfg => cfg.AddMaps(assembly), assembly);
 
         // Pipeline Behaviors
-        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        // Pipeline Behaviors (sıralama önemli: dıştan içe)
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(CachingBehavior<,>));
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
         // Business Rules
         services.AddScoped<ICategoryBusinessRules, CategoryBusinessRules>();

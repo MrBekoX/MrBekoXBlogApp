@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
     container_name: blogapp-postgres-prod
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-blogapp_user}
+      POSTGRES_USER: ${POSTGRES_USER:-blogapp_admin_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-blogdb}
     volumes:
@@ -14,7 +12,7 @@ services:
       - blogapp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-blogapp_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-blogapp_admin_user}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,12 +20,12 @@ services:
   redis:
     image: redis:7-alpine
     container_name: blogapp-redis-prod
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     networks:
       - blogapp-network
     restart: unless-stopped
-    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -35,18 +33,30 @@ services:
       retries: 5
 
   api:
-    image: mrbeko/blog-app:api-latest # Tek Private Repo + Tag stratejisi
+    image: mrbeko/blog-app:api-latest
     container_name: blogapp-api-prod
+    # Değişkenleri tek tek yazmak yerine dosyadan doğrudan okutuyoruz
+    env_file:
+      - .env
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB:-blogdb};Username=${POSTGRES_USER:-blogapp_user};Password=${POSTGRES_PASSWORD}
-      - ConnectionStrings__Redis=redis:6379
+      - DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+      # Bağlantı cümlelerini .env içindeki isimlerle tam eşleştiriyoruz
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      - ConnectionStrings__Redis=redis:6379,password=${REDIS_PASSWORD}
+      # JWT ve diğer ayarlar
       - JwtSettings__Secret=${JWT_SECRET}
-      - JwtSettings__Issuer=${JWT_ISSUER:-BlogApp}
-      - JwtSettings__Audience=${JWT_AUDIENCE:-BlogApp}
-      - JwtSettings__ExpirationMinutes=${JWT_EXPIRATION_MINUTES:-60}
-      - CorsOrigins__0=https://mrbekox.dev # ALB üzerinden HTTPS geldiği için
+      - JwtSettings__Issuer=BlogApp
+      - JwtSettings__Audience=BlogApp
+      - JwtSettings__ExpirationMinutes=60
+      # Admin kullanıcı
+      - AdminUser__Email=${ADMIN_EMAIL}
+      - AdminUser__UserName=${ADMIN_USERNAME}
+      - AdminUser__Password=${ADMIN_PASSWORD}
+      - AdminUser__FirstName=Admin
+      # CORS
+      - CorsOrigins__0=https://mrbekox.dev
+      - CorsOrigins__1=https://www.mrbekox.dev
     ports:
       - "8080:8080"
     depends_on:
@@ -61,10 +71,10 @@ services:
       - ./uploads:/app/uploads
 
   frontend:
-    image: mrbeko/blog-app:web-latest # Tek Private Repo + Tag stratejisi
+    image: mrbeko/blog-app:web-latest
     container_name: blogapp-frontend-prod
     environment:
-      - NEXT_PUBLIC_API_URL=https://mrbekox.dev/api # Client-side istekler HTTPS olmalı
+      - NEXT_PUBLIC_API_URL=https://mrbekox.dev/api
     ports:
       - "3000:3000"
     depends_on:
@@ -77,7 +87,7 @@ services:
     image: nginx:alpine
     container_name: blogapp-nginx-prod
     ports:
-      - "80:80" # ALB trafiği buraya iletir
+      - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:

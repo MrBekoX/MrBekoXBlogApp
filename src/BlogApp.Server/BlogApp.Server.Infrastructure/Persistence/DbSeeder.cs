@@ -6,20 +6,13 @@ using Microsoft.Extensions.Logging;
 
 namespace BlogApp.Server.Infrastructure.Persistence;
 
-/// <summary>
-/// Veritabanı seed işlemleri için servis.
-/// Admin kullanıcı oluşturma gibi hassas işlemler için environment variable kullanır.
-/// </summary>
 public class DbSeeder
 {
     private readonly ApplicationDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly ILogger<DbSeeder> _logger;
 
-    public DbSeeder(
-        ApplicationDbContext context,
-        IConfiguration configuration,
-        ILogger<DbSeeder> logger)
+    public DbSeeder(ApplicationDbContext context, IConfiguration configuration, ILogger<DbSeeder> logger)
     {
         _context = context;
         _configuration = configuration;
@@ -28,46 +21,36 @@ public class DbSeeder
 
     public async Task SeedAsync()
     {
-        await SeedAdminUserAsync();
+        try 
+        {
+            await SeedAdminUserAsync();
+        }
+        catch (Exception ex)
+        {
+            // Tablo henüz yoksa veya bağlantı hazır değilse uygulamanın çökmesini engeller
+            _logger.LogWarning("Seeding failed: {Message}. This is expected if migrations are not yet applied.", ex.Message);
+        }
     }
 
     private async Task SeedAdminUserAsync()
     {
-        // Admin zaten varsa atla
+        // ÖNEMLİ: .env dosyasındaki isimlerle tam uyum sağladık
+        var adminEmail = _configuration["ADMIN_EMAIL"] ?? _configuration["AdminUser:Email"];
+        var adminUserName = _configuration["ADMIN_USERNAME"] ?? _configuration["AdminUser:UserName"] ?? "admin";
+        var adminPassword = _configuration["ADMIN_PASSWORD"] ?? _configuration["AdminUser:Password"];
+
+        if (string.IsNullOrEmpty(adminEmail) || string.IsNullOrEmpty(adminPassword))
+        {
+            _logger.LogWarning("Admin credentials missing in .env (ADMIN_EMAIL, ADMIN_PASSWORD)");
+            return;
+        }
+
+        // Tablo var mı kontrol et (Crash'i önler)
         var adminExists = await _context.Users
             .IgnoreQueryFilters()
             .AnyAsync(u => u.Role == UserRole.Admin);
 
-        if (adminExists)
-        {
-            _logger.LogInformation("Admin user already exists, skipping seed");
-            return;
-        }
-
-        // Admin bilgilerini configuration'dan al
-        var adminEmail = _configuration["AdminUser:Email"];
-        var adminUserName = _configuration["AdminUser:UserName"];
-        var adminPassword = _configuration["AdminUser:Password"];
-        var adminFirstName = _configuration["AdminUser:FirstName"] ?? "Admin";
-
-        // Gerekli değerler yoksa uyarı ver ve çık
-        if (string.IsNullOrEmpty(adminEmail) ||
-            string.IsNullOrEmpty(adminUserName) ||
-            string.IsNullOrEmpty(adminPassword))
-        {
-            _logger.LogWarning(
-                "Admin user credentials not configured. " +
-                "Set AdminUser:Email, AdminUser:UserName, and AdminUser:Password in configuration or environment variables. " +
-                "Example: AdminUser__Email, AdminUser__UserName, AdminUser__Password");
-            return;
-        }
-
-        // Şifre güvenlik kontrolü
-        if (adminPassword.Length < 12)
-        {
-            _logger.LogError("Admin password must be at least 12 characters long");
-            return;
-        }
+        if (adminExists) return;
 
         var adminUser = new User
         {
@@ -75,18 +58,15 @@ public class DbSeeder
             UserName = adminUserName,
             Email = adminEmail.ToLower(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),
-            FirstName = adminFirstName,
-            LastName = "",
+            FirstName = "Admin",
+            LastName = "User",
             Role = UserRole.Admin,
             IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            IsDeleted = false,
-            FailedLoginAttempts = 0
+            CreatedAt = DateTime.UtcNow
         };
 
         await _context.Users.AddAsync(adminUser);
         await _context.SaveChangesAsync();
-
-        _logger.LogInformation("Admin user created successfully: {UserName}", adminUserName);
+        _logger.LogInformation("Admin user created successfully!");
     }
 }

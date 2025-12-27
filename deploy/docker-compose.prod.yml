@@ -35,9 +35,7 @@ services:
       retries: 5
 
   api:
-    build:
-      context: ../src/BlogApp.Server
-      dockerfile: Dockerfile
+    image: mrbeko/blog-app:api-latest # Tek Private Repo + Tag stratejisi
     container_name: blogapp-api-prod
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
@@ -48,14 +46,9 @@ services:
       - JwtSettings__Issuer=${JWT_ISSUER:-BlogApp}
       - JwtSettings__Audience=${JWT_AUDIENCE:-BlogApp}
       - JwtSettings__ExpirationMinutes=${JWT_EXPIRATION_MINUTES:-60}
-      - AdminUser__Email=${ADMIN_EMAIL:-admin@example.com}
-      - AdminUser__UserName=${ADMIN_USERNAME:-admin}
-      - AdminUser__Password=${ADMIN_PASSWORD}
-      - AdminUser__FirstName=Admin
-      - CorsOrigins__0=${FRONTEND_URL:-https://mrbekox.dev}
-      - CorsOrigins__1=https://www.${DOMAIN:-mrbekox.dev}
+      - CorsOrigins__0=https://mrbekox.dev # ALB üzerinden HTTPS geldiği için
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,39 +59,25 @@ services:
     restart: unless-stopped
     volumes:
       - ./uploads:/app/uploads
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
   frontend:
-    build:
-      context: ../src/blogapp-web
-      dockerfile: Dockerfile
+    image: mrbeko/blog-app:web-latest # Tek Private Repo + Tag stratejisi
     container_name: blogapp-frontend-prod
     environment:
-      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:8080/api}
+      - NEXT_PUBLIC_API_URL=https://mrbekox.dev/api # Client-side istekler HTTPS olmalı
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "3000:3000"
     depends_on:
       - api
     networks:
       - blogapp-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
   nginx:
     image: nginx:alpine
     container_name: blogapp-nginx-prod
     ports:
-      - "${HTTP_PORT:-80}:80"
+      - "80:80" # ALB trafiği buraya iletir
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -107,11 +86,6 @@ services:
     networks:
       - blogapp-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 volumes:
   postgres_data:
@@ -120,4 +94,3 @@ volumes:
 networks:
   blogapp-network:
     driver: bridge
-

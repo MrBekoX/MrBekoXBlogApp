@@ -7,9 +7,8 @@ namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
 /// <summary>
 /// Unit of Work pattern implementasyonu
 /// </summary>
-public class UnitOfWork : IUnitOfWork
+public class UnitOfWork(ApplicationDbContext context) : IUnitOfWork
 {
-    private readonly ApplicationDbContext _context;
     private IDbContextTransaction? _transaction;
 
     private IRepository<BlogPost>? _posts;
@@ -19,37 +18,32 @@ public class UnitOfWork : IUnitOfWork
     private IRepository<Comment>? _comments;
     private IRepository<RefreshToken>? _refreshTokens;
 
-    public UnitOfWork(ApplicationDbContext context)
-    {
-        _context = context;
-    }
-
     public IRepository<BlogPost> Posts =>
-        _posts ??= new EfCoreRepository<BlogPost>(_context);
+        _posts ??= new EfCoreRepository<BlogPost>(context);
 
     public IRepository<Category> Categories =>
-        _categories ??= new EfCoreRepository<Category>(_context);
+        _categories ??= new EfCoreRepository<Category>(context);
 
     public IRepository<Tag> Tags =>
-        _tags ??= new EfCoreRepository<Tag>(_context);
+        _tags ??= new EfCoreRepository<Tag>(context);
 
     public IRepository<User> Users =>
-        _users ??= new EfCoreRepository<User>(_context);
+        _users ??= new EfCoreRepository<User>(context);
 
     public IRepository<Comment> Comments =>
-        _comments ??= new EfCoreRepository<Comment>(_context);
+        _comments ??= new EfCoreRepository<Comment>(context);
 
     public IRepository<RefreshToken> RefreshTokens =>
-        _refreshTokens ??= new EfCoreRepository<RefreshToken>(_context);
+        _refreshTokens ??= new EfCoreRepository<RefreshToken>(context);
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        return await _context.SaveChangesAsync(cancellationToken);
+        return await context.SaveChangesAsync(cancellationToken);
     }
 
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
-        _transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        _transaction = await context.Database.BeginTransactionAsync(cancellationToken);
     }
 
     public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
@@ -72,9 +66,16 @@ public class UnitOfWork : IUnitOfWork
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        _transaction?.Dispose();
-        _context.Dispose();
+        // Transaction varsa dispose et
+        if (_transaction is not null)
+        {
+            await _transaction.DisposeAsync();
+            _transaction = null;
+        }
+
+        // Context'i dispose et
+        await context.DisposeAsync();
     }
 }

@@ -5,7 +5,7 @@ namespace BlogApp.Server.Application.Common.Interfaces;
 /// <summary>
 /// Unit of Work pattern arayüzü
 /// </summary>
-public interface IUnitOfWork : IDisposable
+public interface IUnitOfWork : IAsyncDisposable
 {
     IRepository<BlogPost> Posts { get; }
     IRepository<Category> Categories { get; }

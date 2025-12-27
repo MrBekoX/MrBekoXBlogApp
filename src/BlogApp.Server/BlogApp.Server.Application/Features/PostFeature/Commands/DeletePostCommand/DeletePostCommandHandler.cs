@@ -1,0 +1,52 @@
+using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Models;
+using BlogApp.Server.Application.Features.PostFeature.Constants;
+using BlogApp.Server.Application.Features.PostFeature.Rules;
+using MediatR;
+
+namespace BlogApp.Server.Application.Features.PostFeature.Commands.DeletePostCommand;
+
+public class DeletePostCommandHandler(
+    IUnitOfWork unitOfWork,
+    ICurrentUserService currentUserService,
+    IPostBusinessRules postBusinessRules) : IRequestHandler<DeletePostCommandRequest, DeletePostCommandResponse>
+{
+    public async Task<DeletePostCommandResponse> Handle(DeletePostCommandRequest request, CancellationToken cancellationToken)
+    {
+        // Business Rules
+        var ruleResult = await BusinessRuleEngine.RunAsync(
+            async () => await postBusinessRules.CheckPostExistsAsync(request.Id)
+        );
+
+        if (!ruleResult.IsSuccess)
+        {
+            return new DeletePostCommandResponse
+            {
+                Result = Result.Failure(ruleResult.Error!)
+            };
+        }
+
+        var post = await unitOfWork.Posts.GetByIdAsync(request.Id, cancellationToken);
+        if (post is null)
+        {
+            return new DeletePostCommandResponse
+            {
+                Result = Result.Failure(PostBusinessRuleMessages.PostNotFoundGeneric)
+            };
+        }
+
+        // Soft delete
+        post.IsDeleted = true;
+        post.DeletedAt = DateTime.UtcNow;
+        post.UpdatedBy = currentUserService.UserName;
+
+        unitOfWork.Posts.Update(post);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new DeletePostCommandResponse
+        {
+            Result = Result.Success()
+        };
+    }
+}

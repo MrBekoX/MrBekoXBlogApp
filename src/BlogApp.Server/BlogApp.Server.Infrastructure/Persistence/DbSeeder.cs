@@ -8,11 +8,11 @@ namespace BlogApp.Server.Infrastructure.Persistence;
 
 public class DbSeeder
 {
-    private readonly ApplicationDbContext _context;
+    private readonly AppDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly ILogger<DbSeeder> _logger;
 
-    public DbSeeder(ApplicationDbContext context, IConfiguration configuration, ILogger<DbSeeder> logger)
+    public DbSeeder(AppDbContext context, IConfiguration configuration, ILogger<DbSeeder> logger)
     {
         _context = context;
         _configuration = configuration;
@@ -34,10 +34,22 @@ public class DbSeeder
 
     private async Task SeedAdminUserAsync()
     {
-        // ÖNEMLİ: .env dosyasındaki isimlerle tam uyum sağladık
+        // Production: .env veya appsettings'den al
+        // Development: varsayılan değerler kullan
+        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+        var isDevelopment = environment == "Development";
+
         var adminEmail = _configuration["ADMIN_EMAIL"] ?? _configuration["AdminUser:Email"];
         var adminUserName = _configuration["ADMIN_USERNAME"] ?? _configuration["AdminUser:UserName"] ?? "admin";
         var adminPassword = _configuration["ADMIN_PASSWORD"] ?? _configuration["AdminUser:Password"];
+
+        // Development ortamında varsayılan değerler kullan
+        if (isDevelopment && string.IsNullOrEmpty(adminEmail))
+        {
+            adminEmail = "admin@blogapp.local";
+            adminPassword = "Admin123!@#";
+            _logger.LogInformation("Using default admin credentials for development");
+        }
 
         if (string.IsNullOrEmpty(adminEmail) || string.IsNullOrEmpty(adminPassword))
         {

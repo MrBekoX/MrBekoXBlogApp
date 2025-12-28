@@ -136,6 +136,24 @@
   }
 }
 
+/* Container - Centered with responsive padding */
+@layer components {
+  .container {
+    @apply mx-auto w-full px-4 sm:px-6 lg:px-8;
+    max-width: 1280px;
+  }
+
+  .container-narrow {
+    @apply mx-auto w-full px-4 sm:px-6 lg:px-8;
+    max-width: 768px;
+  }
+
+  .container-wide {
+    @apply mx-auto w-full px-4 sm:px-6 lg:px-8;
+    max-width: 1536px;
+  }
+}
+
 /* Custom animations */
 @keyframes fade-in-up {
   from {

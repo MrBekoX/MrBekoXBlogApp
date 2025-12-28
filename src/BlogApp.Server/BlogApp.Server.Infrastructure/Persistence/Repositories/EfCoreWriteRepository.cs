@@ -7,19 +7,15 @@ namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
 /// <summary>
 /// Generic EF Core Write Repository implementasyonu
 /// </summary>
-public class EfCoreWriteRepository<T> :EfCoreRepository<T>, IWriteRepository<T> where T : BaseEntity
+public class EfCoreWriteRepository<T> : EfCoreRepository<T>, IWriteRepository<T> where T : BaseEntity
 {
-    
     public EfCoreWriteRepository(AppDbContext context) : base(context)
     {
     }
 
-    
-    public async Task<T> AddAsync(T entity, CancellationToken cancellationToken = default)
+    public async Task AddAsync(T entity, CancellationToken cancellationToken = default)
     {
-    
         await _dbSet.AddAsync(entity, cancellationToken);
-        return entity;
     }
 
     public async Task AddRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
@@ -27,23 +23,38 @@ public class EfCoreWriteRepository<T> :EfCoreRepository<T>, IWriteRepository<T> 
         await _dbSet.AddRangeAsync(entities, cancellationToken);
     }
 
-    public void Update(T entity)
-    {
-        _dbSet.Update(entity);
-    }
-
-    public void UpdateRange(IEnumerable<T> entities)
-    {
-        _dbSet.UpdateRange(entities);
-    }
-
-    public void Delete(T entity)
+    public Task RemoveAsync(T entity, CancellationToken cancellationToken = default)
     {
         _dbSet.Remove(entity);
+        return Task.CompletedTask;
     }
 
-    public void DeleteRange(IEnumerable<T> entities)
+    public async Task<bool> RemoveIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var entity = await _dbSet.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (entity == null)
+            return false;
+
+        _dbSet.Remove(entity);
+        return true;
+    }
+
+    public Task RemoveRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
     {
         _dbSet.RemoveRange(entities);
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateAsync(T entity, CancellationToken cancellationToken = default)
+    {
+        _dbSet.Update(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
+    {
+        _dbSet.UpdateRange(entities);
+        return Task.CompletedTask;
     }
 }

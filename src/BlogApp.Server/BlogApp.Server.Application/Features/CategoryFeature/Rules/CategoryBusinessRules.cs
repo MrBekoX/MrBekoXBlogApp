@@ -18,7 +18,7 @@ public class CategoryBusinessRules : ICategoryBusinessRules
 
     public async Task<Result> CheckCategoryExistsAsync(Guid categoryId)
     {
-        var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
+        var category = await _unitOfWork.CategoriesRead.GetByIdAsync(categoryId);
 
         return category is not null && !category.IsDeleted
             ? Result.Success()
@@ -28,7 +28,7 @@ public class CategoryBusinessRules : ICategoryBusinessRules
     public async Task<Result> CheckCategoryNameIsUniqueAsync(string name)
     {
         var slug = Slug.CreateFromTitle(name);
-        var existingCategory = await _unitOfWork.Categories.GetAsync(
+        var existingCategory = await _unitOfWork.CategoriesRead.GetSingleAsync(
             c => c.Slug == slug.Value && !c.IsDeleted);
 
         return existingCategory is null
@@ -39,7 +39,7 @@ public class CategoryBusinessRules : ICategoryBusinessRules
     public async Task<Result> CheckCategoryNameIsUniqueExceptCurrentAsync(string name, Guid currentId)
     {
         var slug = Slug.CreateFromTitle(name);
-        var existingCategory = await _unitOfWork.Categories.GetAsync(
+        var existingCategory = await _unitOfWork.CategoriesRead.GetSingleAsync(
             c => c.Slug == slug.Value && c.Id != currentId && !c.IsDeleted);
 
         return existingCategory is null

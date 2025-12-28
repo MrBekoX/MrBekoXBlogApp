@@ -27,7 +27,7 @@ public class PublishPostCommandHandler(
             };
         }
 
-        var post = await unitOfWork.Posts.GetByIdAsync(request.Id, cancellationToken);
+        var post = await unitOfWork.PostsRead.GetByIdAsync(request.Id, cancellationToken);
         if (post is null)
         {
             return new PublishPostCommandResponse
@@ -38,7 +38,7 @@ public class PublishPostCommandHandler(
 
         post.Publish();
 
-        unitOfWork.Posts.Update(post);
+        await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Cache'i temizle
@@ -72,7 +72,7 @@ public class UnpublishPostCommandHandler(
             };
         }
 
-        var post = await unitOfWork.Posts.GetByIdAsync(request.Id, cancellationToken);
+        var post = await unitOfWork.PostsRead.GetByIdAsync(request.Id, cancellationToken);
         if (post is null)
         {
             return new UnpublishPostCommandResponse
@@ -83,7 +83,7 @@ public class UnpublishPostCommandHandler(
 
         post.Unpublish();
 
-        unitOfWork.Posts.Update(post);
+        await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Cache'i temizle

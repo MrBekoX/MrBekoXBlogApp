@@ -15,7 +15,7 @@ public class AuthBusinessRules : IAuthBusinessRules
 
     public async Task<Result> CheckEmailIsUniqueAsync(string email)
     {
-        var exists = await _unitOfWork.Users.AnyAsync(
+        var exists = await _unitOfWork.UsersRead.ExistsAsync(
             u => u.Email.ToLower() == email.ToLower());
 
         return exists
@@ -25,7 +25,7 @@ public class AuthBusinessRules : IAuthBusinessRules
 
     public async Task<Result> CheckUserNameIsUniqueAsync(string userName)
     {
-        var exists = await _unitOfWork.Users.AnyAsync(
+        var exists = await _unitOfWork.UsersRead.ExistsAsync(
             u => u.UserName.ToLower() == userName.ToLower());
 
         return exists

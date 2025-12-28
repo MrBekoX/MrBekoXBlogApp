@@ -1,5 +1,6 @@
 using System.Text;
 using AspNetCoreRateLimit;
+using BlogApp.Server.Api.Extensions;
 using BlogApp.Server.Api.Middlewares;
 using BlogApp.Server.Application;
 using BlogApp.Server.Infrastructure;
@@ -26,13 +27,16 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-    });
+// Minimal API JSON configuration
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddOutputCache();
+builder.Services.AddAntiforgery();
 
 var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? throw new InvalidOperationException("JWT Secret not configured");
 var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "BlogApp";
@@ -130,12 +134,16 @@ app.UseCors("AllowFrontend");
 app.UseIpRateLimiting();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapControllers();
+app.UseOutputCache();
+app.UseAntiforgery();
+
+// Register Minimal API Endpoints
+app.RegisterAllEndpoints();
 app.MapHealthChecks("/health");
 
 using (var scope = app.Services.CreateScope())
 {
-    var context = scope.ServiceProvider.GetRequiredService<BlogApp.Server.Infrastructure.Persistence.ApplicationDbContext>();
+    var context = scope.ServiceProvider.GetRequiredService<BlogApp.Server.Infrastructure.Persistence.AppDbContext>();
     if (app.Environment.IsProduction())
     {
         Log.Information("Applying migrations...");

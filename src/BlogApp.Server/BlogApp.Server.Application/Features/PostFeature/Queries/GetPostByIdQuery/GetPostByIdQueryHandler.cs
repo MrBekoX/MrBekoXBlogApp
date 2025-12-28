@@ -14,7 +14,7 @@ public class GetPostByIdQueryHandler(
 {
     public async Task<GetPostByIdQueryResponse> Handle(GetPostByIdQueryRequest request, CancellationToken cancellationToken)
     {
-        var post = await unitOfWork.Posts.Query()
+        var post = await unitOfWork.PostsRead.Query()
             .AsNoTracking()
             .Include(p => p.Author)
             .Include(p => p.Category)

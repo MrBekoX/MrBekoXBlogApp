@@ -11,13 +11,13 @@ public class GetByIdCategoryQueryHandler(
 {
     public async Task<GetByIdCategoryQueryResponse> Handle(GetByIdCategoryQueryRequest request, CancellationToken cancellationToken)
     {
-        var category = await unitOfWork.Categories.GetByIdAsync(request.Id, cancellationToken);
+        var category = await unitOfWork.CategoriesRead.GetByIdAsync(request.Id, cancellationToken);
 
-        if (category is null || category.IsDeleted)
+        if (category == null)
         {
             return new GetByIdCategoryQueryResponse
             {
-                Result = Result<GetByIdCategoryQueryDto>.Failure(CategoryBusinessRuleMessages.CategoryNotFoundGeneric)
+                Result = Result<GetByIdCategoryQueryDto>.Failure(CategoryBusinessRuleMessages.CategoryNotFound(request.Id))
             };
         }
 

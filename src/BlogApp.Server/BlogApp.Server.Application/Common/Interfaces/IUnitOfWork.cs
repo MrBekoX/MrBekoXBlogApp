@@ -7,12 +7,23 @@ namespace BlogApp.Server.Application.Common.Interfaces;
 /// </summary>
 public interface IUnitOfWork : IAsyncDisposable
 {
-    IRepository<BlogPost> Posts { get; }
-    IRepository<Category> Categories { get; }
-    IRepository<Tag> Tags { get; }
-    IRepository<User> Users { get; }
-    IRepository<Comment> Comments { get; }
-    IRepository<RefreshToken> RefreshTokens { get; }
+    IReadRepository<BlogPost> PostsRead { get; }
+    IWriteRepository<BlogPost> PostsWrite { get; }
+    
+    IReadRepository<Category> CategoriesRead { get; }
+    IWriteRepository<Category> CategoriesWrite { get; }
+    
+    IReadRepository<Tag> TagsRead { get; }
+    IWriteRepository<Tag> TagsWrite { get; }
+    
+    IReadRepository<User> UsersRead { get; }
+    IWriteRepository<User> UsersWrite { get; }
+    
+    IReadRepository<Comment> CommentsRead { get; }
+    IWriteRepository<Comment> CommentsWrite { get; }
+    
+    IReadRepository<RefreshToken> RefreshTokensRead { get; }
+    IWriteRepository<RefreshToken> RefreshTokensWrite { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);

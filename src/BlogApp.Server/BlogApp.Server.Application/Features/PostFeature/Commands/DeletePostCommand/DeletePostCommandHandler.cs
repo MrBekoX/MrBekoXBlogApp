@@ -27,7 +27,7 @@ public class DeletePostCommandHandler(
             };
         }
 
-        var post = await unitOfWork.Posts.GetByIdAsync(request.Id, cancellationToken);
+        var post = await unitOfWork.PostsRead.GetByIdAsync(request.Id, cancellationToken);
         if (post is null)
         {
             return new DeletePostCommandResponse
@@ -41,7 +41,7 @@ public class DeletePostCommandHandler(
         post.DeletedAt = DateTime.UtcNow;
         post.UpdatedBy = currentUserService.UserName;
 
-        unitOfWork.Posts.Update(post);
+        await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new DeletePostCommandResponse

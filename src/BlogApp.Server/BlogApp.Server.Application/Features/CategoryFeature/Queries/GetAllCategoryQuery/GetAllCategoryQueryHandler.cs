@@ -11,7 +11,7 @@ public class GetAllCategoryQueryHandler(
 {
     public async Task<GetAllCategoryQueryResponse> Handle(GetAllCategoryQueryRequest request, CancellationToken cancellationToken)
     {
-        var query = unitOfWork.Categories.Query()
+        var query = unitOfWork.CategoriesRead.GetAll()
             .AsNoTracking()
             .Include(c => c.Posts)
             .Where(c => !c.IsDeleted);

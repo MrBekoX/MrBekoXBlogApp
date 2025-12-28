@@ -32,7 +32,7 @@ public class UpdatePostCommandHandler(
             };
         }
 
-        var post = await unitOfWork.Posts.GetByIdAsync(dto.Id, cancellationToken);
+        var post = await unitOfWork.PostsRead.GetByIdAsync(dto.Id, cancellationToken);
         if (post is null)
         {
             return new UpdatePostCommandResponse
@@ -45,7 +45,7 @@ public class UpdatePostCommandHandler(
         if (post.Title != dto.Title)
         {
             var newSlug = Slug.CreateFromTitle(dto.Title);
-            var existingPost = await unitOfWork.Posts.GetAsync(
+            var existingPost = await unitOfWork.PostsRead.GetSingleAsync(
                 p => p.Slug == newSlug.Value && p.Id != dto.Id, cancellationToken);
 
             post.Slug = existingPost is not null
@@ -59,7 +59,7 @@ public class UpdatePostCommandHandler(
         {
             foreach (var tagName in dto.TagNames)
             {
-                var existingTag = await unitOfWork.Tags.GetAsync(t => t.Name == tagName, cancellationToken);
+                var existingTag = await unitOfWork.TagsRead.GetSingleAsync(t => t.Name == tagName, cancellationToken);
                 if (existingTag is not null)
                 {
                     post.Tags.Add(existingTag);
@@ -73,7 +73,7 @@ public class UpdatePostCommandHandler(
                         Slug = Slug.CreateFromTitle(tagName).Value,
                         CreatedAt = DateTime.UtcNow
                     };
-                    await unitOfWork.Tags.AddAsync(newTag, cancellationToken);
+                    await unitOfWork.TagsWrite.AddAsync(newTag, cancellationToken);
                     post.Tags.Add(newTag);
                 }
             }
@@ -114,7 +114,7 @@ public class UpdatePostCommandHandler(
         // Okuma süresini yeniden hesapla
         post.CalculateReadingTime();
 
-        unitOfWork.Posts.Update(post);
+        await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new UpdatePostCommandResponse

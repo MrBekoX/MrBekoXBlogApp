@@ -41,7 +41,7 @@ public class CreateCategoryCommandHandler(
             CreatedAt = DateTime.UtcNow
         };
 
-        await unitOfWork.Categories.AddAsync(category, cancellationToken);
+        await unitOfWork.CategoriesWrite.AddAsync(category, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new CreateCategoryCommandResponse

@@ -16,7 +16,7 @@ public class RefreshTokenCommandHandler(
         var dto = request.RefreshTokenCommandRequestDto!;
 
         // Refresh token'ı bul
-        var storedToken = await unitOfWork.RefreshTokens.Query()
+        var storedToken = await unitOfWork.RefreshTokensRead.Query()
             .Include(t => t.User)
             .FirstOrDefaultAsync(t => t.Token == dto.RefreshToken, cancellationToken);
 
@@ -67,8 +67,8 @@ public class RefreshTokenCommandHandler(
             CreatedByIp = dto.IpAddress
         };
 
-        await unitOfWork.RefreshTokens.AddAsync(refreshTokenEntity, cancellationToken);
-        unitOfWork.RefreshTokens.Update(storedToken);
+        await unitOfWork.RefreshTokensWrite.AddAsync(refreshTokenEntity, cancellationToken);
+        await unitOfWork.RefreshTokensWrite.UpdateAsync(storedToken, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new RefreshTokenCommandResponse

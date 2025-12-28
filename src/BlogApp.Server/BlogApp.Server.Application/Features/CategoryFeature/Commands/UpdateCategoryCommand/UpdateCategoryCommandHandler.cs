@@ -30,7 +30,7 @@ public class UpdateCategoryCommandHandler(
             };
         }
 
-        var category = await unitOfWork.Categories.GetByIdAsync(dto.Id, cancellationToken);
+        var category = await unitOfWork.CategoriesRead.GetByIdAsync(dto.Id, cancellationToken);
         if (category is null)
         {
             return new UpdateCategoryCommandResponse
@@ -48,7 +48,7 @@ public class UpdateCategoryCommandHandler(
         category.DisplayOrder = dto.DisplayOrder;
         category.UpdatedAt = DateTime.UtcNow;
 
-        unitOfWork.Categories.Update(category);
+        await unitOfWork.CategoriesWrite.UpdateAsync(category, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new UpdateCategoryCommandResponse

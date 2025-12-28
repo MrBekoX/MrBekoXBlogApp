@@ -1,5 +1,6 @@
 using BlogApp.Server.Application.Common.Interfaces;
 using BlogApp.Server.Domain.Entities;
+using BlogApp.Server.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
@@ -7,34 +8,61 @@ namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
 /// <summary>
 /// Unit of Work pattern implementasyonu
 /// </summary>
-public class UnitOfWork(ApplicationDbContext context) : IUnitOfWork
+public class UnitOfWork(AppDbContext context) : IUnitOfWork
 {
     private IDbContextTransaction? _transaction;
 
-    private IRepository<BlogPost>? _posts;
-    private IRepository<Category>? _categories;
-    private IRepository<Tag>? _tags;
-    private IRepository<User>? _users;
-    private IRepository<Comment>? _comments;
-    private IRepository<RefreshToken>? _refreshTokens;
+    // Read Repositories
+    private IReadRepository<BlogPost>? _postsRead;
+    private IReadRepository<Category>? _categoriesRead;
+    private IReadRepository<Tag>? _tagsRead;
+    private IReadRepository<User>? _usersRead;
+    private IReadRepository<Comment>? _commentsRead;
+    private IReadRepository<RefreshToken>? _refreshTokensRead;
 
-    public IRepository<BlogPost> Posts =>
-        _posts ??= new EfCoreRepository<BlogPost>(context);
+    // Write Repositories
+    private IWriteRepository<BlogPost>? _postsWrite;
+    private IWriteRepository<Category>? _categoriesWrite;
+    private IWriteRepository<Tag>? _tagsWrite;
+    private IWriteRepository<User>? _usersWrite;
+    private IWriteRepository<Comment>? _commentsWrite;
+    private IWriteRepository<RefreshToken>? _refreshTokensWrite;
 
-    public IRepository<Category> Categories =>
-        _categories ??= new EfCoreRepository<Category>(context);
+    public IReadRepository<BlogPost> PostsRead =>
+        _postsRead ??= new EfCoreReadRepository<BlogPost>(context);
 
-    public IRepository<Tag> Tags =>
-        _tags ??= new EfCoreRepository<Tag>(context);
+    public IWriteRepository<BlogPost> PostsWrite =>
+        _postsWrite ??= new EfCoreWriteRepository<BlogPost>(context);
 
-    public IRepository<User> Users =>
-        _users ??= new EfCoreRepository<User>(context);
+    public IReadRepository<Category> CategoriesRead =>
+        _categoriesRead ??= new EfCoreReadRepository<Category>(context);
 
-    public IRepository<Comment> Comments =>
-        _comments ??= new EfCoreRepository<Comment>(context);
+    public IWriteRepository<Category> CategoriesWrite =>
+        _categoriesWrite ??= new EfCoreWriteRepository<Category>(context);
 
-    public IRepository<RefreshToken> RefreshTokens =>
-        _refreshTokens ??= new EfCoreRepository<RefreshToken>(context);
+    public IReadRepository<Tag> TagsRead =>
+        _tagsRead ??= new EfCoreReadRepository<Tag>(context);
+
+    public IWriteRepository<Tag> TagsWrite =>
+        _tagsWrite ??= new EfCoreWriteRepository<Tag>(context);
+
+    public IReadRepository<User> UsersRead =>
+        _usersRead ??= new EfCoreReadRepository<User>(context);
+
+    public IWriteRepository<User> UsersWrite =>
+        _usersWrite ??= new EfCoreWriteRepository<User>(context);
+
+    public IReadRepository<Comment> CommentsRead =>
+        _commentsRead ??= new EfCoreReadRepository<Comment>(context);
+
+    public IWriteRepository<Comment> CommentsWrite =>
+        _commentsWrite ??= new EfCoreWriteRepository<Comment>(context);
+
+    public IReadRepository<RefreshToken> RefreshTokensRead =>
+        _refreshTokensRead ??= new EfCoreReadRepository<RefreshToken>(context);
+
+    public IWriteRepository<RefreshToken> RefreshTokensWrite =>
+        _refreshTokensWrite ??= new EfCoreWriteRepository<RefreshToken>(context);
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

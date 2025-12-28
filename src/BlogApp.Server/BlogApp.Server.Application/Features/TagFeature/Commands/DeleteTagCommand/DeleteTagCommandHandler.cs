@@ -26,7 +26,7 @@ public class DeleteTagCommandHandler(
             };
         }
 
-        var tag = await unitOfWork.Tags.GetByIdAsync(request.Id, cancellationToken);
+        var tag = await unitOfWork.TagsRead.GetSingleAsync(t => t.Id == request.Id && !t.IsDeleted, cancellationToken);
         if (tag is null)
         {
             return new DeleteTagCommandResponse
@@ -39,7 +39,7 @@ public class DeleteTagCommandHandler(
         tag.IsDeleted = true;
         tag.UpdatedAt = DateTime.UtcNow;
 
-        unitOfWork.Tags.Update(tag);
+        await unitOfWork.TagsWrite.UpdateAsync(tag, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new DeleteTagCommandResponse

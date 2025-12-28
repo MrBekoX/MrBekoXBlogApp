@@ -16,7 +16,7 @@ public class PostBusinessRules : IPostBusinessRules
 
     public async Task<Result> CheckPostExistsAsync(Guid postId)
     {
-        var post = await _unitOfWork.Posts.GetByIdAsync(postId);
+        var post = await _unitOfWork.PostsRead.GetByIdAsync(postId);
 
         return post is not null && !post.IsDeleted
             ? Result.Success()
@@ -25,7 +25,7 @@ public class PostBusinessRules : IPostBusinessRules
 
     public async Task<Result> CheckUserCanEditPostAsync(Guid postId, Guid userId)
     {
-        var post = await _unitOfWork.Posts.GetByIdAsync(postId);
+        var post = await _unitOfWork.PostsRead.GetByIdAsync(postId);
 
         if (post is null || post.IsDeleted)
             return Result.Failure(PostBusinessRuleMessages.PostNotFound(postId));
@@ -38,7 +38,7 @@ public class PostBusinessRules : IPostBusinessRules
 
     public async Task<Result> CheckUserCanDeletePostAsync(Guid postId, Guid userId)
     {
-        var post = await _unitOfWork.Posts.GetByIdAsync(postId);
+        var post = await _unitOfWork.PostsRead.GetByIdAsync(postId);
 
         if (post is null || post.IsDeleted)
             return Result.Failure(PostBusinessRuleMessages.PostNotFound(postId));
@@ -51,7 +51,7 @@ public class PostBusinessRules : IPostBusinessRules
 
     public async Task<Result> CheckPostIsNotPublishedAsync(Guid postId)
     {
-        var post = await _unitOfWork.Posts.GetByIdAsync(postId);
+        var post = await _unitOfWork.PostsRead.GetByIdAsync(postId);
 
         if (post is null || post.IsDeleted)
             return Result.Failure(PostBusinessRuleMessages.PostNotFound(postId));

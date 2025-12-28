@@ -14,7 +14,7 @@ public class GetMyPostsQueryHandler(
 {
     public async Task<GetMyPostsQueryResponse> Handle(GetMyPostsQueryRequest request, CancellationToken cancellationToken)
     {
-        var query = unitOfWork.Posts.Query()
+        var query = unitOfWork.PostsRead.GetAll()
             .AsNoTracking()
             .Include(p => p.Author)
             .Include(p => p.Category)

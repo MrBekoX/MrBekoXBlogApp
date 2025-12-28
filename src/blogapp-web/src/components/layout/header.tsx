@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,6 +19,7 @@ import { SearchCommand } from '@/components/search-command';
 
 export function Header() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isAuthenticated, logout } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -34,6 +35,24 @@ export function Header() {
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const handleHashNavigation = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    // Check if it's a hash link (like /#about)
+    if (href.includes('#')) {
+      const [path, hash] = href.split('#');
+      const targetPath = path || '/';
+
+      // If we're already on the target page, just scroll
+      if (pathname === targetPath) {
+        e.preventDefault();
+        const element = document.getElementById(hash);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+      // Otherwise, let the Link handle navigation normally
+    }
   };
 
   const isAuthorOrAbove = user?.role && ['Author', 'Editor', 'Admin'].includes(user.role);
@@ -72,6 +91,7 @@ export function Header() {
             <Link
               key={link.href}
               href={link.href}
+              onClick={(e) => handleHashNavigation(e, link.href)}
               className="px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary hover:bg-primary/5 rounded-lg"
             >
               {link.label}
@@ -97,9 +117,9 @@ export function Header() {
                   asChild
                   className="h-9 w-9 hover:text-primary"
                 >
-                  <Link href={social.href} target="_blank" rel="noopener noreferrer" aria-label={social.label}>
+                  <a href={social.href} target="_blank" rel="noopener noreferrer" aria-label={social.label}>
                     <Icon className="h-4 w-4" />
-                  </Link>
+                  </a>
                 </Button>
               );
             })}
@@ -180,7 +200,10 @@ export function Header() {
                   <Link
                     key={link.href}
                     href={link.href}
-                    onClick={() => setMobileMenuOpen(false)}
+                    onClick={(e) => {
+                      handleHashNavigation(e, link.href);
+                      setMobileMenuOpen(false);
+                    }}
                     className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-muted-foreground transition-colors hover:text-primary hover:bg-primary/5 rounded-lg"
                   >
                     <Icon className="h-4 w-4" />
@@ -202,9 +225,9 @@ export function Header() {
                     asChild
                     className="h-9 w-9 hover:text-primary"
                   >
-                    <Link href={social.href} target="_blank" rel="noopener noreferrer" aria-label={social.label}>
+                    <a href={social.href} target="_blank" rel="noopener noreferrer" aria-label={social.label}>
                       <Icon className="h-4 w-4" />
-                    </Link>
+                    </a>
                   </Button>
                 );
               })}

@@ -47,7 +47,7 @@ public class RegisterCommandHandler(
             LastLoginAt = DateTime.UtcNow
         };
 
-        await unitOfWork.Users.AddAsync(user, cancellationToken);
+        await unitOfWork.UsersWrite.AddAsync(user, cancellationToken);
 
         // Token oluştur
         var accessToken = jwtTokenService.GenerateAccessToken(user);
@@ -64,7 +64,7 @@ public class RegisterCommandHandler(
             CreatedByIp = dto.IpAddress
         };
 
-        await unitOfWork.RefreshTokens.AddAsync(refreshTokenEntity, cancellationToken);
+        await unitOfWork.RefreshTokensWrite.AddAsync(refreshTokenEntity, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new RegisterCommandResponse

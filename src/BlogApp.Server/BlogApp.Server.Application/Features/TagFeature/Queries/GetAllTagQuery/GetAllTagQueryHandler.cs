@@ -11,7 +11,7 @@ public class GetAllTagQueryHandler(
 {
     public async Task<GetAllTagQueryResponse> Handle(GetAllTagQueryRequest request, CancellationToken cancellationToken)
     {
-        var tags = await unitOfWork.Tags.Query()
+        var tags = await unitOfWork.TagsRead.Query()
             .AsNoTracking()
             .Include(t => t.Posts)
             .Where(t => !t.IsDeleted)

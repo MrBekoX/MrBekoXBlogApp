@@ -33,7 +33,7 @@ public class GetPostBySlugQueryHandler(
             }
         }
 
-        var post = await unitOfWork.Posts.Query()
+        var post = await unitOfWork.PostsRead.Query()
             .Include(p => p.Author)
             .Include(p => p.Category)
             .Include(p => p.Tags)
@@ -53,7 +53,7 @@ public class GetPostBySlugQueryHandler(
         if (request.IncrementViewCount)
         {
             post.ViewCount++;
-            unitOfWork.Posts.Update(post);
+            await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 

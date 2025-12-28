@@ -33,7 +33,7 @@ public class GetPostsListQueryHandler(
             }
         }
 
-        var query = unitOfWork.Posts.Query()
+        var query = unitOfWork.PostsRead.Query()
             .AsNoTracking()
             .Include(p => p.Author)
             .Include(p => p.Category)

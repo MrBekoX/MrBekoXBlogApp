@@ -34,7 +34,7 @@ public class SaveDraftCommandHandler(
         if (dto.Id.HasValue)
         {
             // Mevcut taslağı güncelle
-            post = await unitOfWork.Posts.GetByIdAsync(dto.Id.Value, cancellationToken);
+            post = await unitOfWork.PostsRead.GetSingleAsync(p => p.Id == dto.Id.Value && !p.IsDeleted, cancellationToken);
 
             if (post == null)
             {
@@ -45,7 +45,7 @@ public class SaveDraftCommandHandler(
             }
 
             // Sadece kendi yazısını veya Admin/Editor güncelleyebilir
-            var user = await unitOfWork.Users.GetByIdAsync(userId.Value, cancellationToken);
+            var user = await unitOfWork.UsersRead.GetByIdAsync(userId.Value, cancellationToken);
             if (post.AuthorId != userId && user?.Role != UserRole.Admin && user?.Role != UserRole.Editor)
             {
                 return new SaveDraftCommandResponse
@@ -73,7 +73,7 @@ public class SaveDraftCommandHandler(
             // Okuma süresini hesapla
             post.CalculateReadingTime();
 
-            unitOfWork.Posts.Update(post);
+            await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         }
         else
         {
@@ -98,7 +98,7 @@ public class SaveDraftCommandHandler(
 
             post.CalculateReadingTime();
 
-            await unitOfWork.Posts.AddAsync(post, cancellationToken);
+            await unitOfWork.PostsWrite.AddAsync(post, cancellationToken);
         }
 
         // Tag'leri al veya oluştur
@@ -107,7 +107,7 @@ public class SaveDraftCommandHandler(
             post.Tags.Clear();
             foreach (var tagName in dto.TagNames)
             {
-                var existingTag = await unitOfWork.Tags.GetAsync(t => t.Name == tagName, cancellationToken);
+                var existingTag = await unitOfWork.TagsRead.GetSingleAsync(t => t.Name == tagName, cancellationToken);
                 if (existingTag is not null)
                 {
                     post.Tags.Add(existingTag);
@@ -121,7 +121,7 @@ public class SaveDraftCommandHandler(
                         Slug = Slug.CreateFromTitle(tagName).Value,
                         CreatedAt = DateTime.UtcNow
                     };
-                    await unitOfWork.Tags.AddAsync(newTag, cancellationToken);
+                    await unitOfWork.TagsWrite.AddAsync(newTag, cancellationToken);
                     post.Tags.Add(newTag);
                 }
             }

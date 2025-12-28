@@ -35,7 +35,7 @@ public class CreatePostCommandHandler(
         {
             foreach (var tagName in dto.TagNames)
             {
-                var existingTag = await unitOfWork.Tags.GetAsync(t => t.Name == tagName, cancellationToken);
+                var existingTag = await unitOfWork.TagsRead.GetSingleAsync(t => t.Name == tagName, cancellationToken);
                 if (existingTag is not null)
                 {
                     tags.Add(existingTag);
@@ -49,7 +49,7 @@ public class CreatePostCommandHandler(
                         Slug = Slug.CreateFromTitle(tagName).Value,
                         CreatedAt = DateTime.UtcNow
                     };
-                    await unitOfWork.Tags.AddAsync(newTag, cancellationToken);
+                    await unitOfWork.TagsWrite.AddAsync(newTag, cancellationToken);
                     tags.Add(newTag);
                 }
             }
@@ -90,7 +90,7 @@ public class CreatePostCommandHandler(
 
         post.CalculateReadingTime();
 
-        await unitOfWork.Posts.AddAsync(post, cancellationToken);
+        await unitOfWork.PostsWrite.AddAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new CreatePostCommandResponse

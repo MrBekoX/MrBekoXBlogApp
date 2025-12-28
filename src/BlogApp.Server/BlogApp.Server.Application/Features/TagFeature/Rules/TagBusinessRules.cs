@@ -18,7 +18,7 @@ public class TagBusinessRules : ITagBusinessRules
 
     public async Task<Result> CheckTagExistsAsync(Guid tagId)
     {
-        var tag = await _unitOfWork.Tags.GetByIdAsync(tagId);
+        var tag = await _unitOfWork.TagsRead.GetByIdAsync(tagId);
 
         return tag is not null && !tag.IsDeleted
             ? Result.Success()
@@ -28,7 +28,7 @@ public class TagBusinessRules : ITagBusinessRules
     public async Task<Result> CheckTagNameIsUniqueAsync(string name)
     {
         var slug = Slug.CreateFromTitle(name);
-        var existingTag = await _unitOfWork.Tags.GetAsync(
+        var existingTag = await _unitOfWork.TagsRead.GetSingleAsync(
             t => t.Slug == slug.Value && !t.IsDeleted);
 
         return existingTag is null

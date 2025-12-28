@@ -18,7 +18,7 @@ public class LoginCommandHandler(
         var dto = request.LoginCommandRequestDto!;
 
         // Kullanıcıyı bul
-        var user = await unitOfWork.Users.GetAsync(
+        var user = await unitOfWork.UsersRead.GetSingleAsync(
             u => u.Email.ToLower() == dto.Email.ToLower() && !u.IsDeleted,
             cancellationToken);
 
@@ -51,7 +51,7 @@ public class LoginCommandHandler(
                 // Hesabı kilitle
                 user.LockoutEndTime = DateTime.UtcNow.Add(LockoutDuration);
                 user.FailedLoginAttempts = 0;
-                unitOfWork.Users.Update(user);
+                await unitOfWork.UsersWrite.UpdateAsync(user, cancellationToken);
                 await unitOfWork.SaveChangesAsync(cancellationToken);
                 return new LoginCommandResponse
                 {
@@ -59,7 +59,7 @@ public class LoginCommandHandler(
                 };
             }
 
-            unitOfWork.Users.Update(user);
+            await unitOfWork.UsersWrite.UpdateAsync(user, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
 
             var remainingAttempts = MaxFailedAttempts - user.FailedLoginAttempts;
@@ -97,11 +97,11 @@ public class LoginCommandHandler(
             CreatedByIp = dto.IpAddress
         };
 
-        await unitOfWork.RefreshTokens.AddAsync(refreshTokenEntity, cancellationToken);
+        await unitOfWork.RefreshTokensWrite.AddAsync(refreshTokenEntity, cancellationToken);
 
         // Son giriş zamanını güncelle
         user.LastLoginAt = DateTime.UtcNow;
-        unitOfWork.Users.Update(user);
+        await unitOfWork.UsersWrite.UpdateAsync(user, cancellationToken);
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 

@@ -4,12 +4,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
 
-/// <summary>
-/// Generic EF Core Repository implementasyonu
-/// Read ve Write işlemlerini ayrı repository'ler üzerinden yapar
-/// </summary>
-public class EfCoreRepository<T>(AppDbContext context) 
-    where T : BaseEntity
+public class EfCoreRepository<T> : IRepository<T> where T : BaseEntity
 {
-    protected readonly DbSet<T> _dbSet = context.Set<T>();
+    protected readonly AppDbContext _context;
+    protected DbSet<T> _dbSet => _context.Set<T>();
+
+    public EfCoreRepository(AppDbContext context)
+    {
+        _context = context;
+    }
 }

@@ -26,7 +26,7 @@ public class DeleteCategoryCommandHandler(
             };
         }
 
-        var category = await unitOfWork.Categories.GetByIdAsync(request.Id, cancellationToken);
+        var category = await unitOfWork.CategoriesRead.GetByIdAsync(request.Id, cancellationToken);
         if (category is null)
         {
             return new DeleteCategoryCommandResponse
@@ -39,7 +39,7 @@ public class DeleteCategoryCommandHandler(
         category.IsDeleted = true;
         category.UpdatedAt = DateTime.UtcNow;
 
-        unitOfWork.Categories.Update(category);
+        await unitOfWork.CategoriesWrite.UpdateAsync(category, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new DeleteCategoryCommandResponse

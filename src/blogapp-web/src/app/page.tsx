@@ -32,9 +32,38 @@ export default function HomePage() {
       {/* Hero Section */}
       <section className="relative min-h-[85vh] flex items-center">
         <div className="container py-16 md:py-24">
-          <div className="grid gap-12 lg:grid-cols-2 lg:gap-16 items-center">
-            {/* Left - Text Content */}
-            <div className="space-y-8 animate-fade-in-up">
+          <div className="flex flex-col items-center text-center">
+            {/* Avatar/Visual */}
+            <div className="relative mb-8 animate-fade-in">
+              <div className="relative">
+                {/* Decorative rings */}
+                <div className="absolute inset-0 rounded-full border-2 border-dashed border-primary/20 animate-[spin_20s_linear_infinite]" style={{ width: '120%', height: '120%', left: '-10%', top: '-10%' }} />
+                <div className="absolute inset-0 rounded-full border-2 border-dashed border-accent/20 animate-[spin_30s_linear_infinite_reverse]" style={{ width: '140%', height: '140%', left: '-20%', top: '-20%' }} />
+
+                {/* Main avatar container */}
+                <div className="relative w-48 h-48 md:w-56 md:h-56 rounded-full overflow-hidden border-2 border-primary/20 shadow-2xl shadow-primary/10">
+                  <img
+                    src="/images/avatar.jpg"
+                    alt="MrBekoX"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                {/* Floating badges */}
+                <div className="absolute -top-2 -right-2 px-3 py-1.5 rounded-xl bg-card border border-border shadow-lg animate-float">
+                  <Code2 className="w-5 h-5 text-primary" />
+                </div>
+                <div className="absolute -bottom-2 -left-2 px-3 py-1.5 rounded-xl bg-card border border-border shadow-lg animate-float" style={{ animationDelay: '1s' }}>
+                  <Terminal className="w-5 h-5 text-primary" />
+                </div>
+                <div className="absolute top-1/2 -right-6 px-3 py-1.5 rounded-xl bg-card border border-border shadow-lg animate-float" style={{ animationDelay: '2s' }}>
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+              </div>
+            </div>
+
+            {/* Text Content */}
+            <div className="space-y-8 animate-fade-in-up max-w-3xl">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm text-primary">
                 <Coffee className="w-4 h-4" />
                 <span>Kod & Kahve & Yaratıcılık</span>
@@ -50,13 +79,13 @@ export default function HomePage() {
                     <span className="absolute -bottom-2 left-0 w-full h-1 bg-gradient-to-r from-primary to-accent rounded-full" />
                   </span>
                 </h1>
-                <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed max-w-xl">
-                  Yazılım geliştirici, teknoloji meraklısı ve sürekli öğrenen biri. 
+                <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed mx-auto max-w-2xl">
+                  Yazılım geliştirici, teknoloji meraklısı ve sürekli öğrenen biri.
                   Bu blogda kod yazarken öğrendiklerimi, projelerimi ve düşüncelerimi paylaşıyorum.
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-wrap gap-4 justify-center">
                 <Button asChild size="lg" className="group">
                   <Link href="/posts">
                     <BookOpen className="mr-2 h-5 w-5" />
@@ -65,63 +94,36 @@ export default function HomePage() {
                   </Link>
                 </Button>
                 <Button asChild variant="outline" size="lg">
-                  <Link href="#about">
+                  <a href="#about">
                     Hakkımda
-                  </Link>
+                  </a>
                 </Button>
               </div>
 
               {/* Social Links */}
-              <div className="flex items-center gap-4 pt-4">
+              <div className="flex items-center justify-center gap-4 pt-4">
                 <span className="text-sm text-muted-foreground">Beni takip edin:</span>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="icon" asChild className="hover:text-primary hover:bg-primary/10">
-                    <Link href="https://github.com/MrBekoX" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+                    <a href="https://github.com/MrBekoX" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
                       <Github className="h-5 w-5" />
-                    </Link>
+                    </a>
                   </Button>
                   <Button variant="ghost" size="icon" asChild className="hover:text-primary hover:bg-primary/10">
-                    <Link href="https://x.com/mrbeko_" target="_blank" rel="noopener noreferrer" aria-label="X">
+                    <a href="https://x.com/mrbeko_" target="_blank" rel="noopener noreferrer" aria-label="X">
                       <X className="h-5 w-5" />
-                    </Link>
+                    </a>
                   </Button>
                   <Button variant="ghost" size="icon" asChild className="hover:text-primary hover:bg-primary/10">
-                    <Link href="https://www.linkedin.com/in/berkay-kaplan-133b35245/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+                    <a href="https://www.linkedin.com/in/berkay-kaplan-133b35245/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
                       <Linkedin className="h-5 w-5" />
-                    </Link>
+                    </a>
                   </Button>
                   <Button variant="ghost" size="icon" asChild className="hover:text-primary hover:bg-primary/10">
-                    <Link href="mailto:hello@mrbekox.com" aria-label="Email">
+                    <a href="mailto:hello@mrbekox.com" aria-label="Email">
                       <Mail className="h-5 w-5" />
-                    </Link>
+                    </a>
                   </Button>
-                </div>
-              </div>
-            </div>
-
-            {/* Right - Avatar/Visual */}
-            <div className="relative hidden lg:flex justify-center items-center animate-fade-in stagger-2">
-              <div className="relative">
-                {/* Decorative rings */}
-                <div className="absolute inset-0 rounded-full border-2 border-dashed border-primary/20 animate-[spin_20s_linear_infinite]" style={{ width: '120%', height: '120%', left: '-10%', top: '-10%' }} />
-                <div className="absolute inset-0 rounded-full border-2 border-dashed border-accent/20 animate-[spin_30s_linear_infinite_reverse]" style={{ width: '140%', height: '140%', left: '-20%', top: '-20%' }} />
-                
-                {/* Main avatar container */}
-                <div className="relative w-72 h-72 md:w-80 md:h-80 rounded-full bg-gradient-to-br from-primary/20 via-accent/10 to-primary/5 flex items-center justify-center border border-primary/20 shadow-2xl shadow-primary/10">
-                  <div className="w-64 h-64 md:w-72 md:h-72 rounded-full bg-gradient-to-br from-muted to-background flex items-center justify-center text-8xl font-serif font-bold text-primary/80">
-                    B
-                  </div>
-                </div>
-
-                {/* Floating badges */}
-                <div className="absolute -top-4 -right-4 px-4 py-2 rounded-xl bg-card border border-border shadow-lg animate-float">
-                  <Code2 className="w-6 h-6 text-primary" />
-                </div>
-                <div className="absolute -bottom-4 -left-4 px-4 py-2 rounded-xl bg-card border border-border shadow-lg animate-float" style={{ animationDelay: '1s' }}>
-                  <Terminal className="w-6 h-6 text-primary" />
-                </div>
-                <div className="absolute top-1/2 -right-8 px-4 py-2 rounded-xl bg-card border border-border shadow-lg animate-float" style={{ animationDelay: '2s' }}>
-                  <Sparkles className="w-6 h-6 text-primary" />
                 </div>
               </div>
             </div>
@@ -133,11 +135,11 @@ export default function HomePage() {
       <section id="about" className="border-t bg-muted/30">
         <div className="container py-20 md:py-28">
           <div className="mx-auto max-w-4xl">
-            <div className="text-center space-y-4 mb-16 animate-fade-in-up">
+            <div className="text-left space-y-4 mb-16 animate-fade-in-up">
               <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
                 Hakkımda
               </h2>
-              <div className="w-20 h-1 bg-gradient-to-r from-primary to-accent mx-auto rounded-full" />
+              <div className="w-20 h-1 bg-gradient-to-r from-primary to-accent rounded-full" />
             </div>
 
             <div className="grid md:grid-cols-3 gap-8">
@@ -178,22 +180,16 @@ export default function HomePage() {
       {/* Latest Posts Section */}
       <section className="border-t">
         <div className="container py-20 md:py-28">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-12">
-            <div className="space-y-2">
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Son Yazılar</h2>
-              <p className="text-muted-foreground text-lg">
-                En son paylaştığım yazılar ve düşünceler
-              </p>
-            </div>
-            <Button asChild variant="outline" className="group">
-              <Link href="/posts">
-                Tüm Yazılar
-                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </Link>
-            </Button>
+          {/* Section Header - Centered */}
+          <div className="text-center space-y-4 mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Son Yazılar</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              En son paylaştığım yazılar ve düşünceler
+            </p>
           </div>
 
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+          {/* Posts Grid */}
+          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
             {isLoading ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="space-y-4 animate-fade-in" style={{ animationDelay: `${i * 0.1}s` }}>
@@ -219,38 +215,21 @@ export default function HomePage() {
               </div>
             )}
           </div>
-        </div>
-      </section>
 
-      {/* Newsletter/CTA Section */}
-      <section className="border-t bg-gradient-to-br from-primary/5 via-background to-accent/5">
-        <div className="container py-20 md:py-28">
-          <div className="mx-auto max-w-2xl text-center space-y-8">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm text-primary">
-              <Mail className="w-4 h-4" />
-              <span>Bülten</span>
-            </div>
-
-            <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
-              Yeni yazılardan haberdar olun
-            </h2>
-            <p className="text-lg text-muted-foreground">
-              Yeni yazılar, projeler ve güncellemeler için bültene abone olun. Spam yok, sadece değerli içerikler.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
-              <input
-                type="email"
-                placeholder="E-posta adresiniz"
-                className="flex-1 px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-              <Button size="lg" className="px-8">
-                Abone Ol
+          {/* View All Button - Centered */}
+          {posts?.items?.length ? (
+            <div className="text-center mt-12">
+              <Button asChild variant="outline" size="lg" className="group">
+                <Link href="/posts">
+                  Tüm Yazılar
+                  <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </Link>
               </Button>
             </div>
-          </div>
+          ) : null}
         </div>
       </section>
+
     </div>
   );
 }

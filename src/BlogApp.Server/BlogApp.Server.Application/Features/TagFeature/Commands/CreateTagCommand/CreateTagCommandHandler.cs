@@ -37,7 +37,7 @@ public class CreateTagCommandHandler(
             CreatedAt = DateTime.UtcNow
         };
 
-        await unitOfWork.Tags.AddAsync(tag, cancellationToken);
+        await unitOfWork.TagsWrite.AddAsync(tag, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new CreateTagCommandResponse

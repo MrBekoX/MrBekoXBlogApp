@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod/v4';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,13 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Loader2, Eye, EyeOff, Shield } from 'lucide-react';
-
-const loginSchema = z.object({
-  email: z.email('Geçerli bir e-posta adresi girin'),
-  password: z.string().min(6, 'Şifre en az 6 karakter olmalı'),
-});
-
-type LoginFormData = z.infer<typeof loginSchema>;
+import { loginSchema, type LoginFormData } from '@/lib/validations';
 
 export default function AdminLoginPage() {
   const router = useRouter();

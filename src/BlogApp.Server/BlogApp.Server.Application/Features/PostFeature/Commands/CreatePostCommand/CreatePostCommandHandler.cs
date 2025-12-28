@@ -10,7 +10,9 @@ namespace BlogApp.Server.Application.Features.PostFeature.Commands.CreatePostCom
 
 public class CreatePostCommandHandler(
     IUnitOfWork unitOfWork,
-    ICurrentUserService currentUserService) : IRequestHandler<CreatePostCommandRequest, CreatePostCommandResponse>
+    ICurrentUserService currentUserService,
+    ITagService tagService,
+    ICacheService cacheService) : IRequestHandler<CreatePostCommandRequest, CreatePostCommandResponse>
 {
     public async Task<CreatePostCommandResponse> Handle(CreatePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -29,31 +31,8 @@ public class CreatePostCommandHandler(
         var timestamp = DateTime.UtcNow.Ticks.ToString()[^8..];
         var slug = Slug.Create($"{baseSlug.Value}-{timestamp}");
 
-        // Tag'leri al veya oluştur
-        var tags = new List<Tag>();
-        if (dto.TagNames.Any())
-        {
-            foreach (var tagName in dto.TagNames)
-            {
-                var existingTag = await unitOfWork.TagsRead.GetSingleAsync(t => t.Name == tagName, cancellationToken);
-                if (existingTag is not null)
-                {
-                    tags.Add(existingTag);
-                }
-                else
-                {
-                    var newTag = new Tag
-                    {
-                        Id = Guid.NewGuid(),
-                        Name = tagName,
-                        Slug = Slug.CreateFromTitle(tagName).Value,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    await unitOfWork.TagsWrite.AddAsync(newTag, cancellationToken);
-                    tags.Add(newTag);
-                }
-            }
-        }
+        // Tag'leri al veya oluştur (batch query ile N+1 önleme)
+        var tags = await tagService.GetOrCreateTagsAsync(dto.TagNames, cancellationToken);
 
         // İlk kategoriyi al
         Guid? categoryId = dto.CategoryIds.FirstOrDefault();
@@ -92,6 +71,12 @@ public class CreatePostCommandHandler(
 
         await unitOfWork.PostsWrite.AddAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Published post eklendiyse liste cache'ini temizle
+        if (status == PostStatus.Published)
+        {
+            await cacheService.RemoveByPrefixAsync(PostCacheKeys.ListPrefix, cancellationToken);
+        }
 
         return new CreatePostCommandResponse
         {

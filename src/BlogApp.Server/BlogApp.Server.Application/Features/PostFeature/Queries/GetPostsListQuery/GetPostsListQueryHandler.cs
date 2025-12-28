@@ -2,6 +2,7 @@ using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using BlogApp.Server.Application.Common.Interfaces;
 using BlogApp.Server.Application.Common.Models;
+using BlogApp.Server.Application.Features.PostFeature.Constants;
 using BlogApp.Server.Application.Features.PostFeature.DTOs;
 using BlogApp.Server.Domain.Enums;
 using MediatR;
@@ -120,7 +121,7 @@ public class GetPostsListQueryHandler(
 
     private static string GenerateCacheKey(GetPostsListQueryRequest request)
     {
-        return $"posts:list:{request.PageNumber}:{request.PageSize}:{request.Status}:" +
+        return $"{PostCacheKeys.ListPrefix}:{request.PageNumber}:{request.PageSize}:{request.Status}:" +
                $"{request.CategoryId}:{request.TagId}:{request.IsFeatured}:" +
                $"{request.SortBy}:{request.SortDescending}:{request.SearchTerm ?? ""}";
     }

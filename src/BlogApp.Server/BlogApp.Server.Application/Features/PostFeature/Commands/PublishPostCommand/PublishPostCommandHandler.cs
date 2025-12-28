@@ -41,9 +41,9 @@ public class PublishPostCommandHandler(
         await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // Cache'i temizle
-        await cacheService.RemoveByPrefixAsync("posts:list", cancellationToken);
-        await cacheService.RemoveByPrefixAsync("posts-list", cancellationToken);
+        // Cache invalidation
+        await cacheService.RemoveAsync(PostCacheKeys.BySlug(post.Slug), cancellationToken);
+        await cacheService.RemoveByPrefixAsync(PostCacheKeys.ListPrefix, cancellationToken);
 
         return new PublishPostCommandResponse
         {
@@ -86,9 +86,9 @@ public class UnpublishPostCommandHandler(
         await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // Cache'i temizle
-        await cacheService.RemoveByPrefixAsync("posts:list", cancellationToken);
-        await cacheService.RemoveByPrefixAsync("posts-list", cancellationToken);
+        // Cache invalidation
+        await cacheService.RemoveAsync(PostCacheKeys.BySlug(post.Slug), cancellationToken);
+        await cacheService.RemoveByPrefixAsync(PostCacheKeys.ListPrefix, cancellationToken);
 
         return new UnpublishPostCommandResponse
         {

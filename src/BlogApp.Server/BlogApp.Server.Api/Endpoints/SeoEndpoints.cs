@@ -3,8 +3,10 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BlogApp.Server.Api.Endpoints;
 
@@ -15,10 +17,10 @@ public static class SeoEndpoints
         // GET /sitemap.xml
         app.MapGet("/sitemap.xml", async (
             IApplicationDbContext context,
-            IConfiguration configuration,
+            IOptions<SiteSettings> siteSettings,
             CancellationToken cancellationToken) =>
         {
-            var baseUrl = GetBaseUrl(configuration);
+            var baseUrl = siteSettings.Value.BaseUrl;
 
             var posts = await context.Posts
                 .Where(p => p.Status == PostStatus.Published && !p.IsDeleted)
@@ -70,9 +72,9 @@ public static class SeoEndpoints
         .Produces<string>(200, "application/xml");
 
         // GET /robots.txt
-        app.MapGet("/robots.txt", (IConfiguration configuration) =>
+        app.MapGet("/robots.txt", (IOptions<SiteSettings> siteSettings) =>
         {
-            var baseUrl = GetBaseUrl(configuration);
+            var baseUrl = siteSettings.Value.BaseUrl;
 
             var robotsTxt = $@"User-agent: *
 Allow: /
@@ -126,10 +128,10 @@ Allow: /tag/
 
     private static async Task<IResult> RssHandler(
         IApplicationDbContext context,
-        IConfiguration configuration,
+        IOptions<SiteSettings> siteSettings,
         CancellationToken cancellationToken)
     {
-        var baseUrl = GetBaseUrl(configuration);
+        var baseUrl = siteSettings.Value.BaseUrl;
 
         var posts = await context.Posts
             .Where(p => p.Status == PostStatus.Published && !p.IsDeleted)
@@ -201,11 +203,5 @@ Allow: /tag/
         }
 
         return Results.File(stream.ToArray(), "application/rss+xml; charset=utf-8");
-    }
-
-    private static string GetBaseUrl(IConfiguration configuration)
-    {
-        var corsOrigins = configuration.GetSection("CorsOrigins").Get<string[]>();
-        return corsOrigins?.FirstOrDefault() ?? "http://localhost:3000";
     }
 }

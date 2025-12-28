@@ -13,7 +13,9 @@ namespace BlogApp.Server.Application.Features.PostFeature.Commands.UpdatePostCom
 public class UpdatePostCommandHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
-    IPostBusinessRules postBusinessRules) : IRequestHandler<UpdatePostCommandRequest, UpdatePostCommandResponse>
+    IPostBusinessRules postBusinessRules,
+    ITagService tagService,
+    ICacheService cacheService) : IRequestHandler<UpdatePostCommandRequest, UpdatePostCommandResponse>
 {
     public async Task<UpdatePostCommandResponse> Handle(UpdatePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -41,6 +43,9 @@ public class UpdatePostCommandHandler(
             };
         }
 
+        // Cache invalidation için orijinal slug'ı sakla
+        var originalSlug = post.Slug;
+
         // Başlık değiştiyse slug güncelle
         if (post.Title != dto.Title)
         {
@@ -53,30 +58,12 @@ public class UpdatePostCommandHandler(
                 : newSlug.Value;
         }
 
-        // Tag'leri al veya oluştur
+        // Tag'leri al veya oluştur (batch query ile N+1 önleme)
         post.Tags.Clear();
-        if (dto.TagNames.Any())
+        var tags = await tagService.GetOrCreateTagsAsync(dto.TagNames, cancellationToken);
+        foreach (var tag in tags)
         {
-            foreach (var tagName in dto.TagNames)
-            {
-                var existingTag = await unitOfWork.TagsRead.GetSingleAsync(t => t.Name == tagName, cancellationToken);
-                if (existingTag is not null)
-                {
-                    post.Tags.Add(existingTag);
-                }
-                else
-                {
-                    var newTag = new Tag
-                    {
-                        Id = Guid.NewGuid(),
-                        Name = tagName,
-                        Slug = Slug.CreateFromTitle(tagName).Value,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    await unitOfWork.TagsWrite.AddAsync(newTag, cancellationToken);
-                    post.Tags.Add(newTag);
-                }
-            }
+            post.Tags.Add(tag);
         }
 
         // İlk kategoriyi al
@@ -116,6 +103,19 @@ public class UpdatePostCommandHandler(
 
         await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Cache invalidation
+        // Orijinal slug cache'ini temizle
+        await cacheService.RemoveAsync(PostCacheKeys.BySlug(originalSlug), cancellationToken);
+
+        // Slug değiştiyse yeni slug cache'ini de temizle
+        if (originalSlug != post.Slug)
+        {
+            await cacheService.RemoveAsync(PostCacheKeys.BySlug(post.Slug), cancellationToken);
+        }
+
+        // Liste cache'ini temizle (içerik değişikliği listeleri etkiler)
+        await cacheService.RemoveByPrefixAsync(PostCacheKeys.ListPrefix, cancellationToken);
 
         return new UpdatePostCommandResponse
         {

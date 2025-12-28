@@ -26,10 +26,12 @@ public class RegisterCommandRequestValidator : AbstractValidator<RegisterCommand
 
             RuleFor(x => x.RegisterCommandRequestDto!.Password)
                 .NotEmpty().WithMessage(AuthValidationMessages.PasswordRequired)
-                .MinimumLength(8).WithMessage("Password must be at least 8 characters")
-                .Matches(@"[A-Z]").WithMessage("Password must contain at least one uppercase letter")
-                .Matches(@"[a-z]").WithMessage("Password must contain at least one lowercase letter")
-                .Matches(@"[0-9]").WithMessage("Password must contain at least one number");
+                .MinimumLength(8).WithMessage(AuthValidationMessages.PasswordMinLength)
+                .MaximumLength(100).WithMessage(AuthValidationMessages.PasswordMaxLength)
+                .Matches(@"[A-Z]").WithMessage(AuthValidationMessages.PasswordRequiresUppercase)
+                .Matches(@"[a-z]").WithMessage(AuthValidationMessages.PasswordRequiresLowercase)
+                .Matches(@"[0-9]").WithMessage(AuthValidationMessages.PasswordRequiresDigit)
+                .Matches(@"[!@#$%^&*(),.?""':{}|<>_\-\[\]\\\/`~+=;]").WithMessage(AuthValidationMessages.PasswordRequiresSpecialChar);
 
             RuleFor(x => x.RegisterCommandRequestDto!.ConfirmPassword)
                 .NotEmpty().WithMessage(AuthValidationMessages.ConfirmPasswordRequired)

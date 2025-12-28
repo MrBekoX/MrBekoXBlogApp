@@ -18,7 +18,7 @@ public class GetPostBySlugQueryHandler(
 
     public async Task<GetPostBySlugQueryResponse> Handle(GetPostBySlugQueryRequest request, CancellationToken cancellationToken)
     {
-        var cacheKey = $"post:slug:{request.Slug}";
+        var cacheKey = PostCacheKeys.BySlug(request.Slug);
 
         // View count artırılmayacaksa cache'den al
         if (!request.IncrementViewCount)

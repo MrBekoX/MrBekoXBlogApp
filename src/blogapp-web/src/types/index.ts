@@ -24,8 +24,9 @@ export interface RegisterRequest {
   userName: string;
   email: string;
   password: string;
-  firstName: string;
-  lastName: string;
+  confirmPassword: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 // Post types
@@ -154,4 +155,14 @@ export interface AISuggestion {
 export interface AIGenerateRequest {
   content: string;
   type: 'title' | 'excerpt' | 'tags' | 'seo';
+}
+
+// Media types
+export interface ImageUploadResult {
+  url: string;
+  thumbnailUrl?: string;
+  width: number;
+  height: number;
+  fileSize: number;
+  contentType: string;
 }

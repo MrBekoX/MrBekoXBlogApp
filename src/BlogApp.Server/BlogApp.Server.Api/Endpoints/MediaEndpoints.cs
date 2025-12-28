@@ -17,7 +17,7 @@ public static class MediaEndpoints
         // POST /api/media/upload/image
         group.MapPost("/upload/image", async (
             IFormFile file,
-            bool generateThumbnail,
+            bool? generateThumbnail,
             IFileStorageService fileStorageService,
             ILogger<Program> logger,
             CancellationToken cancellationToken) =>
@@ -37,7 +37,7 @@ public static class MediaEndpoints
 
                 var options = new ImageUploadOptions
                 {
-                    GenerateThumbnail = generateThumbnail,
+                    GenerateThumbnail = generateThumbnail ?? true,
                     ConvertToWebP = true,
                     Quality = 85
                 };

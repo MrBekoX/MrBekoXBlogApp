@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Loader2, Sparkles, X, Save, Send } from 'lucide-react';
 import { MarkdownEditor } from '@/components/markdown-editor';
+import { ImageUpload } from '@/components/image-upload';
 import type { Category, Tag, PostStatus } from '@/types';
 
 const postSchema = z.object({
@@ -323,16 +324,27 @@ export default function NewPostPage() {
               <CardHeader>
                 <CardTitle>Öne Çıkan Görsel</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <Input
-                    placeholder="Görsel URL'si"
-                    {...register('featuredImageUrl')}
-                  />
-                  {errors.featuredImageUrl && (
-                    <p className="text-sm text-destructive">{errors.featuredImageUrl.message}</p>
-                  )}
+              <CardContent className="space-y-4">
+                <ImageUpload
+                  value={watch('featuredImageUrl') || undefined}
+                  onChange={(url) => setValue('featuredImageUrl', url || '')}
+                  disabled={isLoading}
+                />
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">veya URL girin</span>
+                  </div>
                 </div>
+                <Input
+                  placeholder="Görsel URL'si"
+                  {...register('featuredImageUrl')}
+                />
+                {errors.featuredImageUrl && (
+                  <p className="text-sm text-destructive">{errors.featuredImageUrl.message}</p>
+                )}
               </CardContent>
             </Card>
 

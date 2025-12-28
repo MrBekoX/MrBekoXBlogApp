@@ -55,6 +55,13 @@ public class CategoryBusinessRules : ICategoryBusinessRules
         if (!existsResult.IsSuccess)
             return existsResult;
 
+        // Check if category has any posts
+        var postCount = await _unitOfWork.PostsRead.CountWhereAsync(
+            p => p.CategoryId == categoryId && !p.IsDeleted);
+
+        if (postCount > 0)
+            return Result.Failure(CategoryBusinessRuleMessages.CannotDeleteCategoryWithPosts(postCount));
+
         return Result.Success();
     }
 }

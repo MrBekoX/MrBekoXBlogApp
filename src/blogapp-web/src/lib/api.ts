@@ -9,6 +9,7 @@ import type {
   CreateCommentRequest,
   CreatePostRequest,
   CreateTagRequest,
+  ImageUploadResult,
   LoginRequest,
   PaginatedResult,
   PaginationParams,
@@ -259,5 +260,49 @@ export const aiApi = {
   improveContent: async (content: string): Promise<{ content: string }> => {
     const response = await axios.post<{ content: string }>(`${AI_API_URL}/ai/improve-content`, { content });
     return response.data;
+  },
+};
+
+// Media API
+export const mediaApi = {
+  uploadImage: async (
+    file: File,
+    generateThumbnail = true
+  ): Promise<ApiResponse<ImageUploadResult>> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await apiClient.post<ApiResponse<ImageUploadResult>>(
+      `/media/upload/image?generateThumbnail=${generateThumbnail}`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  },
+
+  uploadImages: async (files: File[]): Promise<ApiResponse<ImageUploadResult[]>> => {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+
+    const response = await apiClient.post<ApiResponse<ImageUploadResult[]>>(
+      '/media/upload/images',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
+  },
+
+  deleteImage: async (url: string): Promise<void> => {
+    await apiClient.delete('/media', { params: { url } });
   },
 };

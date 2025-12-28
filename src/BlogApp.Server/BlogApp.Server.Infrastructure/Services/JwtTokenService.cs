@@ -3,8 +3,9 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Domain.Entities;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace BlogApp.Server.Infrastructure.Services;
@@ -12,26 +13,13 @@ namespace BlogApp.Server.Infrastructure.Services;
 /// <summary>
 /// JWT Token servisi implementasyonu
 /// </summary>
-public class JwtTokenService : IJwtTokenService
+public class JwtTokenService(IOptions<JwtSettings> jwtSettings) : IJwtTokenService
 {
-    private readonly IConfiguration _configuration;
-    private readonly string _secret;
-    private readonly int _expirationMinutes;
-    private readonly string _issuer;
-    private readonly string _audience;
-
-    public JwtTokenService(IConfiguration configuration)
-    {
-        _configuration = configuration;
-        _secret = _configuration["JwtSettings:Secret"] ?? throw new ArgumentNullException("JwtSettings:Secret");
-        _expirationMinutes = int.Parse(_configuration["JwtSettings:ExpirationMinutes"] ?? "60");
-        _issuer = _configuration["JwtSettings:Issuer"] ?? "BlogApp";
-        _audience = _configuration["JwtSettings:Audience"] ?? "BlogApp";
-    }
+    private readonly JwtSettings _settings = jwtSettings.Value;
 
     public string GenerateAccessToken(User user)
     {
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secret));
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.Secret));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
         var claims = new List<Claim>
@@ -50,10 +38,10 @@ public class JwtTokenService : IJwtTokenService
         }
 
         var token = new JwtSecurityToken(
-            issuer: _issuer,
-            audience: _audience,
+            issuer: _settings.Issuer,
+            audience: _settings.Audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_expirationMinutes),
+            expires: DateTime.UtcNow.AddMinutes(_settings.ExpirationMinutes),
             signingCredentials: credentials
         );
 
@@ -73,16 +61,16 @@ public class JwtTokenService : IJwtTokenService
         try
         {
             var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.UTF8.GetBytes(_secret);
+            var key = Encoding.UTF8.GetBytes(_settings.Secret);
 
             tokenHandler.ValidateToken(token, new TokenValidationParameters
             {
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(key),
                 ValidateIssuer = true,
-                ValidIssuer = _issuer,
+                ValidIssuer = _settings.Issuer,
                 ValidateAudience = true,
-                ValidAudience = _audience,
+                ValidAudience = _settings.Audience,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
             }, out _);

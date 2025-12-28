@@ -10,7 +10,8 @@ namespace BlogApp.Server.Application.Features.PostFeature.Commands.DeletePostCom
 public class DeletePostCommandHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
-    IPostBusinessRules postBusinessRules) : IRequestHandler<DeletePostCommandRequest, DeletePostCommandResponse>
+    IPostBusinessRules postBusinessRules,
+    ICacheService cacheService) : IRequestHandler<DeletePostCommandRequest, DeletePostCommandResponse>
 {
     public async Task<DeletePostCommandResponse> Handle(DeletePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -43,6 +44,10 @@ public class DeletePostCommandHandler(
 
         await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Cache invalidation
+        await cacheService.RemoveAsync(PostCacheKeys.BySlug(post.Slug), cancellationToken);
+        await cacheService.RemoveByPrefixAsync(PostCacheKeys.ListPrefix, cancellationToken);
 
         return new DeletePostCommandResponse
         {

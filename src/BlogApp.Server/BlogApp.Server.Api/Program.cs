@@ -1,10 +1,13 @@
+using System.IO.Compression;
 using System.Text;
 using AspNetCoreRateLimit;
 using BlogApp.Server.Api.Extensions;
 using BlogApp.Server.Api.Middlewares;
 using BlogApp.Server.Application;
+using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Microsoft.EntityFrameworkCore;
@@ -35,12 +38,36 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddOutputCache();
+builder.Services.AddOutputCache(options =>
+{
+    // Default policy: 60 seconds
+    options.AddBasePolicy(policy => policy.Expire(TimeSpan.FromSeconds(60)));
+
+    // Short cache for lists (affected by new posts)
+    options.AddPolicy("PostsList", policy =>
+        policy.Expire(TimeSpan.FromMinutes(1))
+              .Tag("posts"));
+
+    // Medium cache for individual posts
+    options.AddPolicy("PostDetail", policy =>
+        policy.Expire(TimeSpan.FromMinutes(5))
+              .SetVaryByRouteValue("slug", "id")
+              .Tag("posts"));
+
+    // Longer cache for static-ish content
+    options.AddPolicy("Categories", policy =>
+        policy.Expire(TimeSpan.FromMinutes(10))
+              .Tag("categories"));
+
+    options.AddPolicy("Tags", policy =>
+        policy.Expire(TimeSpan.FromMinutes(10))
+              .Tag("tags"));
+});
 builder.Services.AddAntiforgery();
 
-var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? throw new InvalidOperationException("JWT Secret not configured");
-var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "BlogApp";
-var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "BlogApp";
+// JWT Settings via Options Pattern
+var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>()
+    ?? throw new InvalidOperationException("JWT settings not configured");
 
 builder.Services.AddAuthentication(options =>
 {
@@ -52,11 +79,11 @@ builder.Services.AddAuthentication(options =>
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
         ValidateIssuer = true,
-        ValidIssuer = jwtIssuer,
+        ValidIssuer = jwtSettings.Issuer,
         ValidateAudience = true,
-        ValidAudience = jwtAudience,
+        ValidAudience = jwtSettings.Audience,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
@@ -74,16 +101,32 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddAuthorization();
+
+// CORS Settings - Hardened configuration
+var corsOrigins = builder.Configuration.GetSection("CorsOrigins").Get<string[]>() ?? ["http://localhost:3000"];
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(builder.Configuration.GetSection("CorsOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" })
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
+        policy.WithOrigins(corsOrigins)
+            .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+            .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept")
+            .WithExposedHeaders("Content-Disposition")
+            .AllowCredentials()
+            .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
     });
 });
+
+// Response Compression for better performance
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/json", "text/plain", "text/html", "application/xml", "text/xml"]);
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.SmallestSize);
 
 builder.Services.AddMemoryCache();
 builder.Services.Configure<IpRateLimitOptions>(builder.Configuration.GetSection("IpRateLimiting"));
@@ -112,13 +155,22 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
 
+// Security Headers - must be early in pipeline
+app.UseSecurityHeaders();
+
 app.UseExceptionHandling();
 app.UseRequestLogging();
 
-// HTTPS yönlendirmesi sadece development'ta (Production'da ALB/Nginx handle ediyor)
-if (app.Environment.IsDevelopment())
+// Response compression
+app.UseResponseCompression();
+
+// HTTPS redirect in production (Development uses HTTP for easier debugging)
+if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
+
+    // HSTS for production - tells browsers to always use HTTPS
+    app.UseHsts();
 }
 
 var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");

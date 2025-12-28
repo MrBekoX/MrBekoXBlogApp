@@ -10,21 +10,16 @@ namespace BlogApp.Server.Infrastructure.Services;
 /// <summary>
 /// Local file storage servisi implementasyonu
 /// </summary>
-public class FileStorageService : IFileStorageService
+public class FileStorageService(IHostEnvironment environment, ILogger<FileStorageService> logger) : IFileStorageService
 {
-    private readonly IHostEnvironment _environment;
-    private readonly ILogger<FileStorageService> _logger;
-    private readonly string _uploadsFolder;
+    private readonly string _uploadsFolder = InitializeUploadsFolder(environment.ContentRootPath);
 
-    public FileStorageService(IHostEnvironment environment, ILogger<FileStorageService> logger)
+    private static string InitializeUploadsFolder(string contentRootPath)
     {
-        _environment = environment;
-        _logger = logger;
-        _uploadsFolder = Path.Combine(_environment.ContentRootPath, "uploads");
-        
-        // Uploads klasörünü oluştur
-        if (!Directory.Exists(_uploadsFolder))
-            Directory.CreateDirectory(_uploadsFolder);
+        var uploadsFolder = Path.Combine(contentRootPath, "uploads");
+        if (!Directory.Exists(uploadsFolder))
+            Directory.CreateDirectory(uploadsFolder);
+        return uploadsFolder;
     }
 
     public async Task<string> UploadAsync(Stream fileStream, string fileName, string contentType, CancellationToken cancellationToken = default)
@@ -33,15 +28,15 @@ public class FileStorageService : IFileStorageService
         {
             var uniqueFileName = GenerateUniqueFileName(fileName);
             var filePath = Path.Combine(_uploadsFolder, uniqueFileName);
-            
+
             await using var outputStream = new FileStream(filePath, FileMode.Create);
             await fileStream.CopyToAsync(outputStream, cancellationToken);
-            
+
             return $"/uploads/{uniqueFileName}";
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error uploading file {FileName}", fileName);
+            logger.LogError(ex, "Error uploading file {FileName}", fileName);
             throw;
         }
     }
@@ -49,15 +44,33 @@ public class FileStorageService : IFileStorageService
     public async Task<ImageUploadResult> UploadImageAsync(Stream fileStream, string fileName, ImageUploadOptions? options = null, CancellationToken cancellationToken = default)
     {
         options ??= new ImageUploadOptions();
-        
+
         try
         {
+            // Magic bytes validation before processing
+            var contentType = GetContentTypeFromExtension(fileName);
+            var validationResult = await FileValidationHelper.ValidateImageAsync(fileStream, fileName, contentType);
+
+            if (!validationResult.IsValid)
+            {
+                throw new InvalidOperationException($"File validation failed: {validationResult.ErrorMessage}");
+            }
+
+            // Reset stream position after validation
+            fileStream.Position = 0;
+
             using var image = await Image.LoadAsync(fileStream, cancellationToken);
-            
+
+            // Strip EXIF and other metadata for security
+            image.Metadata.ExifProfile = null;
+            image.Metadata.XmpProfile = null;
+            image.Metadata.IccProfile = null;
+            image.Metadata.IptcProfile = null;
+
             // Orijinal boyutları kaydet
             var originalWidth = image.Width;
             var originalHeight = image.Height;
-            
+
             // Boyutlandır (max boyutları aşıyorsa)
             if (image.Width > options.MaxWidth || image.Height > options.MaxHeight)
             {
@@ -73,14 +86,14 @@ public class FileStorageService : IFileStorageService
             var uniqueId = Guid.NewGuid().ToString("N")[..8];
             var extension = options.ConvertToWebP ? ".webp" : Path.GetExtension(fileName);
             var uniqueFileName = $"{baseFileName}_{uniqueId}{extension}";
-            
+
             // Images klasörünü oluştur
             var imagesFolder = Path.Combine(_uploadsFolder, "images");
             if (!Directory.Exists(imagesFolder))
                 Directory.CreateDirectory(imagesFolder);
-            
+
             var filePath = Path.Combine(imagesFolder, uniqueFileName);
-            
+
             // Kaydet
             if (options.ConvertToWebP)
             {
@@ -93,7 +106,7 @@ public class FileStorageService : IFileStorageService
             }
 
             var fileInfo = new FileInfo(filePath);
-            
+
             var result = new ImageUploadResult
             {
                 Url = $"/uploads/images/{uniqueFileName}",
@@ -110,19 +123,19 @@ public class FileStorageService : IFileStorageService
                 result.ThumbnailUrl = thumbnailResult;
             }
 
-            _logger.LogInformation("Image uploaded: {Url}, Size: {Width}x{Height}, FileSize: {FileSize}KB", 
+            logger.LogInformation("Image uploaded: {Url}, Size: {Width}x{Height}, FileSize: {FileSize}KB",
                 result.Url, result.Width, result.Height, result.FileSize / 1024);
 
             return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error uploading image {FileName}", fileName);
+            logger.LogError(ex, "Error uploading image {FileName}", fileName);
             throw;
         }
     }
 
-    private async Task<string> CreateThumbnailAsync(Image image, string baseFileName, string uniqueId, ImageUploadOptions options, string folder, CancellationToken cancellationToken)
+    private static async Task<string> CreateThumbnailAsync(Image image, string baseFileName, string uniqueId, ImageUploadOptions options, string folder, CancellationToken cancellationToken)
     {
         using var thumbnail = image.Clone(x => x.Resize(new ResizeOptions
         {
@@ -156,7 +169,7 @@ public class FileStorageService : IFileStorageService
 
             // URL'den dosya yolunu çıkar
             var relativePath = fileUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-            var filePath = Path.Combine(_environment.ContentRootPath, relativePath);
+            var filePath = Path.Combine(environment.ContentRootPath, relativePath);
 
             // Path Traversal koruması: Dosyanın uploads klasörü içinde olduğunu doğrula
             var fullPath = Path.GetFullPath(filePath);
@@ -166,14 +179,14 @@ public class FileStorageService : IFileStorageService
             {
                 // GÜVENLİK DÜZELTMESİ: Path Traversal (Dizin Geçişi) saldırılarına karşı koruma.
                 // Kullanıcının "uploads" klasörü dışındaki dosyalara erişmesini engeller.
-                _logger.LogWarning("Path traversal attempt detected: {FileUrl}", fileUrl);
+                logger.LogWarning("Path traversal attempt detected: {FileUrl}", fileUrl);
                 return Task.FromResult(false);
             }
 
             if (File.Exists(filePath))
             {
                 File.Delete(filePath);
-                _logger.LogInformation("File deleted: {FilePath}", filePath);
+                logger.LogInformation("File deleted: {FilePath}", filePath);
                 return Task.FromResult(true);
             }
 
@@ -181,7 +194,7 @@ public class FileStorageService : IFileStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting file {FileUrl}", fileUrl);
+            logger.LogError(ex, "Error deleting file {FileUrl}", fileUrl);
             return Task.FromResult(false);
         }
     }
@@ -192,7 +205,7 @@ public class FileStorageService : IFileStorageService
             return Task.FromResult(false);
 
         var relativePath = fileUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var filePath = Path.Combine(_environment.ContentRootPath, relativePath);
+        var filePath = Path.Combine(environment.ContentRootPath, relativePath);
 
         // Path Traversal koruması
         var fullPath = Path.GetFullPath(filePath);
@@ -209,10 +222,10 @@ public class FileStorageService : IFileStorageService
         // GÜVENLİK DÜZELTMESİ: Dosya adını temizleyerek potansiyel zararlı karakterleri kaldır.
         var extension = Path.GetExtension(fileName);
         var baseName = Path.GetFileNameWithoutExtension(fileName);
-        
+
         // Basit sanitizasyon: sadece güvenli karakterlere izin ver
         baseName = new string(baseName.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').ToArray());
-        
+
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
         return $"{baseName}_{uniqueId}{extension}";
     }
@@ -226,5 +239,10 @@ public class FileStorageService : IFileStorageService
         ".svg" => "image/svg+xml",
         _ => "application/octet-stream"
     };
-}
 
+    private static string GetContentTypeFromExtension(string fileName)
+    {
+        var extension = Path.GetExtension(fileName);
+        return GetContentType(extension);
+    }
+}

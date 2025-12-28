@@ -24,23 +24,23 @@ public static class PostsEndpoints
 
         // GET /api/posts
         group.MapGet("/", async (
-            int pageNumber,
-            int pageSize,
+            int? pageNumber,
+            int? pageSize,
             string? searchTerm,
             Guid? categoryId,
             Guid? tagId,
             Guid? authorId,
             PostStatus? status,
             bool? isFeatured,
-            string sortBy,
-            bool sortDescending,
+            string? sortBy,
+            bool? sortDescending,
             IMediator mediator,
             CancellationToken cancellationToken) =>
         {
             var response = await mediator.Send(new GetPostsListQueryRequest
             {
-                PageNumber = pageNumber == 0 ? 1 : pageNumber,
-                PageSize = pageSize == 0 ? 10 : pageSize,
+                PageNumber = pageNumber is null or 0 ? 1 : pageNumber.Value,
+                PageSize = pageSize is null or 0 ? 10 : pageSize.Value,
                 SearchTerm = searchTerm,
                 CategoryId = categoryId,
                 TagId = tagId,
@@ -48,7 +48,7 @@ public static class PostsEndpoints
                 Status = status,
                 IsFeatured = isFeatured,
                 SortBy = string.IsNullOrEmpty(sortBy) ? "CreatedAt" : sortBy,
-                SortDescending = sortDescending
+                SortDescending = sortDescending ?? true
             }, cancellationToken);
 
             return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(
@@ -57,17 +57,18 @@ public static class PostsEndpoints
         })
         .WithName("GetAllPosts")
         .WithDescription("Get paginated list of posts")
+        .CacheOutput("PostsList")
         .Produces<ApiResponse<PaginatedList<PostListQueryDto>>>(200);
 
         // GET /api/posts/featured
         group.MapGet("/featured", async (
-            int pageSize,
+            int? pageSize,
             IMediator mediator,
             CancellationToken cancellationToken) =>
         {
             var response = await mediator.Send(new GetPostsListQueryRequest
             {
-                PageSize = pageSize == 0 ? 5 : pageSize,
+                PageSize = pageSize is null or 0 ? 5 : pageSize.Value,
                 IsFeatured = true,
                 Status = PostStatus.Published,
                 SortDescending = true
@@ -77,19 +78,20 @@ public static class PostsEndpoints
         })
         .WithName("GetFeaturedPosts")
         .WithDescription("Get featured posts")
+        .CacheOutput("PostsList")
         .Produces<ApiResponse<PaginatedList<PostListQueryDto>>>(200);
 
         // GET /api/posts/drafts
         group.MapGet("/drafts", async (
-            int page,
-            int pageSize,
+            int? page,
+            int? pageSize,
             IMediator mediator,
             CancellationToken cancellationToken) =>
         {
             var response = await mediator.Send(new GetPostsListQueryRequest
             {
-                PageNumber = page == 0 ? 1 : page,
-                PageSize = pageSize == 0 ? 10 : pageSize,
+                PageNumber = page is null or 0 ? 1 : page.Value,
+                PageSize = pageSize is null or 0 ? 10 : pageSize.Value,
                 Status = PostStatus.Draft,
                 SortDescending = true
             }, cancellationToken);
@@ -103,8 +105,8 @@ public static class PostsEndpoints
 
         // GET /api/posts/my
         group.MapGet("/my", async (
-            int page,
-            int pageSize,
+            int? page,
+            int? pageSize,
             HttpContext context,
             IMediator mediator,
             CancellationToken cancellationToken) =>
@@ -116,8 +118,8 @@ public static class PostsEndpoints
             var response = await mediator.Send(new GetMyPostsQueryRequest
             {
                 UserId = userId,
-                PageNumber = page == 0 ? 1 : page,
-                PageSize = pageSize == 0 ? 10 : pageSize
+                PageNumber = page is null or 0 ? 1 : page.Value,
+                PageSize = pageSize is null or 0 ? 10 : pageSize.Value
             }, cancellationToken);
 
             return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(
@@ -168,6 +170,7 @@ public static class PostsEndpoints
         })
         .WithName("GetPostBySlug")
         .WithDescription("Get post by slug")
+        .CacheOutput("PostDetail")
         .Produces<ApiResponse<PostDetailQueryDto>>(200)
         .Produces(404);
 

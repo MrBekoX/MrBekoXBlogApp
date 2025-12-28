@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Infrastructure.Persistence;
 using BlogApp.Server.Infrastructure.Persistence.Repositories;
 using BlogApp.Server.Infrastructure.Services;
@@ -15,6 +16,17 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
+        // Options Pattern Configuration
+        services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
+        services.Configure<AdminUserSettings>(configuration.GetSection(AdminUserSettings.SectionName));
+
+        // SiteSettings için CorsOrigins array'ini özel olarak bağla
+        services.Configure<SiteSettings>(options =>
+        {
+            var origins = configuration.GetSection("CorsOrigins").Get<string[]>();
+            options.Origins = origins ?? ["http://localhost:3000"];
+        });
+
         // Database
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         services.AddDbContext<AppDbContext>(options =>
@@ -56,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<ICacheService, CacheService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IFileStorageService, FileStorageService>();
+        services.AddScoped<ITagService, TagService>();
 
         // Database Seeder
         services.AddScoped<DbSeeder>();

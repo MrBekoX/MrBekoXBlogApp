@@ -28,6 +28,7 @@ public static class TagsEndpoints
         })
         .WithName("GetAllTags")
         .WithDescription("Get all tags")
+        .CacheOutput("Tags")
         .Produces<ApiResponse<IEnumerable<GetAllTagQueryDto>>>(200);
 
         // POST /api/tags

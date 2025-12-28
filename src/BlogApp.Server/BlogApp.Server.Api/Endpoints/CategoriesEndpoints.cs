@@ -18,13 +18,13 @@ public static class CategoriesEndpoints
 
         // GET /api/categories
         group.MapGet("/", async (
-            bool includeInactive,
+            bool? includeInactive,
             IMediator mediator,
             CancellationToken cancellationToken) =>
         {
             var response = await mediator.Send(new GetAllCategoryQueryRequest
             {
-                IncludeInactive = includeInactive
+                IncludeInactive = includeInactive ?? false
             }, cancellationToken);
 
             if (!response.Result.IsSuccess)
@@ -34,6 +34,7 @@ public static class CategoriesEndpoints
         })
         .WithName("GetAllCategories")
         .WithDescription("Get all categories")
+        .CacheOutput("Categories")
         .Produces<ApiResponse<IEnumerable<GetAllCategoryQueryDto>>>(200);
 
         // GET /api/categories/{id}
@@ -54,6 +55,7 @@ public static class CategoriesEndpoints
         })
         .WithName("GetCategoryById")
         .WithDescription("Get category by ID")
+        .CacheOutput("Categories")
         .Produces<ApiResponse<GetByIdCategoryQueryDto>>(200)
         .Produces(404);
 

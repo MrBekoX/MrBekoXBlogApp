@@ -10,7 +10,7 @@ interface AuthState {
   error: string | null;
 
   login: (email: string, password: string) => Promise<boolean>;
-  register: (data: { userName: string; email: string; password: string; firstName: string; lastName: string }) => Promise<boolean>;
+  register: (data: { userName: string; email: string; password: string; confirmPassword: string; firstName?: string; lastName?: string }) => Promise<boolean>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   clearError: () => void;

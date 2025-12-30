@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { Plus, FileText, Eye, Calendar, MoreHorizontal, Pencil, Trash2, Send, EyeOff } from 'lucide-react';
 import type { BlogPost, PaginatedResult } from '@/types';
+import { usePostsStore } from '@/stores/posts-store';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +22,7 @@ export default function PostsPage() {
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
+  const invalidatePublicPostsCache = usePostsStore((state) => state.invalidateCache);
 
   const fetchPosts = async () => {
     try {
@@ -49,6 +51,7 @@ export default function PostsPage() {
       const response = await postsApi.delete(id);
       if (response.success) {
         toast.success('Yazı silindi');
+        invalidatePublicPostsCache();
         fetchPosts();
       } else {
         toast.error(response.message || 'Yazı silinemedi');
@@ -63,6 +66,7 @@ export default function PostsPage() {
       const response = await postsApi.publish(id);
       if (response.success) {
         toast.success('Yazı yayınlandı');
+        invalidatePublicPostsCache();
         fetchPosts();
       } else {
         toast.error(response.message || 'Yazı yayınlanamadı');
@@ -77,6 +81,7 @@ export default function PostsPage() {
       const response = await postsApi.unpublish(id);
       if (response.success) {
         toast.success('Yazı yayından kaldırıldı');
+        invalidatePublicPostsCache();
         fetchPosts();
       } else {
         toast.error(response.message || 'Yazı yayından kaldırılamadı');

@@ -2,17 +2,19 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: blogapp-postgres-prod
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-blogapp_admin_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-blogdb}
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - blogapp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-blogapp_admin_user}"]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -20,14 +22,16 @@ services:
   redis:
     image: redis:7-alpine
     container_name: blogapp-redis-prod
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    env_file:
+      - .env
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD}" ]
     volumes:
       - redis_data:/data
     networks:
       - blogapp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping" ]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -35,28 +39,28 @@ services:
   api:
     image: mrbeko/blog-app:api-latest
     container_name: blogapp-api-prod
-    # Değişkenleri tek tek yazmak yerine dosyadan doğrudan okutuyoruz
     env_file:
       - .env
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-      # Bağlantı cümlelerini .env içindeki isimlerle tam eşleştiriyoruz
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
-      - ConnectionStrings__Redis=redis:6379,password=${REDIS_PASSWORD}
-      # JWT ve diğer ayarlar
-      - JwtSettings__Secret=${JWT_SECRET}
-      - JwtSettings__Issuer=BlogApp
-      - JwtSettings__Audience=BlogApp
-      - JwtSettings__ExpirationMinutes=60
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+      # PostgreSQL - .env'den doğrudan alınan değerler
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # Redis - şifre .env'den REDIS_PASSWORD olarak geliyor
+      ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD},abortConnect=false,connectTimeout=10000,syncTimeout=5000"
+      # JWT
+      JwtSettings__Secret: "${JWT_SECRET}"
+      JwtSettings__Issuer: BlogApp
+      JwtSettings__Audience: BlogApp
+      JwtSettings__ExpirationMinutes: "60"
       # Admin kullanıcı
-      - AdminUser__Email=${ADMIN_EMAIL}
-      - AdminUser__UserName=${ADMIN_USERNAME}
-      - AdminUser__Password=${ADMIN_PASSWORD}
-      - AdminUser__FirstName=Admin
+      AdminUser__Email: "${ADMIN_EMAIL}"
+      AdminUser__UserName: "${ADMIN_USERNAME}"
+      AdminUser__Password: "${ADMIN_PASSWORD}"
+      AdminUser__FirstName: Admin
       # CORS
-      - CorsOrigins__0=https://mrbekox.dev
-      - CorsOrigins__1=https://www.mrbekox.dev
+      CorsOrigins__0: https://mrbekox.dev
+      CorsOrigins__1: https://www.mrbekox.dev
     ports:
       - "8080:8080"
     depends_on:
@@ -73,8 +77,8 @@ services:
   frontend:
     image: mrbeko/blog-app:web-latest
     container_name: blogapp-frontend-prod
-    environment:
-      - NEXT_PUBLIC_API_URL=https://mrbekox.dev/api
+    # NEXT_PUBLIC_API_URL is baked at build time via Dockerfile ARG
+    # To change it, rebuild with: docker build --build-arg NEXT_PUBLIC_API_URL=https://yoururl.com/api
     ports:
       - "3000:3000"
     depends_on:
@@ -100,6 +104,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+
 
 networks:
   blogapp-network:

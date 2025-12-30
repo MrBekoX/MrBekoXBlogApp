@@ -21,6 +21,8 @@ interface PostsState {
   error: string | null;
   cache: PostsCache;
   postCache: { [slug: string]: CacheEntry<BlogPost> };
+  // Cache version - incremented on invalidation to trigger refetch in components
+  cacheVersion: number;
 
   fetchPosts: (params?: {
     pageNumber?: number;
@@ -45,7 +47,8 @@ interface PostsState {
 // Generate cache key from params
 const getCacheKey = (params?: Record<string, unknown>): string => {
   if (!params) return 'default';
-  return JSON.stringify(params);
+  // Sort keys to ensure consistent cache keys regardless of param order
+  return JSON.stringify(params, Object.keys(params).sort());
 };
 
 // Check if cache entry is still valid
@@ -61,6 +64,7 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
   error: null,
   cache: {},
   postCache: {},
+  cacheVersion: 0,
 
   fetchPosts: async (params, forceRefresh = false) => {
     const cacheKey = getCacheKey(params);
@@ -74,7 +78,10 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
+      // API call is handled by postsApi which now includes the timestamp logic internally
+      // or we pass extra params if needed. But since we updated api.ts, standard call is fine.
       const response = await postsApi.getAll(params);
+      
       if (response.success && response.data) {
         const newCache = {
           ...get().cache,
@@ -139,9 +146,10 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
       const response = await postsApi.create(data);
       console.log('Create post response:', response);
       if (response.success && response.data) {
-        // Invalidate cache after creating a new post
+        // Invalidate cache immediately
         get().invalidateCache();
         set({ isLoading: false });
+        // Fetch fresh data
         await get().fetchPosts(undefined, true);
         return response.data;
       } else {
@@ -162,9 +170,10 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
     try {
       const response = await postsApi.update(id, data);
       if (response.success && response.data) {
-        // Invalidate cache after updating a post
         get().invalidateCache();
         set({ currentPost: response.data, isLoading: false });
+        // Ensure lists are refreshed
+        await get().fetchPosts(undefined, true);
         return response.data;
       } else {
         set({ error: response.message || 'Failed to update post', isLoading: false });
@@ -182,7 +191,6 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
     try {
       const response = await postsApi.delete(id);
       if (response.success) {
-        // Invalidate cache after deleting a post
         get().invalidateCache();
         set({ isLoading: false });
         await get().fetchPosts(undefined, true);
@@ -203,9 +211,11 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
     try {
       const response = await postsApi.publish(id);
       if (response.success && response.data) {
-        // Invalidate cache after publishing a post
+        // Critical: Invalidate cache and force refresh
         get().invalidateCache();
         set({ currentPost: response.data, isLoading: false });
+        // Force refresh all lists immediately
+        await get().fetchPosts(undefined, true);
         return true;
       } else {
         set({ error: response.message || 'Failed to publish post', isLoading: false });
@@ -223,9 +233,9 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
     try {
       const response = await postsApi.archive(id);
       if (response.success && response.data) {
-        // Invalidate cache after archiving a post
         get().invalidateCache();
         set({ currentPost: response.data, isLoading: false });
+        await get().fetchPosts(undefined, true);
         return true;
       } else {
         set({ error: response.message || 'Failed to archive post', isLoading: false });
@@ -238,7 +248,37 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
     }
   },
 
+  // Missing unpublish method added for completeness based on context
+  unpublishPost: async (id: string) => {
+      set({ isLoading: true, error: null });
+      try {
+        const response = await postsApi.unpublish(id);
+        if (response.success && response.data) {
+          get().invalidateCache();
+          set({ currentPost: response.data, isLoading: false });
+          await get().fetchPosts(undefined, true);
+          return true;
+        } else {
+          set({ error: response.message || 'Failed to unpublish post', isLoading: false });
+          return false;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to unpublish post';
+        set({ error: message, isLoading: false });
+        return false;
+      }
+    },
+
   clearCurrentPost: () => set({ currentPost: null }),
   clearError: () => set({ error: null }),
-  invalidateCache: () => set({ cache: {}, postCache: {} }),
+  invalidateCache: () => {
+    // Clear internal store cache
+    set((state) => ({
+      cache: {},
+      postCache: {},
+      posts: null, // Clear current list to force visual refresh if needed
+      currentPost: null,
+      cacheVersion: state.cacheVersion + 1
+    }));
+  },
 }));

@@ -13,7 +13,9 @@ public static class CategoriesEndpoints
 {
     public static IEndpointRouteBuilder RegisterCategoriesEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/categories")
+        var versionedGroup = app.NewVersionedApi("Categories");
+        var group = versionedGroup.MapGroup("/api/v{version:apiVersion}/categories")
+            .HasApiVersion(1.0)
             .WithTags("Categories");
 
         // GET /api/categories

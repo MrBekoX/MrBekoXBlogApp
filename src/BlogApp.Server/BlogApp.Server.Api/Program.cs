@@ -2,10 +2,14 @@ using System.IO.Compression;
 using System.Text;
 using AspNetCoreRateLimit;
 using BlogApp.Server.Api.Extensions;
+using BlogApp.Server.Api.Hubs;
 using BlogApp.Server.Api.Middlewares;
+using BlogApp.Server.Api.Services;
 using BlogApp.Server.Application;
+using BlogApp.Server.Application.Common.Interfaces;
 using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Infrastructure;
+using BlogApp.Server.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
@@ -13,6 +17,8 @@ using Serilog;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.HttpOverrides;
+using OpenTelemetry.Metrics;
+using Asp.Versioning;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +31,7 @@ Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
     .WriteTo.Console()
+    .MinimumLevel.Debug() // Debug seviyesini aç
     .WriteTo.File("logs/blogapp-.log", rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
@@ -34,6 +41,15 @@ builder.Host.UseSerilog();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
+
+// API Versioning
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+    options.ApiVersionReader = new UrlSegmentApiVersionReader();
 });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -63,7 +79,16 @@ builder.Services.AddOutputCache(options =>
         policy.Expire(TimeSpan.FromMinutes(10))
               .Tag("tags"));
 });
-builder.Services.AddAntiforgery();
+
+// CSRF/Antiforgery configuration for SPA
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.Name = "BlogApp.CSRF";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+});
 
 // JWT Settings via Options Pattern
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>()
@@ -110,7 +135,7 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(corsOrigins)
             .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-            .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept")
+            .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept", "X-SignalR-User-Agent", "X-CSRF-TOKEN")
             .WithExposedHeaders("Content-Disposition")
             .AllowCredentials()
             .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
@@ -128,6 +153,9 @@ builder.Services.AddResponseCompression(options =>
 builder.Services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
 builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.SmallestSize);
 
+// L1 Cache (in-memory) configuration
+// Note: SizeLimit removed because AspNetCoreRateLimit doesn't set Size on cache entries
+// Our CacheService manages L1 cache limits via internal key tracking
 builder.Services.AddMemoryCache();
 builder.Services.Configure<IpRateLimitOptions>(builder.Configuration.GetSection("IpRateLimiting"));
 builder.Services.AddInMemoryRateLimiting();
@@ -135,6 +163,20 @@ builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+
+// SignalR for real-time cache invalidation notifications
+builder.Services.AddSignalR();
+builder.Services.AddScoped<ICacheInvalidationNotifier, CacheInvalidationNotifier>();
+
+// OpenTelemetry Metrics for Cache Observability
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddMeter(CacheMetrics.MeterName)
+            .AddPrometheusExporter();
+    });
+
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -150,10 +192,16 @@ if (app.Environment.IsDevelopment())
 }
 
 // Proxy arkasında çalışırken X-Forwarded-* header'larını işle
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+// Proxy arkasında çalışırken X-Forwarded-* header'larını işle
+var forwardedHeaderOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-});
+};
+// Docker/ALB ağındaki dinamik IP'lere güvenmek için listeleri temizliyoruz
+forwardedHeaderOptions.KnownNetworks.Clear();
+forwardedHeaderOptions.KnownProxies.Clear();
+
+app.UseForwardedHeaders(forwardedHeaderOptions);
 
 // Security Headers - must be early in pipeline
 app.UseSecurityHeaders();
@@ -165,11 +213,14 @@ app.UseRequestLogging();
 app.UseResponseCompression();
 
 // HTTPS redirect in production (Development uses HTTP for easier debugging)
-if (!app.Environment.IsDevelopment())
+// Bu kısmı sadece Development için çalışacak hale getir
+if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
-
-    // HSTS for production - tells browsers to always use HTTPS
+}
+else 
+{
+    // Production'da HSTS kullanabilirsin ama HTTPS yönlendirmesini Nginx yapmalı
     app.UseHsts();
 }
 
@@ -183,6 +234,17 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseCors("AllowFrontend");
+
+app.Use(async (context, next) =>
+{
+    // API yanıtlarını tarayıcının önbelleklemesini engelle
+    context.Response.Headers.Append("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    context.Response.Headers.Append("Pragma", "no-cache");
+    context.Response.Headers.Append("Expires", "0");
+    
+    await next();
+});
+
 app.UseIpRateLimiting();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -192,6 +254,12 @@ app.UseAntiforgery();
 // Register Minimal API Endpoints
 app.RegisterAllEndpoints();
 app.MapHealthChecks("/health");
+
+// SignalR Hub for real-time cache invalidation notifications
+app.MapHub<CacheInvalidationHub>("/hubs/cache");
+
+// Prometheus metrics endpoint for cache observability
+app.MapPrometheusScrapingEndpoint("/metrics");
 
 using (var scope = app.Services.CreateScope())
 {

@@ -14,7 +14,9 @@ public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder RegisterAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/auth")
+        var versionedGroup = app.NewVersionedApi("Auth");
+        var group = versionedGroup.MapGroup("/api/v{version:apiVersion}/auth")
+            .HasApiVersion(1.0)
             .WithTags("Auth");
 
         // POST /api/auth/login

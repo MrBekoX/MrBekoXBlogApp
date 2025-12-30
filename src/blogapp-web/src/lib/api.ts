@@ -18,7 +18,9 @@ import type {
   UpdatePostRequest,
 } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api';
+// API Base URL - Production'da NEXT_PUBLIC_API_URL environment variable kullanılmalı
+// Örnek: NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api/v1
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,

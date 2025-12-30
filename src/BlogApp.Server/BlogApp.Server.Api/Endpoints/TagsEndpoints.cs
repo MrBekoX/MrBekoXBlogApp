@@ -11,7 +11,9 @@ public static class TagsEndpoints
 {
     public static IEndpointRouteBuilder RegisterTagsEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/tags")
+        var versionedGroup = app.NewVersionedApi("Tags");
+        var group = versionedGroup.MapGroup("/api/v{version:apiVersion}/tags")
+            .HasApiVersion(1.0)
             .WithTags("Tags");
 
         // GET /api/tags

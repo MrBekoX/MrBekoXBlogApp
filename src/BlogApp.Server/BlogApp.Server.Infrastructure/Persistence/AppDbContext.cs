@@ -35,6 +35,10 @@ public class AppDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<Tag>().HasQueryFilter(t => !t.IsDeleted);
         modelBuilder.Entity<User>().HasQueryFilter(u => !u.IsDeleted);
         modelBuilder.Entity<Comment>().HasQueryFilter(c => !c.IsDeleted);
+
+        // RefreshToken needs matching filter because User has filter and RefreshToken.User is required navigation
+        // This prevents "required entity filtered out" warnings
+        modelBuilder.Entity<RefreshToken>().HasQueryFilter(r => !r.User.IsDeleted);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

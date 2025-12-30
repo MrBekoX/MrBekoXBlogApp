@@ -19,7 +19,9 @@ public static class PostsEndpoints
 {
     public static IEndpointRouteBuilder RegisterPostsEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/posts")
+        var versionedGroup = app.NewVersionedApi("Posts");
+        var group = versionedGroup.MapGroup("/api/v{version:apiVersion}/posts")
+            .HasApiVersion(1.0)
             .WithTags("Posts");
 
         // GET /api/posts

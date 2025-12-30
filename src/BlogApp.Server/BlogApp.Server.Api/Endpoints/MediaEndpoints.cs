@@ -10,7 +10,9 @@ public static class MediaEndpoints
 
     public static IEndpointRouteBuilder RegisterMediaEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/media")
+        var versionedGroup = app.NewVersionedApi("Media");
+        var group = versionedGroup.MapGroup("/api/v{version:apiVersion}/media")
+            .HasApiVersion(1.0)
             .WithTags("Media")
             .RequireAuthorization(policy => policy.RequireRole("Admin", "Editor", "Author"));
 

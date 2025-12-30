@@ -3,6 +3,7 @@ import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
+import { CacheSyncProvider } from '@/components/cache-sync-provider';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -36,10 +37,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <Header />
-          <main className="flex-1">{children}</main>
-          <Footer />
-          <Toaster position="top-right" />
+          <CacheSyncProvider>
+            <Header />
+            <main className="flex-1">{children}</main>
+            <Footer />
+            <Toaster position="top-right" />
+          </CacheSyncProvider>
         </ThemeProvider>
       </body>
     </html>

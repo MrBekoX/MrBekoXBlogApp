@@ -45,6 +45,10 @@ public static class DependencyInjection
         var redisConnectionString = configuration.GetConnectionString("Redis");
         if (!string.IsNullOrEmpty(redisConnectionString))
         {
+            // Register IConnectionMultiplexer for direct Redis access (SCAN-based invalidation)
+            services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(sp =>
+                StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString));
+            
             services.AddStackExchangeRedisCache(options =>
             {
                 options.Configuration = redisConnectionString;
@@ -62,6 +66,9 @@ public static class DependencyInjection
         services.AddScoped(typeof(IRepository<>), typeof(EfCoreRepository<>));
         services.AddScoped(typeof(IReadRepository<>), typeof(EfCoreReadRepository<>));
         services.AddScoped(typeof(IWriteRepository<>), typeof(EfCoreWriteRepository<>));
+
+        // Cache Metrics (singleton for consistent metric tracking)
+        services.AddSingleton<CacheMetrics>();
 
         // Services
         services.AddScoped<IJwtTokenService, JwtTokenService>();

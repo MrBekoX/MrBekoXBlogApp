@@ -34,15 +34,17 @@ public class SaveDraftCommandHandler(
         if (dto.Id.HasValue)
         {
             // Mevcut taslağı güncelle
-            post = await unitOfWork.PostsRead.GetSingleAsync(p => p.Id == dto.Id.Value && !p.IsDeleted, cancellationToken);
+            var existingPost = await unitOfWork.PostsRead.GetSingleAsync(p => p.Id == dto.Id.Value && !p.IsDeleted, cancellationToken);
 
-            if (post == null)
+            if (existingPost == null)
             {
                 return new SaveDraftCommandResponse
                 {
                     Result = Result<Guid>.Failure(PostBusinessRuleMessages.PostNotFoundGeneric)
                 };
             }
+
+            post = existingPost;
 
             // Sadece kendi yazısını veya Admin/Editor güncelleyebilir
             var user = await unitOfWork.UsersRead.GetByIdAsync(userId.Value, cancellationToken);

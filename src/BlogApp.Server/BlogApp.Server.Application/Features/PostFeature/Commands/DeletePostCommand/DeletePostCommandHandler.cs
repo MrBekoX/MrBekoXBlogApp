@@ -46,8 +46,9 @@ public class DeletePostCommandHandler(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Cache invalidation
+        await cacheService.RemoveAsync(PostCacheKeys.ById(post.Id), cancellationToken);
         await cacheService.RemoveAsync(PostCacheKeys.BySlug(post.Slug), cancellationToken);
-        await cacheService.RemoveByPrefixAsync(PostCacheKeys.ListPrefix, cancellationToken);
+        await cacheService.RotateGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken);
 
         return new DeletePostCommandResponse
         {

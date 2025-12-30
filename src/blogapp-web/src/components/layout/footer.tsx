@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Github, X, Linkedin, Mail, Heart, Coffee } from 'lucide-react';
+import { Github, X, Linkedin, Heart, Coffee } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Footer() {
@@ -9,7 +9,6 @@ export function Footer() {
     { href: 'https://example.invalid/author', icon: Github, label: 'GitHub' },
     { href: 'https://example.invalid/social', icon: X, label: 'X' },
     { href: 'https://example.invalid/author', icon: Linkedin, label: 'LinkedIn' },
-    { href: 'mailto:hello@mrbekox.com', icon: Mail, label: 'Email' },
   ];
 
   const navigationLinks = [

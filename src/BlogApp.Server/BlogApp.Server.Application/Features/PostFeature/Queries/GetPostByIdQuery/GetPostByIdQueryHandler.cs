@@ -20,6 +20,7 @@ public class GetPostByIdQueryHandler(
             .Include(p => p.Category)
             .Include(p => p.Tags)
             .Include(p => p.Comments)
+            .AsSplitQuery() // Prevents Cartesian explosion with multiple collection includes (Tags, Comments)
             .Where(p => p.Id == request.Id && !p.IsDeleted)
             .FirstOrDefaultAsync(cancellationToken);
 

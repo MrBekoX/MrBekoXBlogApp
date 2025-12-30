@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.Behaviors;
+using BlogApp.Server.Application.Features.PostFeature.Constants; // PostCacheKeys için gerekli
 using BlogApp.Server.Domain.Enums;
 using MediatR;
 
@@ -17,6 +18,18 @@ public class GetPostsListQueryRequest : IRequest<GetPostsListQueryResponse>, ICa
     public string SortBy { get; init; } = "CreatedAt";
     public bool SortDescending { get; init; } = true;
 
+    // CacheKey: İsteğin parametrelerine göre benzersiz bir anahtar oluşturur
     public string CacheKey => $"posts-list-{PageNumber}-{PageSize}-{SearchTerm}-{CategoryId}-{TagId}-{AuthorId}-{Status}-{IsFeatured}-{SortBy}-{SortDescending}";
-    public TimeSpan? CacheDuration => TimeSpan.FromMinutes(5);
+
+    // Cache süresi (hard expiration for SWR)
+    public TimeSpan? CacheDuration => TimeSpan.FromMinutes(10);
+
+    // Cache group for version-based invalidation
+    public string? CacheGroup => PostCacheKeys.ListGroup;
+
+    // Enable Stale-While-Revalidate for instant responses
+    public bool UseStaleWhileRevalidate => true;
+
+    // Soft expiration at 50% of hard (5 min soft, 10 min hard)
+    public double SwrSoftRatio => 0.5;
 }

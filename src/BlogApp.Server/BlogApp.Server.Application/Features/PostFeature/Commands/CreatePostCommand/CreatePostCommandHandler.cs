@@ -72,10 +72,10 @@ public class CreatePostCommandHandler(
         await unitOfWork.PostsWrite.AddAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // Published post eklendiyse liste cache'ini temizle
+        // Published post eklendiyse liste cache versiyonunu rotate et
         if (status == PostStatus.Published)
         {
-            await cacheService.RemoveByPrefixAsync(PostCacheKeys.ListPrefix, cancellationToken);
+            await cacheService.RotateGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken);
         }
 
         return new CreatePostCommandResponse

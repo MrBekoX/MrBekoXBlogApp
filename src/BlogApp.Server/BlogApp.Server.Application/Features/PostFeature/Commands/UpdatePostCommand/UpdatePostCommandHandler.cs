@@ -105,17 +105,20 @@ public class UpdatePostCommandHandler(
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Cache invalidation
-        // Orijinal slug cache'ini temizle
+        // Invalidate by Id
+        await cacheService.RemoveAsync(PostCacheKeys.ById(post.Id), cancellationToken);
+
+        // Invalidate original slug cache
         await cacheService.RemoveAsync(PostCacheKeys.BySlug(originalSlug), cancellationToken);
 
-        // Slug değiştiyse yeni slug cache'ini de temizle
+        // If slug changed, also invalidate the new slug cache
         if (originalSlug != post.Slug)
         {
             await cacheService.RemoveAsync(PostCacheKeys.BySlug(post.Slug), cancellationToken);
         }
 
-        // Liste cache'ini temizle (içerik değişikliği listeleri etkiler)
-        await cacheService.RemoveByPrefixAsync(PostCacheKeys.ListPrefix, cancellationToken);
+        // Rotate list cache version (content change affects lists)
+        await cacheService.RotateGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken);
 
         return new UpdatePostCommandResponse
         {

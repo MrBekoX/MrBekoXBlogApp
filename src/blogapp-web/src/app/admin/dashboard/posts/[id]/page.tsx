@@ -111,7 +111,9 @@ export default function EditPostPage() {
     fetchData();
   }, [postId, setValue, router]);
 
-  const onSubmit = async (data: PostFormData) => {
+  const submitPost = async (data: PostFormData, statusOverride?: PostStatus) => {
+    const finalStatus = statusOverride || data.status;
+
     const updatedPost = await updatePost(postId, {
       id: postId,
       ...data,
@@ -119,16 +121,20 @@ export default function EditPostPage() {
       featuredImageUrl: data.featuredImageUrl || undefined,
       categoryIds: selectedCategories,
       tagNames: selectedTags,
-      status: data.status as PostStatus,
+      status: finalStatus,
     });
 
     if (updatedPost) {
-      toast.success(data.status === 'Published' ? 'Yazı yayınlandı!' : 'Yazı güncellendi!');
+      toast.success(finalStatus === 'Published' ? 'Yazı yayınlandı!' : 'Yazı güncellendi!');
       router.push('/admin/dashboard/posts');
     } else {
       const errorMsg = usePostsStore.getState().error;
       toast.error(`Yazı güncellenemedi: ${errorMsg || 'Bilinmeyen hata'}`);
     }
+  };
+
+  const onSubmit = async (data: PostFormData) => {
+    await submitPost(data);
   };
 
   const handleAddTag = () => {
@@ -246,8 +252,7 @@ export default function EditPostPage() {
                     className="flex-1"
                     disabled={isLoading}
                     onClick={() => {
-                      setValue('status', 'Draft');
-                      handleSubmit(onSubmit)();
+                      handleSubmit((data) => submitPost(data, 'Draft'))();
                     }}
                     variant="outline"
                   >
@@ -263,8 +268,7 @@ export default function EditPostPage() {
                     className="flex-1"
                     disabled={isLoading}
                     onClick={() => {
-                      setValue('status', 'Published');
-                      handleSubmit(onSubmit)();
+                      handleSubmit((data) => submitPost(data, 'Published'))();
                     }}
                   >
                     {isLoading ? (

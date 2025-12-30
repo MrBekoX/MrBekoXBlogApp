@@ -19,11 +19,13 @@ public class GetPostsListQueryHandler(
 
     public async Task<GetPostsListQueryResponse> Handle(GetPostsListQueryRequest request, CancellationToken cancellationToken)
     {
-        // Cache key oluştur
-        var cacheKey = GenerateCacheKey(request);
-
-        // Sadece published ve basit istekleri cache'le
         var shouldCache = ShouldUseCache(request);
+
+        var version = shouldCache
+            ? await cacheService.GetGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken)
+            : 0L;
+
+        var cacheKey = GenerateCacheKey(request, (int)version);
 
         if (shouldCache)
         {
@@ -34,12 +36,15 @@ public class GetPostsListQueryHandler(
             }
         }
 
+        // DÜZELTME BURADA: IgnoreQueryFilters() eklendi.
+        // Bu sayede User tablosundaki global filtreler (IsDeleted vs) Post sorgusunu bozmayacak.
         var query = unitOfWork.PostsRead.Query()
             .AsNoTracking()
+            .IgnoreQueryFilters()
             .Include(p => p.Author)
             .Include(p => p.Category)
             .Include(p => p.Tags)
-            .Where(p => !p.IsDeleted);
+            .Where(p => !p.IsDeleted); // Post'un kendi silinme kontrolünü manuel ekliyoruz
 
         // Filtreleme
         if (!string.IsNullOrWhiteSpace(request.SearchTerm))
@@ -72,7 +77,6 @@ public class GetPostsListQueryHandler(
         }
         else
         {
-            // Varsayılan olarak sadece yayınlanmış yazıları getir
             query = query.Where(p => p.Status == PostStatus.Published);
         }
 
@@ -98,10 +102,8 @@ public class GetPostsListQueryHandler(
                 : query.OrderBy(p => p.CreatedAt)
         };
 
-        // Toplam sayı
         var totalCount = await query.CountAsync(cancellationToken);
 
-        // Sayfalama ve DTO'ya dönüştürme (AutoMapper ProjectTo kullanarak)
         var posts = await query
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
@@ -110,7 +112,6 @@ public class GetPostsListQueryHandler(
 
         var result = new PaginatedList<PostListQueryDto>(posts, totalCount, request.PageNumber, request.PageSize);
 
-        // Cache'e kaydet
         if (shouldCache)
         {
             await cacheService.SetAsync(cacheKey, result, CacheDuration, cancellationToken);
@@ -119,16 +120,16 @@ public class GetPostsListQueryHandler(
         return new GetPostsListQueryResponse { Result = result };
     }
 
-    private static string GenerateCacheKey(GetPostsListQueryRequest request)
+    private static string GenerateCacheKey(GetPostsListQueryRequest request, int version)
     {
-        return $"{PostCacheKeys.ListPrefix}:{request.PageNumber}:{request.PageSize}:{request.Status}:" +
-               $"{request.CategoryId}:{request.TagId}:{request.IsFeatured}:" +
-               $"{request.SortBy}:{request.SortDescending}:{request.SearchTerm ?? ""}";
+        var keySuffix = $"{request.PageNumber}:{request.PageSize}:{request.Status}:" +
+                        $"{request.CategoryId}:{request.TagId}:{request.IsFeatured}:" +
+                        $"{request.SortBy}:{request.SortDescending}:{request.SearchTerm ?? ""}";
+        return PostCacheKeys.VersionedListKey(version, keySuffix);
     }
 
     private static bool ShouldUseCache(GetPostsListQueryRequest request)
     {
-        // Sadece published postlar ve arama yoksa cache'le
         return (request.Status == null || request.Status == PostStatus.Published)
                && string.IsNullOrEmpty(request.SearchTerm)
                && request.AuthorId == null;

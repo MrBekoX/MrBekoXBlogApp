@@ -89,25 +89,31 @@ export default function NewPostPage() {
     toast.error(`Doğrulama hatası: ${errorMessages}`);
   };
 
-  const onSubmit = async (data: PostFormData) => {
-    console.log('Form submitted with data:', data);
+  const submitPost = async (data: PostFormData, statusOverride?: PostStatus) => {
+    const finalStatus = statusOverride || data.status;
+    console.log('Form submitted with data:', { ...data, status: finalStatus });
+
     const post = await createPost({
       ...data,
       excerpt: data.excerpt || '',
       featuredImageUrl: data.featuredImageUrl || undefined,
       categoryIds: selectedCategories,
       tagNames: selectedTags,
-      status: data.status as PostStatus,
+      status: finalStatus,
     });
 
     if (post) {
-      toast.success(data.status === 'Published' ? 'Yazı yayınlandı!' : 'Taslak kaydedildi!');
+      toast.success(finalStatus === 'Published' ? 'Yazı yayınlandı!' : 'Taslak kaydedildi!');
       router.push('/admin/dashboard/posts');
     } else {
       const errorMsg = usePostsStore.getState().error;
       console.error('Post creation failed. Store error:', errorMsg);
       toast.error(`Yazı oluşturulamadı: ${errorMsg || 'Bilinmeyen hata'}`);
     }
+  };
+
+  const onSubmit = async (data: PostFormData) => {
+    await submitPost(data);
   };
 
   const handleAddTag = () => {
@@ -288,8 +294,7 @@ export default function NewPostPage() {
                     className="flex-1"
                     disabled={isLoading}
                     onClick={() => {
-                      setValue('status', 'Draft');
-                      handleSubmit(onSubmit, onInvalid)();
+                      handleSubmit((data) => submitPost(data, 'Draft'), onInvalid)();
                     }}
                     variant="outline"
                   >
@@ -305,8 +310,7 @@ export default function NewPostPage() {
                     className="flex-1"
                     disabled={isLoading}
                     onClick={() => {
-                      setValue('status', 'Published');
-                      handleSubmit(onSubmit, onInvalid)();
+                      handleSubmit((data) => submitPost(data, 'Published'), onInvalid)();
                     }}
                   >
                     {isLoading ? (

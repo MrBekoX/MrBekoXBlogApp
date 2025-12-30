@@ -11,25 +11,34 @@ import { Search, ChevronLeft, ChevronRight, BookOpen, Sparkles } from 'lucide-re
 
 function PostsContent() {
   const searchParams = useSearchParams();
-  const { posts, isLoading, fetchPosts } = usePostsStore();
+  const { posts, isLoading, fetchPosts, cacheVersion } = usePostsStore();
   const [search, setSearch] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  
+  // Initialize currentPage from URL searchParams to avoid calling setState in useEffect
+  const pageParam = searchParams.get('page');
+  const [currentPage, setCurrentPage] = useState(() => {
+    const page = pageParam ? parseInt(pageParam) : 1;
+    return isNaN(page) || page < 1 ? 1 : page;
+  });
 
+  // Sync currentPage when URL changes (e.g., browser back/forward)
   useEffect(() => {
-    const page = searchParams.get('page');
-    if (page) {
-      setCurrentPage(parseInt(page));
+    const page = pageParam ? parseInt(pageParam) : 1;
+    const validPage = isNaN(page) || page < 1 ? 1 : page;
+    if (validPage !== currentPage) {
+      setCurrentPage(validPage);
     }
-  }, [searchParams]);
+  }, [pageParam, currentPage]);
 
+  // Refetch when cache is invalidated (cacheVersion changes)
   useEffect(() => {
     fetchPosts({
       pageNumber: currentPage,
       pageSize: 9,
       status: 'Published',
       search: search || undefined,
-    });
-  }, [currentPage, search, fetchPosts]);
+    }, true); // force refresh
+  }, [currentPage, search, cacheVersion, fetchPosts]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

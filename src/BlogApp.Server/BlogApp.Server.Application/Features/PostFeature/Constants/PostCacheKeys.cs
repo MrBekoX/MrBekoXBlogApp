@@ -6,6 +6,12 @@ namespace BlogApp.Server.Application.Features.PostFeature.Constants;
 public static class PostCacheKeys
 {
     /// <summary>
+    /// Cache versioning group name for post lists.
+    /// Used with GetGroupVersionAsync/RotateGroupVersionAsync for efficient cache invalidation.
+    /// </summary>
+    public const string ListGroup = "posts_list";
+
+    /// <summary>
     /// Prefix for post list caches: "posts:list"
     /// </summary>
     public const string ListPrefix = "posts:list";
@@ -29,4 +35,9 @@ public static class PostCacheKeys
     /// Gets the cache key for a post by id.
     /// </summary>
     public static string ById(Guid id) => $"{IdPrefix}:{id}";
+
+    /// <summary>
+    /// Gets versioned cache key for post lists.
+    /// </summary>
+    public static string VersionedListKey(int version, string keySuffix) => $"v{version}:{ListPrefix}:{keySuffix}";
 }

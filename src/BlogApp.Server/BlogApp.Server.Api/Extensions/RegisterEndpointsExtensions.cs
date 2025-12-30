@@ -12,6 +12,7 @@ public static class RegisterEndpointsExtensions
         app.RegisterPostsEndpoints();
         app.RegisterTagsEndpoints();
         app.RegisterMediaEndpoints();
+        app.RegisterCsrfEndpoints();
 
         // SEO Endpoints (root paths: /sitemap.xml, /robots.txt, /rss, /feed)
         app.RegisterSeoEndpoints();

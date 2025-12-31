@@ -1,7 +1,7 @@
 using BlogApp.Server.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Data;
 
 /// <summary>
 /// Application DbContext arayüzü
@@ -17,3 +17,4 @@ public interface IApplicationDbContext
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
+

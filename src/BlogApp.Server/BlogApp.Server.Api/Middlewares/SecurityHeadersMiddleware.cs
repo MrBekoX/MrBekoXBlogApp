@@ -36,3 +36,4 @@ public static class SecurityHeadersMiddlewareExtensions
         return app.UseMiddleware<SecurityHeadersMiddleware>();
     }
 }
+

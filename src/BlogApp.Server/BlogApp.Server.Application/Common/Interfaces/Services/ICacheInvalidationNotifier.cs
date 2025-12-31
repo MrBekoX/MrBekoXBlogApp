@@ -1,4 +1,4 @@
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Services;
 
 /// <summary>
 /// Cache invalidation event types.
@@ -53,3 +53,4 @@ public interface ICacheInvalidationNotifier
     /// <param name="cacheGroup">The cache group that was invalidated</param>
     Task NotifyGroupSubscribersAsync(string groupName, string cacheGroup, CancellationToken cancellationToken = default);
 }
+

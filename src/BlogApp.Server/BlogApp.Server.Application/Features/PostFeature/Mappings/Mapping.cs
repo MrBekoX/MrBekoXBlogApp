@@ -30,3 +30,4 @@ public class Mapping : Profile
         CreateMap<Tag, PostTagDto>();
     }
 }
+

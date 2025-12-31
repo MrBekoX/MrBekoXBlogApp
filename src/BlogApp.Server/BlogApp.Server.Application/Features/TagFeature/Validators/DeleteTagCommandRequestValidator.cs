@@ -14,3 +14,4 @@ public class DeleteTagCommandRequestValidator : AbstractValidator<DeleteTagComma
             .WithErrorCode(TagValidationMessages.IdRequiredCode);
     }
 }
+

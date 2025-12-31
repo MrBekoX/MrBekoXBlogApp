@@ -16,3 +16,4 @@ public class GetPostByIdQueryRequest : IRequest<GetPostByIdQueryResponse>, ICach
     // Individual posts can be cached longer since they're invalidated on update
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(10);
 }
+

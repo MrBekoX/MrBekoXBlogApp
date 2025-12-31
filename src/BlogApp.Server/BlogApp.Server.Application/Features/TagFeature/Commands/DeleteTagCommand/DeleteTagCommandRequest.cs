@@ -6,3 +6,4 @@ public class DeleteTagCommandRequest : IRequest<DeleteTagCommandResponse>
 {
     public Guid Id { get; set; }
 }
+

@@ -7,3 +7,4 @@ public class RefreshTokenCommandRequest : IRequest<RefreshTokenCommandResponse>
 {
     public RefreshTokenCommandDto? RefreshTokenCommandRequestDto { get; set; }
 }
+

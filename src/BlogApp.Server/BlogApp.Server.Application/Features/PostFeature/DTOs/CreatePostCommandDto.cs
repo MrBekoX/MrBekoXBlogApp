@@ -13,3 +13,4 @@ public record CreatePostCommandDto
     public string? MetaKeywords { get; init; }
     public string Status { get; init; } = "Draft";
 }
+

@@ -7,3 +7,4 @@ public class CreatePostCommandRequest : IRequest<CreatePostCommandResponse>
 {
     public CreatePostCommandDto? CreatePostCommandRequestDto { get; set; }
 }
+

@@ -202,36 +202,32 @@ export default function HomePage() {
                   <Code2 className="w-7 h-7 text-primary" />
                 </div>
                 <h3 className="text-xl font-semibold mb-3">
-                  Yazılım Geliştirme
+                  Mühendislik Yaklaşımı
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Full-stack yazılım geliştirme yapıyorum; ağırlıklı olarak
-                  backend mimarileri ve iş mantığına odaklanıyor, temiz kod
-                  yazmaya tutkuyla bağlıyım.
+                  Bilgisayar Mühendisliği temelimle, karşılaştığım problemlere analitik bir bakış açısıyla yaklaşıyorum. Sadece kod yazmayı değil, sürdürülebilir ve ölçeklenebilir sistemler tasarlamayı önemsiyorum.
                 </p>
               </div>
 
               <div className="group p-8 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5">
                 <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Lightbulb className="w-7 h-7 text-primary" />
+                  <Sparkles className="w-7 h-7 text-primary" />
                 </div>
                 <h3 className="text-xl font-semibold mb-3">
-                  Öğrenme & Paylaşma
+                  İnovasyon ve Teknoloji
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Her gün yeni bir şey öğrenmeyi ve bu bilgiyi toplulukla
-                  paylaşmayı seviyorum. Bu blog, o yolculuğun bir parçası.
+                  Teknoloji dünyasının hızına ayak uydurarak yapay zeka ve modern geliştirme araçlarını yakından takip ediyorum. Yenilikçi fikirleri projelere entegre ederek değer yaratmayı seviyorum.
                 </p>
               </div>
 
               <div className="group p-8 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5">
                 <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Coffee className="w-7 h-7 text-primary" />
+                  <Terminal className="w-7 h-7 text-primary" />
                 </div>
-                <h3 className="text-xl font-semibold mb-3">Yaşam & İlham</h3>
+                <h3 className="text-xl font-semibold mb-3">Uçtan Uca Geliştirme</h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  Kod dışında müzik, kitaplar ve kahve ile ilgileniyorum. Bazen
-                  de teknoloji dışı konularda yazılar paylaşıyorum.
+                  Fikirden ürüne giden yolda, arka plan mimarisinden kullanıcı deneyimine kadar her aşamada titizlikle çalışıyorum. Temiz, anlaşılır ve bakımı kolay çözümler üretmek benim için bir tutku.
                 </p>
               </div>
             </div>

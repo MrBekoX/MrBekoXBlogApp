@@ -2,6 +2,16 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 8080
 
+# SECURITY: Create intermediate stage with dependencies installed as root
+FROM base AS base-with-deps
+USER root
+RUN apt-get update && apt-get install -y libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
+
+# SECURITY: Create non-root user and switch immediately
+RUN groupadd --gid 1001 appgroup && \
+    useradd --uid 1001 --gid 1001 --shell /bin/sh --create-home appuser
+USER appuser
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
@@ -19,22 +29,14 @@ RUN dotnet build "BlogApp.Server.Api.csproj" -c Release -o /app/build
 FROM build AS publish
 RUN dotnet publish "BlogApp.Server.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-FROM base AS final
+FROM base-with-deps AS final
 WORKDIR /app
 
-# Eksik kütüphaneyi root olarak yükle
-USER root
-RUN apt-get update && apt-get install -y libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
+# SECURITY: Copy with proper ownership (already running as appuser)
+COPY --chown=appuser:appgroup --from=publish /app/publish .
 
-# Kullanıcıyı oluştur
-RUN groupadd --gid 1001 appgroup && \
-    useradd --uid 1001 --gid 1001 --shell /bin/sh --create-home appuser
-
-COPY --from=publish /app/publish .
-
+# Create uploads directory with proper permissions
 RUN mkdir -p /app/uploads && \
-    chown -R appuser:appgroup /app/uploads && \
     chmod 755 /app/uploads
 
-USER appuser
 ENTRYPOINT ["dotnet", "BlogApp.Server.Api.dll"]

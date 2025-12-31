@@ -1,5 +1,5 @@
 using System.Reflection;
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Data;
 using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.Enums;
 using Microsoft.EntityFrameworkCore;

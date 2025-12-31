@@ -14,3 +14,4 @@ public class Mapping : Profile
         CreateMap<Category, GetByIdCategoryQueryDto>().ReverseMap();
     }
 }
+

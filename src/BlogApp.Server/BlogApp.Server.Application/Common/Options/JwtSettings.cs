@@ -12,3 +12,4 @@ public sealed class JwtSettings
     public string Audience { get; init; } = "BlogApp";
     public int ExpirationMinutes { get; init; } = 60;
 }
+

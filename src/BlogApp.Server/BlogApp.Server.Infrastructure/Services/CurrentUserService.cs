@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using Microsoft.AspNetCore.Http;
 
 namespace BlogApp.Server.Infrastructure.Services;

@@ -11,3 +11,4 @@ public class UnpublishPostCommandRequest : IRequest<UnpublishPostCommandResponse
 {
     public Guid Id { get; set; }
 }
+

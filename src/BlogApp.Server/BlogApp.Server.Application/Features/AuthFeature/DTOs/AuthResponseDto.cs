@@ -23,3 +23,4 @@ public record UserInfoDto
     public string? AvatarUrl { get; init; }
     public string Role { get; init; } = default!;
 }
+

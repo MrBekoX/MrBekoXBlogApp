@@ -7,3 +7,4 @@ public class CreateCategoryCommandRequest : IRequest<CreateCategoryCommandRespon
 {
     public CreateCategoryCommandDto? CreateCategoryCommandRequestDto { get; set; }
 }
+

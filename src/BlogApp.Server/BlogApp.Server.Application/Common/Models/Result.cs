@@ -61,3 +61,4 @@ public class Result<T> : Result
 
     public static implicit operator Result<T>(T value) => Success(value);
 }
+

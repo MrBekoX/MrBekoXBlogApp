@@ -6,3 +6,4 @@ public class DeleteCategoryCommandRequest : IRequest<DeleteCategoryCommandRespon
 {
     public Guid Id { get; set; }
 }
+

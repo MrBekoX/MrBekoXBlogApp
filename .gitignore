@@ -85,3 +85,23 @@ node_modules/
 *.bak
 *.backup
 
+# AWS/Cloud credentials
+.aws/
+*.pem.key
+credentials
+
+# Azure credentials
+*.publishsettings
+.azure/
+
+# Database backups
+*.sql
+*.dump
+
+# Docker secrets
+docker-compose.override.yml
+
+# IDE sensitive settings
+.vscode/settings.json
+.idea/dataSources.xml
+

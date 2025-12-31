@@ -6,3 +6,4 @@ public class GetByIdCategoryQueryRequest : IRequest<GetByIdCategoryQueryResponse
 {
     public Guid Id { get; set; }
 }
+

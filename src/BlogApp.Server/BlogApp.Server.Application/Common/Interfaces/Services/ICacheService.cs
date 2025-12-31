@@ -1,4 +1,4 @@
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Services;
 
 /// <summary>
 /// Result of a cache get operation with staleness information for SWR pattern.
@@ -87,3 +87,4 @@ public interface ICacheService
 
     #endregion
 }
+

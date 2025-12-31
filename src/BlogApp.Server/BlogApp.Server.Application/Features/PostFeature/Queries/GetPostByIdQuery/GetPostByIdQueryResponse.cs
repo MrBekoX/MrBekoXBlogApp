@@ -7,3 +7,4 @@ public class GetPostByIdQueryResponse
 {
     public Result<PostDetailQueryDto> Result { get; set; } = null!;
 }
+

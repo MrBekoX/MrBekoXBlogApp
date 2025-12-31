@@ -81,7 +81,7 @@ export function Header() {
             <span className="text-xl font-bold font-serif tracking-tight">
               MrBekoX
             </span>
-            <span className="text-xs text-muted-foreground block -mt-1">Kişisel Blog</span>
+            <span className="text-xs text-muted-foreground block -mt-1">Backend, Yazılım Mimarisi & AI</span>
           </div>
         </Link>
 

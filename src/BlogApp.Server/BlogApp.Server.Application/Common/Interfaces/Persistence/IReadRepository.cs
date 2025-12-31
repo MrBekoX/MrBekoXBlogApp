@@ -1,7 +1,7 @@
 using System.Linq.Expressions;
 using BlogApp.Server.Domain.Common;
 
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Persistence;
 
 /// <summary>
 /// Generic Read Repository arayüzü

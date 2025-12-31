@@ -9,3 +9,4 @@ public interface IPostBusinessRules
     Task<Result> CheckUserCanDeletePostAsync(Guid postId, Guid userId);
     Task<Result> CheckPostIsNotPublishedAsync(Guid postId);
 }
+

@@ -7,3 +7,4 @@ public class GetByIdTagQueryResponse
 {
     public Result<GetByIdTagQueryDto> Result { get; set; } = null!;
 }
+

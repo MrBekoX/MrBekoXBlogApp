@@ -19,3 +19,4 @@ public class GetPostBySlugQueryRequest : IRequest<GetPostBySlugQueryResponse>, I
     // Individual posts can be cached longer since they're invalidated on update
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(10);
 }
+

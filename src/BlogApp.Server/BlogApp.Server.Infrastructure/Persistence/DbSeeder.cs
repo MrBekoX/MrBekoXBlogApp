@@ -39,17 +39,21 @@ public class DbSeeder(
         var adminUserName = Environment.GetEnvironmentVariable("ADMIN_USERNAME") ?? _adminSettings.UserName ?? "admin";
         var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? _adminSettings.Password;
 
-        // Development ortamında varsayılan değerler kullan
-        if (isDevelopment && string.IsNullOrEmpty(adminEmail))
-        {
-            adminEmail = "admin@blogapp.local";
-            adminPassword = "Admin123!@#";
-            logger.LogInformation("Using default admin credentials for development");
-        }
-
+        // SECURITY: No hardcoded fallback passwords, even for development
+        // Always require explicit configuration via environment variables
         if (string.IsNullOrEmpty(adminEmail) || string.IsNullOrEmpty(adminPassword))
         {
-            logger.LogWarning("Admin credentials missing in .env (ADMIN_EMAIL, ADMIN_PASSWORD)");
+            if (isDevelopment)
+            {
+                logger.LogWarning("Missing ADMIN_EMAIL and ADMIN_PASSWORD environment variables in development.");
+                logger.LogWarning("Please set these in your .env file:");
+                logger.LogWarning("  ADMIN_EMAIL=admin@localhost");
+                logger.LogWarning("  ADMIN_PASSWORD=YourSecurePassword123!@#");
+            }
+            else
+            {
+                logger.LogError("Missing ADMIN_EMAIL and ADMIN_PASSWORD environment variables in production!");
+            }
             return;
         }
 

@@ -1,6 +1,6 @@
 using BlogApp.Server.Domain.Common;
 
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Persistence;
 
 /// <summary>
 /// Generic Write Repository arayüzü

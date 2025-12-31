@@ -2,7 +2,8 @@ using System.ServiceModel.Syndication;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Data;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -205,3 +206,4 @@ Allow: /tag/
         return Results.File(stream.ToArray(), "application/rss+xml; charset=utf-8");
     }
 }
+

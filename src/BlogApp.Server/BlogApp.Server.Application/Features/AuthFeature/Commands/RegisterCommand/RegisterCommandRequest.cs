@@ -7,3 +7,4 @@ public class RegisterCommandRequest : IRequest<RegisterCommandResponse>
 {
     public RegisterCommandDto? RegisterCommandRequestDto { get; set; }
 }
+

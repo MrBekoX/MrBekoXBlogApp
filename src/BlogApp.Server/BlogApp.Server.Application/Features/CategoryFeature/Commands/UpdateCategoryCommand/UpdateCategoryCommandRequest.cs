@@ -7,3 +7,4 @@ public class UpdateCategoryCommandRequest : IRequest<UpdateCategoryCommandRespon
 {
     public UpdateCategoryCommandDto? UpdateCategoryCommandRequestDto { get; set; }
 }
+

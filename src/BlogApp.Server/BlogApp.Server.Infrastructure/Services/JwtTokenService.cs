@@ -2,7 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Domain.Entities;
 using Microsoft.Extensions.Options;

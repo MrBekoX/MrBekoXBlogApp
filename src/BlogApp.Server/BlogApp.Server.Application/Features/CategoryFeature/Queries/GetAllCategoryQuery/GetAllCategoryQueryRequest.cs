@@ -6,3 +6,4 @@ public class GetAllCategoryQueryRequest : IRequest<GetAllCategoryQueryResponse>
 {
     public bool IncludeInactive { get; set; }
 }
+

@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, use } from 'react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { usePostsStore } from '@/stores/posts-store';
+import { postsApi } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -12,6 +14,8 @@ import { Calendar, Eye, ArrowLeft, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { CommentsSection } from '@/components/comments/comments-section';
+import { BlogPostingSchema } from '@/components/seo/blog-posting-schema';
+import { BreadcrumbSchema } from '@/components/seo/breadcrumb-schema';
 
 interface PostPageProps {
   params: Promise<{ slug: string }>;
@@ -157,6 +161,26 @@ export default function PostPage({ params }: PostPageProps) {
       {/* Comments Section */}
       <Separator className="my-12" />
       <CommentsSection postId={currentPost.id} />
+
+      {/* Schema.org Structured Data */}
+      <BlogPostingSchema
+        title={currentPost.title}
+        description={currentPost.excerpt || currentPost.content.substring(0, 200)}
+        slug={slug}
+        publishedAt={currentPost.publishedAt || currentPost.createdAt}
+        updatedAt={currentPost.updatedAt || currentPost.createdAt}
+        featuredImageUrl={currentPost.featuredImageUrl}
+        author={currentPost.author}
+        tags={currentPost.tags}
+        categories={currentPost.categories}
+      />
+      <BreadcrumbSchema
+        items={[
+          { name: 'Ana Sayfa', url: '/' },
+          { name: 'Yazılar', url: '/posts' },
+          { name: currentPost.title, url: `/posts/${slug}` },
+        ]}
+      />
     </article>
   );
 }

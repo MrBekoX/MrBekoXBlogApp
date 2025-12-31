@@ -12,3 +12,4 @@ public sealed class AdminUserSettings
     public string? Password { get; init; }
     public string FirstName { get; init; } = "Admin";
 }
+

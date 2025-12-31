@@ -1,6 +1,6 @@
 using BlogApp.Server.Domain.Entities;
 
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Services;
 
 /// <summary>
 /// JWT token servisi arayüzü
@@ -13,3 +13,4 @@ public interface IJwtTokenService
     Guid? GetUserIdFromToken(string token);
     DateTime GetTokenExpiration(string token);
 }
+

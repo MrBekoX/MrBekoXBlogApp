@@ -41,3 +41,4 @@ public static class PostCacheKeys
     /// </summary>
     public static string VersionedListKey(int version, string keySuffix) => $"v{version}:{ListPrefix}:{keySuffix}";
 }
+

@@ -53,3 +53,4 @@ public static class RequestLoggingMiddlewareExtensions
         return builder.UseMiddleware<RequestLoggingMiddleware>();
     }
 }
+

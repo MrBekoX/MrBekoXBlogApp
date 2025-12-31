@@ -1,6 +1,6 @@
 using BlogApp.Server.Domain.Entities;
 
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Services;
 
 /// <summary>
 /// Service for managing tags with batch operations.
@@ -16,3 +16,4 @@ public interface ITagService
     /// <returns>List of Tag entities (existing or newly created)</returns>
     Task<List<Tag>> GetOrCreateTagsAsync(IEnumerable<string> tagNames, CancellationToken cancellationToken = default);
 }
+

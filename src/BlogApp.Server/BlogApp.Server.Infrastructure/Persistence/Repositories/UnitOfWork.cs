@@ -1,6 +1,17 @@
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Persistence.BlogPostRepository;
+using BlogApp.Server.Application.Common.Interfaces.Persistence.CategoryRepository;
+using BlogApp.Server.Application.Common.Interfaces.Persistence.CommentRepository;
+using BlogApp.Server.Application.Common.Interfaces.Persistence.RefreshTokenRepository;
+using BlogApp.Server.Application.Common.Interfaces.Persistence.TagRepository;
+using BlogApp.Server.Application.Common.Interfaces.Persistence.UserRepository;
 using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Infrastructure.Persistence;
+using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreBlogPostRepository;
+using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreCategoryRepository;
+using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreCommentRepository;
+using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreRefreshTokenRepository;
+using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreTagRepository;
+using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreUserRepository;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
@@ -8,61 +19,61 @@ namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
 /// <summary>
 /// Unit of Work pattern implementasyonu
 /// </summary>
-public class UnitOfWork(AppDbContext context) : IUnitOfWork
+public class UnitOfWork(AppDbContext context) : Application.Common.Interfaces.Persistence.IUnitOfWork
 {
     private IDbContextTransaction? _transaction;
 
     // Read Repositories
-    private IReadRepository<BlogPost>? _postsRead;
-    private IReadRepository<Category>? _categoriesRead;
-    private IReadRepository<Tag>? _tagsRead;
-    private IReadRepository<User>? _usersRead;
-    private IReadRepository<Comment>? _commentsRead;
-    private IReadRepository<RefreshToken>? _refreshTokensRead;
+    private IBlogPostReadRepository? _postsRead;
+    private ICategoryReadRepository? _categoriesRead;
+    private ITagReadRepository? _tagsRead;
+    private IUserReadRepository? _usersRead;
+    private ICommentReadRepository? _commentsRead;
+    private IRefreshTokenReadRepository? _refreshTokensRead;
 
     // Write Repositories
-    private IWriteRepository<BlogPost>? _postsWrite;
-    private IWriteRepository<Category>? _categoriesWrite;
-    private IWriteRepository<Tag>? _tagsWrite;
-    private IWriteRepository<User>? _usersWrite;
-    private IWriteRepository<Comment>? _commentsWrite;
-    private IWriteRepository<RefreshToken>? _refreshTokensWrite;
+    private IBlogPostWriteRepository? _postsWrite;
+    private ICategoryWriteRepository? _categoriesWrite;
+    private ITagWriteRepository? _tagsWrite;
+    private IUserWriteRepository? _usersWrite;
+    private ICommentWriteRepository? _commentsWrite;
+    private IRefreshTokenWriteRepository? _refreshTokensWrite;
 
-    public IReadRepository<BlogPost> PostsRead =>
-        _postsRead ??= new EfCoreReadRepository<BlogPost>(context);
+    public IBlogPostReadRepository PostsRead =>
+        _postsRead ??= new EfCoreBlogPostReadRepository(context);
 
-    public IWriteRepository<BlogPost> PostsWrite =>
-        _postsWrite ??= new EfCoreWriteRepository<BlogPost>(context);
+    public IBlogPostWriteRepository PostsWrite =>
+        _postsWrite ??= new EfCoreBlogPostWriteRepository(context);
 
-    public IReadRepository<Category> CategoriesRead =>
-        _categoriesRead ??= new EfCoreReadRepository<Category>(context);
+    public ICategoryReadRepository CategoriesRead =>
+        _categoriesRead ??= new EfCoreCategoryReadRepository(context);
 
-    public IWriteRepository<Category> CategoriesWrite =>
-        _categoriesWrite ??= new EfCoreWriteRepository<Category>(context);
+    public ICategoryWriteRepository CategoriesWrite =>
+        _categoriesWrite ??= new EfCoreCategoryWriteRepository(context);
 
-    public IReadRepository<Tag> TagsRead =>
-        _tagsRead ??= new EfCoreReadRepository<Tag>(context);
+    public ITagReadRepository TagsRead =>
+        _tagsRead ??= new EfCoreTagReadRepository(context);
 
-    public IWriteRepository<Tag> TagsWrite =>
-        _tagsWrite ??= new EfCoreWriteRepository<Tag>(context);
+    public ITagWriteRepository TagsWrite =>
+        _tagsWrite ??= new EfCoreTagWriteRepository(context);
 
-    public IReadRepository<User> UsersRead =>
-        _usersRead ??= new EfCoreReadRepository<User>(context);
+    public IUserReadRepository UsersRead =>
+        _usersRead ??= new EfCoreUserReadRepository(context);
 
-    public IWriteRepository<User> UsersWrite =>
-        _usersWrite ??= new EfCoreWriteRepository<User>(context);
+    public IUserWriteRepository UsersWrite =>
+        _usersWrite ??= new EfCoreUserWriteRepository(context);
 
-    public IReadRepository<Comment> CommentsRead =>
-        _commentsRead ??= new EfCoreReadRepository<Comment>(context);
+    public ICommentReadRepository CommentsRead =>
+        _commentsRead ??= new EfCoreCommentReadRepository(context);
 
-    public IWriteRepository<Comment> CommentsWrite =>
-        _commentsWrite ??= new EfCoreWriteRepository<Comment>(context);
+    public ICommentWriteRepository CommentsWrite =>
+        _commentsWrite ??= new EfCoreCommentWriteRepository(context);
 
-    public IReadRepository<RefreshToken> RefreshTokensRead =>
-        _refreshTokensRead ??= new EfCoreReadRepository<RefreshToken>(context);
+    public IRefreshTokenReadRepository RefreshTokensRead =>
+        _refreshTokensRead ??= new EfCoreRefreshTokenReadRepository(context);
 
-    public IWriteRepository<RefreshToken> RefreshTokensWrite =>
-        _refreshTokensWrite ??= new EfCoreWriteRepository<RefreshToken>(context);
+    public IRefreshTokenWriteRepository RefreshTokensWrite =>
+        _refreshTokensWrite ??= new EfCoreRefreshTokenWriteRepository(context);
 
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -96,14 +107,12 @@ public class UnitOfWork(AppDbContext context) : IUnitOfWork
 
     public async ValueTask DisposeAsync()
     {
-        // Transaction varsa dispose et
         if (_transaction is not null)
         {
             await _transaction.DisposeAsync();
             _transaction = null;
         }
 
-        // Context'i dispose et
         await context.DisposeAsync();
     }
 }

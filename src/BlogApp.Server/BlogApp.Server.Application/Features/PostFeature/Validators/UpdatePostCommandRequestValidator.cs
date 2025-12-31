@@ -39,3 +39,4 @@ public class UpdatePostCommandRequestValidator : AbstractValidator<UpdatePostCom
         });
     }
 }
+

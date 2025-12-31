@@ -1,4 +1,4 @@
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Services;
 
 /// <summary>
 /// Dosya depolama servisi arayüzü
@@ -52,4 +52,5 @@ public class ImageUploadResult
     public long FileSize { get; set; }
     public string ContentType { get; set; } = default!;
 }
+
 

@@ -7,3 +7,4 @@ public class GetAllCategoryQueryResponse
 {
     public Result<IEnumerable<GetAllCategoryQueryDto>> Result { get; set; } = null!;
 }
+

@@ -13,3 +13,4 @@ public class Mapping : Profile
         CreateMap<Tag, GetByIdTagQueryDto>().ReverseMap();
     }
 }
+

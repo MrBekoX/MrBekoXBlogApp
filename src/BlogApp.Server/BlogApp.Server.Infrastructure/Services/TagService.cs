@@ -1,4 +1,5 @@
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Persistence;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
@@ -21,10 +22,9 @@ public class TagService(IUnitOfWork unitOfWork) : ITagService
         if (tagNameList.Count == 0)
             return [];
 
-        // Single batch query to get all existing tags
+        // Single batch query using TagReadRepository
         var existingTags = await unitOfWork.TagsRead
-            .GetWhere(t => tagNameList.Contains(t.Name))
-            .ToListAsync(cancellationToken);
+            .GetByNamesAsync(tagNameList, cancellationToken);
 
         var existingTagNames = existingTags
             .Select(t => t.Name)

@@ -6,3 +6,4 @@ public class GetByIdTagQueryRequest : IRequest<GetByIdTagQueryResponse>
 {
     public Guid Id { get; set; }
 }
+

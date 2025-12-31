@@ -7,3 +7,4 @@ public class GetPostBySlugQueryResponse
 {
     public Result<PostDetailQueryDto> Result { get; set; } = null!;
 }
+

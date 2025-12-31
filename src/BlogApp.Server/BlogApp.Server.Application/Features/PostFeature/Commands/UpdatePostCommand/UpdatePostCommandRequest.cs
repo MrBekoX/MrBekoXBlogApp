@@ -7,3 +7,4 @@ public class UpdatePostCommandRequest : IRequest<UpdatePostCommandResponse>
 {
     public UpdatePostCommandDto? UpdatePostCommandRequestDto { get; set; }
 }
+

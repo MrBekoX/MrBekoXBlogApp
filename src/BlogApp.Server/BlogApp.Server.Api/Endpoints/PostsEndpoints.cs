@@ -387,3 +387,4 @@ public static class PostsEndpoints
         return app;
     }
 }
+

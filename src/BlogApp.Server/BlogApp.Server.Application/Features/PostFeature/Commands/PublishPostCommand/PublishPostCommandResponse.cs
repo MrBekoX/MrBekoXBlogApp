@@ -11,3 +11,4 @@ public class UnpublishPostCommandResponse
 {
     public Result Result { get; set; } = null!;
 }
+

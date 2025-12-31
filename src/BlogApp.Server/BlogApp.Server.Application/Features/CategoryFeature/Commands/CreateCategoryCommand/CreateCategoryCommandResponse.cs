@@ -6,3 +6,4 @@ public class CreateCategoryCommandResponse
 {
     public Result<Guid> Result { get; set; } = null!;
 }
+

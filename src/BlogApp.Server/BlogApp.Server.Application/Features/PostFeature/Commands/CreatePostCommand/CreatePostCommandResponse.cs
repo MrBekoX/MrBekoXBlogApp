@@ -6,3 +6,4 @@ public class CreatePostCommandResponse
 {
     public Result<Guid> Result { get; set; } = null!;
 }
+

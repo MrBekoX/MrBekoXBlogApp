@@ -6,3 +6,4 @@ public class DeletePostCommandRequest : IRequest<DeletePostCommandResponse>
 {
     public Guid Id { get; set; }
 }
+

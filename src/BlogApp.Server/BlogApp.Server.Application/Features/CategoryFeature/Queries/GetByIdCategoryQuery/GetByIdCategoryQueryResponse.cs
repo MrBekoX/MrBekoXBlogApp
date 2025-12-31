@@ -7,3 +7,4 @@ public class GetByIdCategoryQueryResponse
 {
     public Result<GetByIdCategoryQueryDto> Result { get; set; } = null!;
 }
+

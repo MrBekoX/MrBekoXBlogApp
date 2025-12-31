@@ -25,3 +25,4 @@ public static class AuthValidationMessages
     // Token
     public const string RefreshTokenRequired = "Refresh token is required";
 }
+

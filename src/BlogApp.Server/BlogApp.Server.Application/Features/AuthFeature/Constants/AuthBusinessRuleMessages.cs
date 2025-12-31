@@ -15,3 +15,4 @@ public static class AuthBusinessRuleMessages
     public static string RemainingAttempts(int attempts) => $"Invalid email or password. {attempts} attempts remaining.";
     public static string TooManyAttempts(int minutes) => $"Too many failed attempts. Account locked for {minutes} minutes.";
 }
+

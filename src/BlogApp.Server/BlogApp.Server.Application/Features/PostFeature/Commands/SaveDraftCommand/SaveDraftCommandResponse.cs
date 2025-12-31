@@ -6,3 +6,4 @@ public class SaveDraftCommandResponse
 {
     public Result<Guid> Result { get; set; } = null!;
 }
+

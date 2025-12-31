@@ -7,3 +7,4 @@ public class GetPostsListQueryResponse
 {
     public PaginatedList<PostListQueryDto> Result { get; set; } = null!;
 }
+

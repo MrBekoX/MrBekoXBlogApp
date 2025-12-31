@@ -13,3 +13,4 @@ public static class PostBusinessRuleMessages
     public static string PostNotFound(Guid postId) => $"Post with ID '{postId}' was not found";
     public static string PostNotFoundBySlug(string slug) => $"Post with slug '{slug}' was not found";
 }
+

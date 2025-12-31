@@ -1,4 +1,5 @@
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Persistence;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.AuthFeature.Constants;
 
@@ -33,3 +34,5 @@ public class AuthBusinessRules : IAuthBusinessRules
             : Result.Success();
     }
 }
+
+

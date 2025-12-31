@@ -15,3 +15,4 @@ public record UpdatePostCommandDto
     public bool IsFeatured { get; init; }
     public string Status { get; init; } = "Draft";
 }
+

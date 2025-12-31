@@ -7,3 +7,4 @@ public class CreateTagCommandRequest : IRequest<CreateTagCommandResponse>
 {
     public CreateTagCommandDto? CreateTagCommandRequestDto { get; set; }
 }
+

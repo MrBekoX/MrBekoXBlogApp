@@ -1,4 +1,5 @@
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Persistence;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -119,3 +120,6 @@ public class CachingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, 
         return response;
     }
 }
+
+
+

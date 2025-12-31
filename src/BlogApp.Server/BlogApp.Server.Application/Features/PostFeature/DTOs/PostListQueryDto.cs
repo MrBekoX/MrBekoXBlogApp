@@ -43,3 +43,4 @@ public record PostTagDto
     public string Name { get; init; } = default!;
     public string Slug { get; init; } = default!;
 }
+

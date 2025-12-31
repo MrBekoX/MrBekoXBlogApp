@@ -11,3 +11,4 @@ public sealed class SiteSettings
 
     public string BaseUrl => Origins.FirstOrDefault() ?? "http://localhost:3000";
 }
+

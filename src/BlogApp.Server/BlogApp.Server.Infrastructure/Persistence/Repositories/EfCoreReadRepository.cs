@@ -1,5 +1,5 @@
 using System.Linq.Expressions;
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Domain.Common;
 using Microsoft.EntityFrameworkCore;
 

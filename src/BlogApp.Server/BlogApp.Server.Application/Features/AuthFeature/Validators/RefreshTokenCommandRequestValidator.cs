@@ -18,3 +18,4 @@ public class RefreshTokenCommandRequestValidator : AbstractValidator<RefreshToke
         });
     }
 }
+

@@ -6,3 +6,4 @@ public class DeletePostCommandResponse
 {
     public Result Result { get; set; } = null!;
 }
+

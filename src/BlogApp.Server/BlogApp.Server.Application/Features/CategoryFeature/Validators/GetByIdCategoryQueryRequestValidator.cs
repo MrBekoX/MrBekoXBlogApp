@@ -14,3 +14,4 @@ public class GetByIdCategoryQueryRequestValidator : AbstractValidator<GetByIdCat
             .WithErrorCode(CategoryValidationMessages.IdRequiredCode);
     }
 }
+

@@ -6,7 +6,7 @@ using BlogApp.Server.Api.Hubs;
 using BlogApp.Server.Api.Middlewares;
 using BlogApp.Server.Api.Services;
 using BlogApp.Server.Application;
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Infrastructure;
 using BlogApp.Server.Infrastructure.Services;
@@ -50,10 +50,22 @@ builder.Services.AddApiVersioning(options =>
     options.AssumeDefaultVersionWhenUnspecified = true;
     options.ReportApiVersions = true;
     options.ApiVersionReader = new UrlSegmentApiVersionReader();
+}).AddApiExplorer(options =>
+{
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
 });
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.OpenApiInfo
+    {
+        Title = "BlogApp API",
+        Version = "v1",
+        Description = "BlogApp RESTful API"
+    });
+});
 builder.Services.AddOutputCache(options =>
 {
     // Default policy: 60 seconds
@@ -128,7 +140,16 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // CORS Settings - Hardened configuration
-var corsOrigins = builder.Configuration.GetSection("CorsOrigins").Get<string[]>() ?? ["http://localhost:3000"];
+var corsOrigins = builder.Configuration.GetSection("CorsOrigins").Get<string[]>();
+
+// SECURITY: Require explicit CORS configuration in production
+if (builder.Environment.IsProduction() && (corsOrigins == null || corsOrigins.Length == 0))
+{
+    throw new InvalidOperationException("CorsOrigins must be configured in production environment via environment variables");
+}
+
+// Development fallback
+corsOrigins ??= ["http://localhost:3000", "https://localhost:3000"];
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -191,14 +212,16 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Proxy arkasında çalışırken X-Forwarded-* header'larını işle
-// Proxy arkasında çalışırken X-Forwarded-* header'larını işle
+// SECURITY: Process X-Forwarded-* headers from proxy (ALB)
+// ForwardLimit=1 prevents header spoofing attacks
 var forwardedHeaderOptions = new ForwardedHeadersOptions
 {
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 1 // Only trust the first proxy (ALB)
 };
-// Docker/ALB ağındaki dinamik IP'lere güvenmek için listeleri temizliyoruz
-forwardedHeaderOptions.KnownNetworks.Clear();
+// Clear lists to trust ALB's dynamic IPs (AWS ALB IPs change frequently)
+// Alternative: Add specific Docker network if needed for non-ALB deployments
+forwardedHeaderOptions.KnownIPNetworks.Clear();
 forwardedHeaderOptions.KnownProxies.Clear();
 
 app.UseForwardedHeaders(forwardedHeaderOptions);
@@ -281,3 +304,4 @@ Log.Information("BlogApp API starting...");
 try { await app.RunAsync(); }
 catch (Exception ex) { Log.Fatal(ex, "Application terminated unexpectedly"); }
 finally { Log.CloseAndFlush(); }
+

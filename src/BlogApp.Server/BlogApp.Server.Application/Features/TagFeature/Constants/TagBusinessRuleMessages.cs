@@ -15,3 +15,4 @@ public static class TagBusinessRuleMessages
     // State Messages
     public const string TagAlreadyDeleted = "Tag is already deleted";
 }
+

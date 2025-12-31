@@ -7,3 +7,4 @@ public interface IAuthBusinessRules
     Task<Result> CheckEmailIsUniqueAsync(string email);
     Task<Result> CheckUserNameIsUniqueAsync(string userName);
 }
+

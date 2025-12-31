@@ -6,3 +6,4 @@ public class CreateTagCommandResponse
 {
     public Result<Guid> Result { get; set; } = null!;
 }
+

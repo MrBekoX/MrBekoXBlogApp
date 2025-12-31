@@ -1,5 +1,5 @@
 using BlogApp.Server.Api.Hubs;
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using Microsoft.AspNetCore.SignalR;
 
 namespace BlogApp.Server.Api.Services;
@@ -97,3 +97,4 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         }
     }
 }
+

@@ -1,4 +1,5 @@
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Persistence;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.CategoryFeature.Constants;
 using BlogApp.Server.Domain.ValueObjects;
@@ -65,3 +66,5 @@ public class CategoryBusinessRules : ICategoryBusinessRules
         return Result.Success();
     }
 }
+
+

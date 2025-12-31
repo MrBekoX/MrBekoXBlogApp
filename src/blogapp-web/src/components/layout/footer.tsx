@@ -36,7 +36,7 @@ export function Footer() {
               <span className="text-2xl font-bold font-serif tracking-tight">
                 MrBekoX
               </span>
-              <span className="text-sm text-muted-foreground block">Kişisel Blog</span>
+              <span className="text-sm text-muted-foreground block">Backend, Yazılım Mimarisi & AI</span>
             </div>
           </Link>
 

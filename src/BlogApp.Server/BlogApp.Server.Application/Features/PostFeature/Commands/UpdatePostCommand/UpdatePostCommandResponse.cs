@@ -6,3 +6,4 @@ public class UpdatePostCommandResponse
 {
     public Result Result { get; set; } = null!;
 }
+

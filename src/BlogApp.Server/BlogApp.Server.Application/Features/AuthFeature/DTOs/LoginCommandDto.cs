@@ -6,3 +6,4 @@ public record LoginCommandDto
     public string Password { get; init; } = default!;
     public string? IpAddress { get; init; }
 }
+

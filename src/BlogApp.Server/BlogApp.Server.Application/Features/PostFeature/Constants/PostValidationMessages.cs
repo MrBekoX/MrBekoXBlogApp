@@ -15,3 +15,4 @@ public static class PostValidationMessages
     public const string SlugRequired = "Slug is required";
     public const string FeaturedImageUrlMaxLength = "Featured image URL must not exceed 500 characters";
 }
+

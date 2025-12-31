@@ -7,3 +7,4 @@ public class RefreshTokenCommandResponse
 {
     public Result<AuthResponseDto> Result { get; set; } = null!;
 }
+

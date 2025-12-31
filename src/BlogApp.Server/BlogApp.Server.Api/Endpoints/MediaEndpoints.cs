@@ -1,4 +1,5 @@
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Data;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 
 namespace BlogApp.Server.Api.Endpoints;
@@ -37,6 +38,13 @@ public static class MediaEndpoints
             {
                 await using var stream = file.OpenReadStream();
 
+                // SECURITY: Validate magic bytes to prevent fake image uploads
+                if (!IsValidImageFile(stream, file.ContentType))
+                    return Results.BadRequest(ApiResponse<ImageUploadResult>.FailureResult("Invalid image file format"));
+
+                // SECURITY: Sanitize filename to prevent path traversal
+                var safeFileName = SanitizeFileName(file.FileName);
+
                 var options = new ImageUploadOptions
                 {
                     GenerateThumbnail = generateThumbnail ?? true,
@@ -44,7 +52,7 @@ public static class MediaEndpoints
                     Quality = 85
                 };
 
-                var result = await fileStorageService.UploadImageAsync(stream, file.FileName, options);
+                var result = await fileStorageService.UploadImageAsync(stream, safeFileName, options);
 
                 return Results.Ok(ApiResponse<ImageUploadResult>.SuccessResult(result, "Image uploaded successfully"));
             }
@@ -93,7 +101,18 @@ public static class MediaEndpoints
                 try
                 {
                     await using var stream = file.OpenReadStream();
-                    var result = await fileStorageService.UploadImageAsync(stream, file.FileName);
+
+                    // SECURITY: Validate magic bytes
+                    if (!IsValidImageFile(stream, file.ContentType))
+                    {
+                        errors.Add($"{file.FileName}: Invalid image file format");
+                        continue;
+                    }
+
+                    // SECURITY: Sanitize filename
+                    var safeFileName = SanitizeFileName(file.FileName);
+
+                    var result = await fileStorageService.UploadImageAsync(stream, safeFileName);
                     results.Add(result);
                 }
                 catch (Exception ex)
@@ -138,4 +157,71 @@ public static class MediaEndpoints
 
         return app;
     }
+
+    /// <summary>
+    /// SECURITY: Sanitizes filename to prevent path traversal attacks
+    /// </summary>
+    private static string SanitizeFileName(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new ArgumentException("Filename cannot be empty", nameof(fileName));
+
+        // Remove path components - only keep filename
+        var sanitized = Path.GetFileName(fileName);
+        
+        // Remove invalid filename characters
+        var invalidChars = Path.GetInvalidFileNameChars();
+        sanitized = string.Join("_", sanitized.Split(invalidChars, StringSplitOptions.RemoveEmptyEntries));
+        
+        // Reject filenames that are only dots or empty after sanitization
+        if (string.IsNullOrWhiteSpace(sanitized) || sanitized.All(c => c == '.'))
+            throw new ArgumentException("Invalid filename", nameof(fileName));
+        
+        return sanitized;
+    }
+
+    /// <summary>
+    /// SECURITY: Validates file content by checking magic bytes
+    /// Prevents attackers from uploading malicious files with fake extensions
+    /// </summary>
+    private static bool IsValidImageFile(Stream stream, string contentType)
+    {
+        stream.Position = 0;
+        var header = new byte[12];
+        var bytesRead = stream.Read(header, 0, 12);
+        stream.Position = 0;
+
+        if (bytesRead < 4)
+            return false;
+
+        // Check magic bytes for each image type
+        var lowerContentType = contentType.ToLowerInvariant();
+        
+        if (lowerContentType.Contains("jpeg") || lowerContentType.Contains("jpg"))
+        {
+            // JPEG: FF D8 FF
+            return header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF;
+        }
+        else if (lowerContentType.Contains("png"))
+        {
+            // PNG: 89 50 4E 47
+            return header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47;
+        }
+        else if (lowerContentType.Contains("gif"))
+        {
+            // GIF: 47 49 46 (GIF87a or GIF89a)
+            return header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46;
+        }
+        else if (lowerContentType.Contains("webp"))
+        {
+            // WebP: RIFF....WEBP (52 49 46 46 at 0-3, 57 45 42 50 at 8-11)
+            if (bytesRead < 12)
+                return false;
+            return header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46 &&
+                   header[8] == 0x57 && header[9] == 0x45 && header[10] == 0x42 && header[11] == 0x50;
+        }
+        
+        return false;
+    }
 }
+

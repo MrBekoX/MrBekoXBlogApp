@@ -22,3 +22,4 @@ public static class CategoryBusinessRuleMessages
     public const string CategoryNotActive = "Category is not active";
     public const string CategoryAlreadyDeleted = "Category is already deleted";
 }
+

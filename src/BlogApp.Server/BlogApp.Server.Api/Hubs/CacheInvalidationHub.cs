@@ -45,3 +45,4 @@ public class CacheInvalidationHub : Hub
         _logger.LogDebug("Client {ConnectionId} unsubscribed from group {GroupName}", Context.ConnectionId, groupName);
     }
 }
+

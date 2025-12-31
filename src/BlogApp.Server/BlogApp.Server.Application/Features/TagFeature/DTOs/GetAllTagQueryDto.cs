@@ -8,3 +8,4 @@ public class GetAllTagQueryDto
     public int PostCount { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+

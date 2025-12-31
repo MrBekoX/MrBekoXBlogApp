@@ -7,3 +7,4 @@ public class RegisterCommandResponse
 {
     public Result<AuthResponseDto> Result { get; set; } = null!;
 }
+

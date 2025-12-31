@@ -7,3 +7,4 @@ public class SaveDraftCommandRequest : IRequest<SaveDraftCommandResponse>
 {
     public SaveDraftCommandDto? SaveDraftCommandRequestDto { get; set; }
 }
+

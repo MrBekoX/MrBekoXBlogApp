@@ -7,3 +7,4 @@ public class LoginCommandRequest : IRequest<LoginCommandResponse>
 {
     public LoginCommandDto? LoginCommandRequestDto { get; set; }
 }
+

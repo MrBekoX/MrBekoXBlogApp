@@ -13,3 +13,4 @@ public record SaveDraftCommandDto
     public string? MetaDescription { get; init; }
     public string? MetaKeywords { get; init; }
 }
+

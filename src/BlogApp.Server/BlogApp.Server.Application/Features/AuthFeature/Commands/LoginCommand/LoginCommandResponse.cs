@@ -7,3 +7,4 @@ public class LoginCommandResponse
 {
     public Result<AuthResponseDto> Result { get; set; } = null!;
 }
+

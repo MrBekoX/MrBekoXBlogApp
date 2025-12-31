@@ -1,4 +1,4 @@
-namespace BlogApp.Server.Application.Common.Interfaces;
+namespace BlogApp.Server.Application.Common.Interfaces.Services;
 
 /// <summary>
 /// Mevcut kullanıcı bilgisi servisi
@@ -11,3 +11,4 @@ public interface ICurrentUserService
     bool IsAuthenticated { get; }
     bool IsInRole(string role);
 }
+

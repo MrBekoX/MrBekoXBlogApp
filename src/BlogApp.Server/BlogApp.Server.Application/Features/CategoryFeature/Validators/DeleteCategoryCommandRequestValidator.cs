@@ -14,3 +14,4 @@ public class DeleteCategoryCommandRequestValidator : AbstractValidator<DeleteCat
             .WithErrorCode(CategoryValidationMessages.IdRequiredCode);
     }
 }
+

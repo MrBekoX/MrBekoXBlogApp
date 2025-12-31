@@ -6,3 +6,4 @@ public class UpdateCategoryCommandResponse
 {
     public Result Result { get; set; } = null!;
 }
+

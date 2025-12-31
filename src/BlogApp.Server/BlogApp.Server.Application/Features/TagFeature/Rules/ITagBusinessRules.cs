@@ -8,3 +8,4 @@ public interface ITagBusinessRules
     Task<Result> CheckTagExistsAsync(Guid tagId);
     Task<Result> CheckTagNameIsUniqueAsync(string name);
 }
+

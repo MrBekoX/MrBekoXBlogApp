@@ -1,4 +1,4 @@
-namespace BlogApp.Server.Infrastructure.Services;
+namespace BlogApp.Server.Infrastructure.Services.Helpers;
 
 /// <summary>
 /// Provides file validation utilities including magic byte verification,

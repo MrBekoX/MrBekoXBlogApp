@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using BlogApp.Server.Api.Helpers;
-using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Data;
+using BlogApp.Server.Application.Common.Interfaces.Persistence;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.AuthFeature.Commands.LoginCommand;
 using BlogApp.Server.Application.Features.AuthFeature.Commands.RefreshTokenCommand;
@@ -225,3 +227,4 @@ public static class AuthEndpoints
         return app;
     }
 }
+

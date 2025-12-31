@@ -49,3 +49,4 @@ public class CreatePostCommandRequestValidator : AbstractValidator<CreatePostCom
                && (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps);
     }
 }
+

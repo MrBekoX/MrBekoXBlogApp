@@ -6,3 +6,4 @@ public class DeleteCategoryCommandResponse
 {
     public Result Result { get; set; } = null!;
 }
+

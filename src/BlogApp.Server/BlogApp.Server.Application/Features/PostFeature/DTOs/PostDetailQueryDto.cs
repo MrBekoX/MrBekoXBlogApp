@@ -25,3 +25,4 @@ public record PostDetailQueryDto
     public PostCategoryDto? Category { get; init; }
     public List<PostTagDto> Tags { get; init; } = new();
 }
+

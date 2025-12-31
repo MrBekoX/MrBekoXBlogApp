@@ -12,3 +12,4 @@ public interface ICategoryBusinessRules
     // ============== DELETE VALIDATION ==============
     Task<Result> CheckCategoryCanBeDeletedAsync(Guid categoryId);
 }
+

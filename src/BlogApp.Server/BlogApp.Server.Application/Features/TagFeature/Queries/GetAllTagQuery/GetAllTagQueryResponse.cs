@@ -7,3 +7,4 @@ public class GetAllTagQueryResponse
 {
     public Result<IEnumerable<GetAllTagQueryDto>> Result { get; set; } = null!;
 }
+

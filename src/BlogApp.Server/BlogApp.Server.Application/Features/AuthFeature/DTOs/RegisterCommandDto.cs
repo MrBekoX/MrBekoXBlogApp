@@ -10,3 +10,4 @@ public record RegisterCommandDto
     public string? LastName { get; init; }
     public string? IpAddress { get; init; }
 }
+

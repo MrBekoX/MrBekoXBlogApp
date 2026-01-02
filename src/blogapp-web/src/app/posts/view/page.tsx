@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, use } from 'react';
-import type { Metadata } from 'next';
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
+import { getImageUrl } from '@/lib/utils';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { usePostsStore } from '@/stores/posts-store';
-import { postsApi } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -17,16 +18,16 @@ import { CommentsSection } from '@/components/comments/comments-section';
 import { BlogPostingSchema } from '@/components/seo/blog-posting-schema';
 import { BreadcrumbSchema } from '@/components/seo/breadcrumb-schema';
 
-interface PostPageProps {
-  params: Promise<{ slug: string }>;
-}
-
-export default function PostPage({ params }: PostPageProps) {
-  const { slug } = use(params);
+function PostViewContent() {
+  const searchParams = useSearchParams();
+  const slug = searchParams.get('slug');
+  
   const { currentPost, isLoading, fetchPostBySlug, clearCurrentPost } = usePostsStore();
 
   useEffect(() => {
-    fetchPostBySlug(slug);
+    if (slug) {
+      fetchPostBySlug(slug);
+    }
     return () => clearCurrentPost();
   }, [slug, fetchPostBySlug, clearCurrentPost]);
 
@@ -38,6 +39,21 @@ export default function PostPage({ params }: PostPageProps) {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  if (!slug) {
+    return (
+      <div className="container max-w-4xl py-12 text-center">
+        <h1 className="text-2xl font-bold">Slug belirtilmedi</h1>
+        <p className="mt-2 text-muted-foreground">Yazı adresi eksik.</p>
+        <Button asChild className="mt-4">
+          <Link href="/posts">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Yazılara Dön
+          </Link>
+        </Button>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -61,12 +77,12 @@ export default function PostPage({ params }: PostPageProps) {
   if (!currentPost) {
     return (
       <div className="container max-w-4xl py-12 text-center">
-        <h1 className="text-2xl font-bold">Post not found</h1>
-        <p className="mt-2 text-muted-foreground">The post you&apos;re looking for doesn&apos;t exist.</p>
+        <h1 className="text-2xl font-bold">Yazı bulunamadı</h1>
+        <p className="mt-2 text-muted-foreground">Aradığınız yazı mevcut değil.</p>
         <Button asChild className="mt-4">
           <Link href="/posts">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to posts
+            Yazılara Dön
           </Link>
         </Button>
       </div>
@@ -78,7 +94,7 @@ export default function PostPage({ params }: PostPageProps) {
       <Button asChild variant="ghost" className="mb-8">
         <Link href="/posts">
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to posts
+          Yazılara Dön
         </Link>
       </Button>
 
@@ -86,11 +102,9 @@ export default function PostPage({ params }: PostPageProps) {
         {currentPost.categories && currentPost.categories.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {currentPost.categories.map((category) => (
-              <Link key={category.id} href={`/categories/${category.slug}`}>
-                <Badge variant="secondary" className="hover:bg-secondary/80">
-                  {category.name}
-                </Badge>
-              </Link>
+              <Badge key={category.id} variant="secondary">
+                {category.name}
+              </Badge>
             ))}
           </div>
         )}
@@ -123,7 +137,7 @@ export default function PostPage({ params }: PostPageProps) {
 
           <div className="flex items-center gap-1">
             <Eye className="h-4 w-4" />
-            <span>{currentPost.viewCount} views</span>
+            <span>{currentPost.viewCount} görüntüleme</span>
           </div>
         </div>
       </header>
@@ -131,7 +145,7 @@ export default function PostPage({ params }: PostPageProps) {
       {currentPost.featuredImageUrl && (
         <div className="mt-8 overflow-hidden rounded-lg">
           <img
-            src={currentPost.featuredImageUrl}
+            src={getImageUrl(currentPost.featuredImageUrl)}
             alt={currentPost.title}
             className="w-full object-cover"
           />
@@ -148,11 +162,9 @@ export default function PostPage({ params }: PostPageProps) {
           <div className="flex flex-wrap items-center gap-2">
             <Tag className="h-4 w-4 text-muted-foreground" />
             {currentPost.tags.map((tag) => (
-              <Link key={tag.id} href={`/tags/${tag.slug}`}>
-                <Badge variant="outline" className="hover:bg-accent">
-                  #{tag.name}
-                </Badge>
-              </Link>
+              <Badge key={tag.id} variant="outline">
+                #{tag.name}
+              </Badge>
             ))}
           </div>
         </>
@@ -178,9 +190,36 @@ export default function PostPage({ params }: PostPageProps) {
         items={[
           { name: 'Ana Sayfa', url: '/' },
           { name: 'Yazılar', url: '/posts' },
-          { name: currentPost.title, url: `/posts/${slug}` },
+          { name: currentPost.title, url: `/posts/view?slug=${slug}` },
         ]}
       />
     </article>
+  );
+}
+
+function PostViewLoading() {
+  return (
+    <div className="container max-w-4xl py-12">
+      <Skeleton className="h-8 w-32" />
+      <Skeleton className="mt-8 h-12 w-3/4" />
+      <div className="mt-4 flex gap-2">
+        <Skeleton className="h-6 w-20" />
+        <Skeleton className="h-6 w-20" />
+      </div>
+      <Skeleton className="mt-8 aspect-video w-full" />
+      <div className="mt-8 space-y-4">
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+    </div>
+  );
+}
+
+export default function PostViewPage() {
+  return (
+    <Suspense fallback={<PostViewLoading />}>
+      <PostViewContent />
+    </Suspense>
   );
 }

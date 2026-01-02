@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
   // Zaten giriş yapılmışsa dashboard'a yönlendir
   useEffect(() => {
     if (isAuthenticated) {
-      router.push('/admin/dashboard');
+      router.push('/mrbekox-console/dashboard');
     }
   }, [isAuthenticated, router]);
 
@@ -38,7 +38,7 @@ export default function AdminLoginPage() {
     const success = await login(data.email, data.password);
     if (success) {
       toast.success('Hoş geldiniz!');
-      router.push('/admin/dashboard');
+      router.push('/mrbekox-console/dashboard');
     } else {
       toast.error(error || 'Giriş başarısız');
     }

@@ -49,6 +49,7 @@ public sealed class CacheMetrics : IDisposable
         _meter = meterFactory?.Create(MeterName) ?? new Meter(MeterName, "1.0.0");
 
         // L1 (in-memory) cache counters
+        
         _l1Hits = _meter.CreateCounter<long>(
             "cache.l1.hits",
             unit: "{hit}",

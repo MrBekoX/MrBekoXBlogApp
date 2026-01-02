@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useCallback, useState } from 'react';
 import { Upload, X, Loader2, ImageIcon, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, getImageUrl } from '@/lib/utils';
 import { mediaApi } from '@/lib/api';
 import {
   validateImageFile,
@@ -117,7 +117,7 @@ export function ImageUpload({ value, onChange, disabled, className }: ImageUploa
       <div className={cn('relative group', className)}>
         <div className="relative aspect-video rounded-lg overflow-hidden border bg-muted">
           <img
-            src={value}
+            src={getImageUrl(value)}
             alt="Öne çıkan görsel"
             className="w-full h-full object-cover"
           />

@@ -28,9 +28,20 @@ public class CreatePostCommandHandler(
         var dto = request.CreatePostCommandRequestDto!;
 
         // Slug oluştur - benzersiz olması için timestamp ekle
+        // Slug max 250 karakter, timestamp 8 karakter + tire = 9 karakter
+        // Base slug için max 241 karakter bırakıyoruz
         var baseSlug = Slug.CreateFromTitle(dto.Title);
         var timestamp = DateTime.UtcNow.Ticks.ToString()[^8..];
-        var slug = Slug.Create($"{baseSlug.Value}-{timestamp}");
+        var slugValue = $"{baseSlug.Value}-{timestamp}";
+        
+        // Slug uzunluğunu kontrol et (max 250 karakter)
+        if (slugValue.Length > 250)
+        {
+            var maxBaseLength = 250 - 9; // 9 = "-" + 8 karakter timestamp
+            slugValue = $"{baseSlug.Value[..Math.Min(baseSlug.Value.Length, maxBaseLength)].TrimEnd('-')}-{timestamp}";
+        }
+        
+        var slug = Slug.Create(slugValue);
 
         // Tag'leri al veya oluştur (batch query ile N+1 önleme)
         var tags = await tagService.GetOrCreateTagsAsync(dto.TagNames, cancellationToken);
@@ -58,7 +69,9 @@ public class CreatePostCommandHandler(
             FeaturedImageUrl = dto.FeaturedImageUrl,
             CategoryId = categoryId,
             AuthorId = currentUserService.UserId.Value,
-            MetaTitle = dto.MetaTitle ?? dto.Title,
+            MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
+                ? dto.MetaTitle 
+                : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]),
             MetaDescription = dto.MetaDescription,
             MetaKeywords = dto.MetaKeywords,
             Status = status,

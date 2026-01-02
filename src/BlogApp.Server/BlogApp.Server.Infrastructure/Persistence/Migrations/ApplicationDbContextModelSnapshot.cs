@@ -108,8 +108,6 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("AuthorId");
 
-                    b.HasIndex("CategoryId");
-
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("IsFeatured");
@@ -120,6 +118,21 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("Title")
+                        .HasDatabaseName("IX_posts_title");
+
+                    b.HasIndex("CategoryId", "Status")
+                        .HasDatabaseName("IX_posts_categoryid_status");
+
+                    b.HasIndex("IsDeleted", "Status")
+                        .HasDatabaseName("IX_posts_isdeleted_status");
+
+                    b.HasIndex("Status", "PublishedAt")
+                        .HasDatabaseName("IX_posts_status_publishedat");
+
+                    b.HasIndex("Status", "IsFeatured", "PublishedAt")
+                        .HasDatabaseName("IX_posts_status_isfeatured_publishedat");
 
                     b.ToTable("posts", (string)null);
                 });

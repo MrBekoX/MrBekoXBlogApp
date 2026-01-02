@@ -4,7 +4,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
 
 export const metadata: Metadata = {
   title: 'Yazılar & Düşünceler',
-  description: 'Backend geliştirme, yazılım mimarisi, AI teknolojileri, mikroservisler ve modern sistem tasarımı hakkında teknik makaleler ve düşünceler. .NET, C#, Python, Clean Architecture ve CQRS konularında derinlemesine içerikler.',
+  description: 'Yazılım dünyasına dair çalışmalarımı, denediğim teknolojileri ve kodlama pratiklerimi paylaşıyorum.',
   keywords: [
     'backend makaleleri',
     'yazılım mimarisi blog',
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     title: 'Yazılar & Düşünceler | MrBekoX Blog',
-    description: 'Backend geliştirme, yazılım mimarisi ve AI teknolojileri hakkında teknik makaleler.',
+    description: 'Yazılım dünyasına dair çalışmalarımı, denediğim teknolojileri ve kodlama pratiklerimi paylaşıyorum.',
     url: `${SITE_URL}/posts`,
     type: 'website',
     images: [
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Yazılar & Düşünceler | MrBekoX Blog',
-    description: 'Backend geliştirme, yazılım mimarisi ve AI teknolojileri hakkında teknik makaleler.',
+    description: 'Yazılım dünyasına dair çalışmalarımı, denediğim teknolojileri ve kodlama pratiklerimi paylaşıyorum.',
     images: ['/opengraph-image'],
   },
   alternates: {

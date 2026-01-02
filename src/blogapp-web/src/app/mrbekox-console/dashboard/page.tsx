@@ -125,7 +125,7 @@ export default function AdminDashboardPage() {
               <CardDescription>En son eklediğiniz blog yazıları</CardDescription>
             </div>
             <Button asChild variant="outline" size="sm">
-              <Link href="/admin/dashboard/posts">Tümünü Gör</Link>
+              <Link href="/mrbekox-console/dashboard/posts">Tümünü Gör</Link>
             </Button>
           </div>
         </CardHeader>
@@ -147,7 +147,7 @@ export default function AdminDashboardPage() {
               {recentPosts.map((post) => (
                 <Link
                   key={post.id}
-                  href={`/admin/dashboard/posts/${post.id}`}
+                  href={`/mrbekox-console/dashboard/posts/edit?id=${post.id}`}
                   className="flex items-center gap-4 rounded-lg p-2 transition-colors hover:bg-muted"
                 >
                   {post.featuredImageUrl ? (
@@ -174,7 +174,7 @@ export default function AdminDashboardPage() {
             <div className="py-8 text-center">
               <p className="text-muted-foreground">Henüz yazı yok</p>
               <Button asChild className="mt-4">
-                <Link href="/admin/dashboard/posts/new">İlk yazınızı oluşturun</Link>
+                <Link href="/mrbekox-console/dashboard/posts/new">İlk yazınızı oluşturun</Link>
               </Button>
             </div>
           )}

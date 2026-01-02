@@ -62,7 +62,10 @@ public class SaveDraftCommandHandler(
             post.Excerpt = dto.Excerpt;
             post.FeaturedImageUrl = dto.FeaturedImageUrl;
             post.CategoryId = categoryId;
-            post.MetaTitle = dto.MetaTitle;
+            // MetaTitle max 70 karakter limiti
+            post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
+                ? dto.MetaTitle 
+                : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]);
             post.MetaDescription = dto.MetaDescription;
             post.MetaKeywords = dto.MetaKeywords;
             post.UpdatedAt = DateTime.UtcNow;
@@ -70,7 +73,15 @@ public class SaveDraftCommandHandler(
             // Slug'ı güncelle (sadece draft ise)
             if (post.Status == PostStatus.Draft)
             {
-                post.Slug = Slug.Create(dto.Title).Value;
+                var slugValue = Slug.CreateFromTitle(dto.Title).Value;
+                var timestamp = DateTime.UtcNow.Ticks.ToString()[^8..];
+                var fullSlug = $"{slugValue}-{timestamp}";
+                if (fullSlug.Length > 250)
+                {
+                    var maxBaseLength = 250 - 9;
+                    fullSlug = $"{slugValue[..Math.Min(slugValue.Length, maxBaseLength)].TrimEnd('-')}-{timestamp}";
+                }
+                post.Slug = fullSlug;
             }
 
             // Okuma süresini hesapla
@@ -80,19 +91,32 @@ public class SaveDraftCommandHandler(
         }
         else
         {
+            // Slug oluştur - benzersiz olması için timestamp ekle
+            var slugValue = Slug.CreateFromTitle(dto.Title).Value;
+            var timestamp = DateTime.UtcNow.Ticks.ToString()[^8..];
+            var fullSlug = $"{slugValue}-{timestamp}";
+            if (fullSlug.Length > 250)
+            {
+                var maxBaseLength = 250 - 9;
+                fullSlug = $"{slugValue[..Math.Min(slugValue.Length, maxBaseLength)].TrimEnd('-')}-{timestamp}";
+            }
+
             // Yeni taslak oluştur
             post = new BlogPost
             {
                 Id = Guid.NewGuid(),
                 Title = dto.Title,
-                Slug = Slug.Create(dto.Title).Value,
+                Slug = fullSlug,
                 Content = dto.Content,
                 Excerpt = dto.Excerpt,
                 FeaturedImageUrl = dto.FeaturedImageUrl,
                 Status = PostStatus.Draft,
                 AuthorId = userId.Value,
                 CategoryId = categoryId,
-                MetaTitle = dto.MetaTitle,
+                // MetaTitle max 70 karakter limiti
+                MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
+                    ? dto.MetaTitle 
+                    : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]),
                 MetaDescription = dto.MetaDescription,
                 MetaKeywords = dto.MetaKeywords,
                 CreatedAt = DateTime.UtcNow,

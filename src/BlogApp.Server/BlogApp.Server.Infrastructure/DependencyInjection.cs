@@ -18,6 +18,7 @@ using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreTagRepository
 using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreUserRepository;
 using BlogApp.Server.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -50,6 +51,10 @@ public static class DependencyInjection
                 npgsqlOptions.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
                 npgsqlOptions.EnableRetryOnFailure(3);
             });
+            
+            // Suppress PendingModelChangesWarning - we handle migrations manually via SQL scripts
+            options.ConfigureWarnings(warnings =>
+                warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
         });
 
         services.AddScoped<IApplicationDbContext>(provider =>

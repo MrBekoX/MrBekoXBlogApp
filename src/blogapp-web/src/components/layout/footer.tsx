@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Github, X, Linkedin, Heart, Coffee } from 'lucide-react';
+import { Github, X, Linkedin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Footer() {
@@ -17,10 +17,12 @@ export function Footer() {
     { href: '/#about', label: 'Hakkımda' },
   ];
 
-  const resourceLinks = [
-    { href: '/categories', label: 'Kategoriler' },
-    { href: '/tags', label: 'Etiketler' },
-  ];
+  // Kategoriler ve Etiketler sayfaları henüz hazır değil
+  // TODO: Bu sayfalar hazır olduğunda linkleri ekle
+  // const resourceLinks = [
+  //   { href: '/categories', label: 'Kategoriler' },
+  //   { href: '/tags', label: 'Etiketler' },
+  // ];
 
   return (
     <footer className="border-t bg-muted/30">
@@ -36,27 +38,13 @@ export function Footer() {
               <span className="text-2xl font-bold font-serif tracking-tight">
                 MrBekoX
               </span>
-              <span className="text-sm text-muted-foreground block">Backend, Yazılım Mimarisi & AI</span>
+              <span className="text-sm text-muted-foreground block">Software Developer</span>
             </div>
           </Link>
-
-          <p className="text-muted-foreground max-w-md leading-relaxed">
-            Yazılım, teknoloji ve yaşam üzerine düşünceler. Kod yazarken öğrendiklerimi,
-            deneyimlerimi ve projelerimi paylaştığım kişisel alan.
-          </p>
 
           {/* Navigation Links */}
           <div className="flex flex-wrap justify-center gap-6">
             {navigationLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="text-foreground/80 hover:text-primary transition-colors"
-              >
-                {link.label}
-              </Link>
-            ))}
-            {resourceLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -90,19 +78,9 @@ export function Footer() {
 
         {/* Bottom Section */}
         <div className="mt-12 pt-8 border-t">
-          <div className="flex flex-col md:flex-row justify-center items-center gap-4 text-center">
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
+          <div className="flex justify-center items-center text-center">
+            <p className="text-sm text-muted-foreground">
               © {currentYear} MrBekoX. Tüm hakları saklıdır.
-            </p>
-
-            <span className="hidden md:inline text-muted-foreground">•</span>
-
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <span>Sevgiyle</span>
-              <Heart className="h-4 w-4 text-destructive fill-current" />
-              <span>ve</span>
-              <Coffee className="h-4 w-4 text-primary" />
-              <span>ile yapıldı</span>
             </p>
           </div>
         </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod/v4';
@@ -31,16 +31,22 @@ const postSchema = z.object({
   title: z.string().min(1, 'Başlık gerekli').max(200),
   content: z.string().min(1, 'İçerik gerekli'),
   excerpt: z.string().max(500).optional(),
-  featuredImageUrl: z.string().url().optional().or(z.literal('')),
+  // Accept full URLs, relative paths (/uploads/...), or empty string
+  featuredImageUrl: z.string().optional().refine(
+    (val) => !val || val === '' || val.startsWith('/') || val.startsWith('http://') || val.startsWith('https://'),
+    { message: 'Geçerli bir URL veya görsel yolu girin' }
+  ),
   status: z.enum(['Draft', 'Published', 'Archived']),
 });
 
 type PostFormData = z.infer<typeof postSchema>;
 
-export default function EditPostPage() {
+interface EditPostFormProps {
+  postId: string;
+}
+
+export function EditPostForm({ postId }: EditPostFormProps) {
   const router = useRouter();
-  const params = useParams();
-  const postId = params.id as string;
   
   const { updatePost, isLoading } = usePostsStore();
   const [post, setPost] = useState<BlogPost | null>(null);
@@ -92,7 +98,7 @@ export default function EditPostPage() {
           }
         } else {
           toast.error('Yazı bulunamadı');
-          router.push('/admin/dashboard/posts');
+          router.push('/mrbekox-console/dashboard/posts');
         }
         
         if (categoriesRes.success && categoriesRes.data) {
@@ -103,7 +109,7 @@ export default function EditPostPage() {
         }
       } catch {
         toast.error('Yazı bulunamadı veya veri yüklenirken hata oluştu');
-        router.push('/admin/dashboard/posts');
+        router.push('/mrbekox-console/dashboard/posts');
       } finally {
         setLoadingPost(false);
       }
@@ -126,7 +132,7 @@ export default function EditPostPage() {
 
     if (updatedPost) {
       toast.success(finalStatus === 'Published' ? 'Yazı yayınlandı!' : 'Yazı güncellendi!');
-      router.push('/admin/dashboard/posts');
+      router.push('/mrbekox-console/dashboard/posts');
     } else {
       const errorMsg = usePostsStore.getState().error;
       toast.error(`Yazı güncellenemedi: ${errorMsg || 'Bilinmeyen hata'}`);
@@ -160,7 +166,7 @@ export default function EditPostPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
         <p className="text-muted-foreground">Yazı bulunamadı</p>
-        <Link href="/admin/dashboard/posts">
+        <Link href="/mrbekox-console/dashboard/posts">
           <Button variant="outline">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Yazılara Dön
@@ -173,7 +179,7 @@ export default function EditPostPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/admin/dashboard/posts">
+        <Link href="/mrbekox-console/dashboard/posts">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-4 w-4" />
           </Button>
@@ -402,4 +408,3 @@ export default function EditPostPage() {
     </div>
   );
 }
-

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace BlogApp.Server.Application.Common.Models;
 
 /// <summary>
@@ -5,12 +7,13 @@ namespace BlogApp.Server.Application.Common.Models;
 /// </summary>
 public class Result
 {
-    public bool IsSuccess { get; }
+    public bool IsSuccess { get; set; }
     public bool IsFailure => !IsSuccess;
-    public string? Error { get; }
-    public List<string> Errors { get; } = new();
+    public string? Error { get; set; }
+    public List<string> Errors { get; set; } = new();
 
-    protected Result(bool isSuccess, string? error)
+    [JsonConstructor]
+    public Result(bool isSuccess, string? error)
     {
         IsSuccess = isSuccess;
         Error = error;
@@ -18,7 +21,7 @@ public class Result
             Errors.Add(error);
     }
 
-    protected Result(bool isSuccess, List<string> errors)
+    public Result(bool isSuccess, List<string> errors)
     {
         IsSuccess = isSuccess;
         Errors = errors;
@@ -38,7 +41,13 @@ public class Result
 /// </summary>
 public class Result<T> : Result
 {
-    public T? Value { get; }
+    public T? Value { get; set; }
+
+    [JsonConstructor]
+    public Result(bool isSuccess, string? error, T? value) : base(isSuccess, error)
+    {
+        Value = value;
+    }
 
     private Result(T value) : base(true, (string?)null)
     {

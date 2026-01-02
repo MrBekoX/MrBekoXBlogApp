@@ -85,7 +85,10 @@ public class UpdatePostCommandHandler(
         post.Excerpt = dto.Excerpt;
         post.FeaturedImageUrl = dto.FeaturedImageUrl;
         post.CategoryId = categoryId;
-        post.MetaTitle = dto.MetaTitle ?? dto.Title;
+        // MetaTitle max 70 karakter limiti
+        post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
+            ? dto.MetaTitle 
+            : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]);
         post.MetaDescription = dto.MetaDescription;
         post.MetaKeywords = dto.MetaKeywords;
         post.IsFeatured = dto.IsFeatured;

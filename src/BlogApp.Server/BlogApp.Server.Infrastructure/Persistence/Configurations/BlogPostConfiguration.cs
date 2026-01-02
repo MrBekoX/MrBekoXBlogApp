@@ -49,6 +49,29 @@ public class BlogPostConfiguration : IEntityTypeConfiguration<BlogPost>
         builder.HasIndex(p => p.PublishedAt);
         builder.HasIndex(p => p.CreatedAt);
         builder.HasIndex(p => p.IsFeatured);
+        
+        // Composite index for common query patterns (status + published date)
+        builder.HasIndex(p => new { p.Status, p.PublishedAt })
+            .HasDatabaseName("IX_posts_status_publishedat");
+        
+        // Composite index for featured posts query
+        builder.HasIndex(p => new { p.Status, p.IsFeatured, p.PublishedAt })
+            .HasDatabaseName("IX_posts_status_isfeatured_publishedat");
+        
+        // Soft delete filter index
+        builder.HasIndex(p => new { p.IsDeleted, p.Status })
+            .HasDatabaseName("IX_posts_isdeleted_status");
+        
+        // GIN index for full-text search on title (PostgreSQL specific)
+        // Note: For production, consider adding a tsvector column with GIN index
+        // ALTER TABLE posts ADD COLUMN search_vector tsvector;
+        // CREATE INDEX IX_posts_search_vector ON posts USING GIN(search_vector);
+        builder.HasIndex(p => p.Title)
+            .HasDatabaseName("IX_posts_title");
+        
+        // Index for category filtering
+        builder.HasIndex(p => new { p.CategoryId, p.Status })
+            .HasDatabaseName("IX_posts_categoryid_status");
 
         // Relationships
         builder.HasOne(p => p.Author)

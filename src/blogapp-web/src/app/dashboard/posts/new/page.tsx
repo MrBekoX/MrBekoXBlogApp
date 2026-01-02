@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
 export default function NewPostPage() {
-  redirect('/admin/dashboard/posts/new');
+  redirect('/mrbekox-console/dashboard/posts/new');
 }

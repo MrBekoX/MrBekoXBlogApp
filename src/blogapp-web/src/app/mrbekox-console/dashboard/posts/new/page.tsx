@@ -30,7 +30,11 @@ const postSchema = z.object({
   title: z.string().min(1, 'Başlık gerekli').max(200),
   content: z.string().min(1, 'İçerik gerekli'),
   excerpt: z.string().max(500).optional(),
-  featuredImageUrl: z.string().url().optional().or(z.literal('')),
+  // Accept full URLs, relative paths (/uploads/...), or empty string
+  featuredImageUrl: z.string().optional().refine(
+    (val) => !val || val === '' || val.startsWith('/') || val.startsWith('http://') || val.startsWith('https://'),
+    { message: 'Geçerli bir URL veya görsel yolu girin' }
+  ),
   status: z.enum(['Draft', 'Published']),
 });
 
@@ -104,7 +108,7 @@ export default function NewPostPage() {
 
     if (post) {
       toast.success(finalStatus === 'Published' ? 'Yazı yayınlandı!' : 'Taslak kaydedildi!');
-      router.push('/admin/dashboard/posts');
+      router.push('/mrbekox-console/dashboard/posts');
     } else {
       const errorMsg = usePostsStore.getState().error;
       console.error('Post creation failed. Store error:', errorMsg);

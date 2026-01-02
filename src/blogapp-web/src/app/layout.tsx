@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { CacheSyncProvider } from '@/components/cache-sync-provider';
 import { OrganizationSchema } from '@/components/seo/organization-schema';
 import { WebsiteSchema } from '@/components/seo/website-schema';
+import { PersonSchema } from '@/components/seo/person-schema';
 import './globals.css';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
@@ -13,11 +14,13 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'MrBekoX | Backend, Yazılım Mimarisi & AI',
+    default: 'MrBekoX - Software Developer',
     template: '%s | MrBekoX Blog',
   },
-  description: "Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine teknik içerikler. Mikroservisler, sistem tasarımı, AI agent'lar ve modern yazılım mühendisliği pratikleri hakkında derinlemesine makaleler.",
+  description: 'Yazılım geliştirme yolculuğumda öğrendiklerimi, aldığım teknik notları ve proje deneyimlerimi paylaştığım kişisel blog.',
   keywords: [
+    'Berkay Kaplan',
+    'MrBekoX',
     'backend development',
     'yazılım mimarisi',
     'software architecture',
@@ -32,16 +35,17 @@ export const metadata: Metadata = {
     'ASP.NET Core',
     'C#',
     'Python',
+    'onion architecture',
     'clean architecture',
     'CQRS',
     'domain driven design',
-    'MrBekoX',
     'backend blog',
     'teknik blog',
+    'software developer turkey',
   ],
-  authors: [{ name: 'MrBekoX', url: SITE_URL }],
-  creator: 'MrBekoX',
-  publisher: 'MrBekoX',
+  authors: [{ name: 'Berkay Kaplan', url: SITE_URL }],
+  creator: 'Berkay Kaplan',
+  publisher: 'Berkay Kaplan',
   formatDetection: {
     email: false,
     address: false,
@@ -51,22 +55,22 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'tr_TR',
     url: SITE_URL,
-    title: 'MrBekoX | Backend, Yazılım Mimarisi & AI',
-    description: "Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine teknik içerikler. Mikroservisler, sistem tasarımı, AI agent'lar ve modern yazılım mühendisliği pratikleri.",
+    title: 'MrBekoX - Software Developer',
+    description: 'Yazılım geliştirme yolculuğumda öğrendiklerimi, aldığım teknik notları ve proje deneyimlerimi paylaştığım kişisel blog.',
     siteName: 'MrBekoX Blog',
     images: [
       {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'MrBekoX Blog - Backend, Yazılım Mimarisi & AI',
+        alt: 'MrBekoX Blog',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'MrBekoX | Backend, Yazılım Mimarisi & AI',
-    description: "Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine teknik içerikler.",
+    title: 'MrBekoX | Software Developer',
+    description: 'Yazılım geliştirme yolculuğumda öğrendiklerimi, aldığım teknik notları ve proje deneyimlerimi paylaştığım kişisel blog.',
     creator: '@mrbeko_',
     images: ['/opengraph-image'],
   },
@@ -96,12 +100,15 @@ export default function RootLayout({
   return (
     <html lang="tr" suppressHydrationWarning>
       <head>
+        {/* Enable View Transitions API for smooth page transitions (modern browsers) */}
+        <meta name="view-transition" content="same-origin" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Merriweather:wght@300;400;700;900&family=Crimson+Text:wght@400;600;700&display=swap"
           rel="stylesheet"
         />
         <OrganizationSchema />
         <WebsiteSchema />
+        <PersonSchema />
       </head>
       <body className="antialiased min-h-screen flex flex-col">
         <ThemeProvider

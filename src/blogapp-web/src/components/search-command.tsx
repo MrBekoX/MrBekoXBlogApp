@@ -16,6 +16,10 @@ import { Button } from '@/components/ui/button';
 import { postsApi, categoriesApi, tagsApi } from '@/lib/api';
 import type { BlogPost, Category, Tag as TagType } from '@/types';
 
+// Minimum arama uzunluğu
+const MIN_SEARCH_LENGTH = 2;
+const DEBOUNCE_DELAY = 400;
+
 export function SearchCommand() {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -38,47 +42,94 @@ export function SearchCommand() {
     return () => document.removeEventListener('keydown', down);
   }, []);
 
-  // Search when query changes
+  // Search when query changes with debounce and minimum length
   React.useEffect(() => {
+    const searchTerm = search.trim();
+    
+    // Minimum karakter kontrolü
+    if (searchTerm.length > 0 && searchTerm.length < MIN_SEARCH_LENGTH) {
+      setPosts([]);
+      setCategories([]);
+      setTags([]);
+      return;
+    }
+    
     const searchData = async () => {
-      if (!search.trim()) {
+      if (!searchTerm) {
         setPosts([]);
+        setCategories([]);
+        setTags([]);
         return;
       }
 
       setIsLoading(true);
       try {
-        const [postsRes, categoriesRes, tagsRes] = await Promise.all([
-          postsApi.getAll({ search, pageSize: 5, status: 'Published' }),
+        // Backend'den arama sonuçlarını al - tüm filtreleme server-side yapılır
+        const postsRes = await postsApi.getAll({ 
+          search: searchTerm, 
+          pageSize: 10, 
+          status: 'Published' 
+        });
+
+        if (postsRes.success && postsRes.data) {
+          setPosts(postsRes.data.items);
+        } else {
+          setPosts([]);
+        }
+        
+        // Kategori ve tag'leri de backend'den al (arama terimine göre)
+        const [categoriesRes, tagsRes] = await Promise.all([
           categoriesApi.getAll(),
           tagsApi.getAll(),
         ]);
 
-        if (postsRes.success && postsRes.data) {
-          setPosts(postsRes.data.items);
-        }
+        // Türkçe karakter uyumlu filtreleme
+        const normalizeText = (text: string) => 
+          text.toLowerCase()
+            .replace(/ı/g, 'i')
+            .replace(/İ/g, 'i')
+            .replace(/ö/g, 'o')
+            .replace(/Ö/g, 'o')
+            .replace(/ü/g, 'u')
+            .replace(/Ü/g, 'u')
+            .replace(/ş/g, 's')
+            .replace(/Ş/g, 's')
+            .replace(/ğ/g, 'g')
+            .replace(/Ğ/g, 'g')
+            .replace(/ç/g, 'c')
+            .replace(/Ç/g, 'c');
+        
+        const normalizedSearch = normalizeText(searchTerm);
+        
         if (categoriesRes.success && categoriesRes.data) {
           setCategories(
-            categoriesRes.data.filter((c) =>
-              c.name.toLowerCase().includes(search.toLowerCase())
-            ).slice(0, 3)
+            categoriesRes.data.filter((c) => {
+              const normalizedName = normalizeText(c.name);
+              return normalizedName.includes(normalizedSearch) || 
+                     c.name.toLowerCase().includes(searchTerm.toLowerCase());
+            }).slice(0, 3)
           );
         }
         if (tagsRes.success && tagsRes.data) {
           setTags(
-            tagsRes.data.filter((t) =>
-              t.name.toLowerCase().includes(search.toLowerCase())
-            ).slice(0, 3)
+            tagsRes.data.filter((t) => {
+              const normalizedName = normalizeText(t.name);
+              return normalizedName.includes(normalizedSearch) || 
+                     t.name.toLowerCase().includes(searchTerm.toLowerCase());
+            }).slice(0, 3)
           );
         }
       } catch (error) {
         console.error('Search error:', error);
+        setPosts([]);
+        setCategories([]);
+        setTags([]);
       } finally {
         setIsLoading(false);
       }
     };
 
-    const debounce = setTimeout(searchData, 300);
+    const debounce = setTimeout(searchData, DEBOUNCE_DELAY);
     return () => clearTimeout(debounce);
   }, [search]);
 
@@ -88,13 +139,12 @@ export function SearchCommand() {
     
     switch (type) {
       case 'post':
-        router.push(`/posts/${slug}`);
+        router.push(`/posts/view?slug=${slug}`);
         break;
       case 'category':
-        router.push(`/categories/${slug}`);
-        break;
       case 'tag':
-        router.push(`/tags/${slug}`);
+        // Bu sayfalar henüz hazır değil
+        alert('Bu sayfa yakında eklenecek!');
         break;
     }
   };
@@ -127,14 +177,25 @@ export function SearchCommand() {
               </div>
             )}
 
-            {!isLoading && !search && (
+            {!isLoading && !search.trim() && (
               <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">
-                Start typing to search...
+                Aramaya başlamak için yazmaya başlayın...
               </CommandEmpty>
             )}
 
-            {!isLoading && search && posts.length === 0 && categories.length === 0 && tags.length === 0 && (
-              <CommandEmpty>No results found.</CommandEmpty>
+            {!isLoading && search.trim().length > 0 && search.trim().length < MIN_SEARCH_LENGTH && (
+              <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">
+                En az {MIN_SEARCH_LENGTH} karakter girin
+              </CommandEmpty>
+            )}
+
+            {!isLoading && search.trim().length >= MIN_SEARCH_LENGTH && posts.length === 0 && categories.length === 0 && tags.length === 0 && (
+              <CommandEmpty className="py-6 text-center">
+                <p className="text-sm font-medium">Böyle bir makale bulunamadı</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  &ldquo;{search.trim()}&rdquo; ile eşleşen sonuç yok
+                </p>
+              </CommandEmpty>
             )}
 
             {posts.length > 0 && (

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { getImageUrl } from '@/lib/utils';
 import type { BlogPost } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,10 +25,10 @@ export function PostCard({ post }: PostCardProps) {
   return (
     <Card className="group overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 border-border/50 bg-card/80 backdrop-blur-sm hover:border-primary/30">
       {post.featuredImageUrl && (
-        <Link href={`/posts/${post.slug}`} className="block overflow-hidden">
+        <Link href={`/posts/view?slug=${post.slug}`} className="block overflow-hidden">
           <div className="aspect-video overflow-hidden bg-muted">
             <img
-              src={post.featuredImageUrl}
+              src={getImageUrl(post.featuredImageUrl)}
               alt={post.title}
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
             />
@@ -40,20 +41,19 @@ export function PostCard({ post }: PostCardProps) {
         {post.categories && post.categories.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {post.categories.slice(0, 2).map((category) => (
-              <Link key={category.id} href={`/categories/${category.slug}`}>
-                <Badge 
-                  variant="secondary" 
-                  className="bg-primary/10 text-primary hover:bg-primary/20 border-0 font-medium"
-                >
-                  {category.name}
-                </Badge>
-              </Link>
+              <Badge 
+                key={category.id}
+                variant="secondary" 
+                className="bg-primary/10 text-primary border-0 font-medium"
+              >
+                {category.name}
+              </Badge>
             ))}
           </div>
         )}
 
         {/* Title */}
-        <Link href={`/posts/${post.slug}`} className="block group/title">
+        <Link href={`/posts/view?slug=${post.slug}`} className="block group/title">
           <h2 className="line-clamp-2 text-xl font-semibold font-serif tracking-tight transition-colors group-hover/title:text-primary">
             {post.title}
           </h2>
@@ -98,7 +98,7 @@ export function PostCard({ post }: PostCardProps) {
       {/* Read more indicator */}
       <div className="absolute bottom-4 right-4 opacity-0 translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
         <Link 
-          href={`/posts/${post.slug}`}
+          href={`/posts/view?slug=${post.slug}`}
           className="flex items-center gap-1 text-sm font-medium text-primary"
         >
           Devamını Oku

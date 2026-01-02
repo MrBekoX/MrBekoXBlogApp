@@ -10,11 +10,11 @@ import { LayoutDashboard, FileText, FolderOpen, Tags, Settings, Plus } from 'luc
 import { Button } from '@/components/ui/button';
 
 const sidebarItems = [
-  { href: '/admin/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
-  { href: '/admin/dashboard/posts', label: 'Yazılar', icon: FileText },
-  { href: '/admin/dashboard/categories', label: 'Kategoriler', icon: FolderOpen },
-  { href: '/admin/dashboard/tags', label: 'Etiketler', icon: Tags },
-  { href: '/admin/dashboard/settings', label: 'Ayarlar', icon: Settings },
+  { href: '/mrbekox-console/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
+  { href: '/mrbekox-console/dashboard/posts', label: 'Yazılar', icon: FileText },
+  { href: '/mrbekox-console/dashboard/categories', label: 'Kategoriler', icon: FolderOpen },
+  { href: '/mrbekox-console/dashboard/tags', label: 'Etiketler', icon: Tags },
+  { href: '/mrbekox-console/dashboard/settings', label: 'Ayarlar', icon: Settings },
 ];
 
 export default function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -28,7 +28,7 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/admin');
+      router.push('/mrbekox-console');
     }
   }, [isAuthenticated, router]);
 
@@ -55,7 +55,7 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
       <aside className="hidden w-64 shrink-0 md:block">
         <nav className="sticky top-24 space-y-2">
           <Button asChild className="mb-4 w-full">
-            <Link href="/admin/dashboard/posts/new">
+            <Link href="/mrbekox-console/dashboard/posts/new">
               <Plus className="mr-2 h-4 w-4" />
               Yeni Yazı
             </Link>

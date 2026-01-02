@@ -1,5 +1,6 @@
 import { BlogPosting, Person, WithContext } from 'schema-dts';
 import { JsonLd } from './json-ld';
+import { getImageUrl } from '@/lib/utils';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
 
@@ -42,7 +43,7 @@ export function BlogPostingSchema({
     '@type': 'BlogPosting',
     headline: title,
     description: description,
-    url: `${SITE_URL}/posts/${slug}`,
+    url: `${SITE_URL}/posts/view?slug=${slug}`,
     datePublished: publishedAt,
     dateModified: updatedAt,
     author: authorSchema,
@@ -58,7 +59,7 @@ export function BlogPostingSchema({
     ...(featuredImageUrl && {
       image: {
         '@type': 'ImageObject',
-        url: featuredImageUrl,
+        url: getImageUrl(featuredImageUrl) || '',
       },
     }),
     ...(tags && tags.length > 0 && {
@@ -70,7 +71,7 @@ export function BlogPostingSchema({
     inLanguage: 'tr-TR',
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': `${SITE_URL}/posts/${slug}`,
+      '@id': `${SITE_URL}/posts/view?slug=${slug}`,
     },
   };
 

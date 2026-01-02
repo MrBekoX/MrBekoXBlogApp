@@ -37,7 +37,7 @@ public sealed partial class Slug : IEquatable<Slug>
         return new Slug(slug);
     }
 
-    private static string GenerateSlug(string title)
+    private static string GenerateSlug(string title, int maxLength = 200)
     {
         // Türkçe karakterleri dönüştür
         var normalized = title.ToLowerInvariant();
@@ -60,7 +60,15 @@ public sealed partial class Slug : IEquatable<Slug>
         result = MultipleHyphensRegex().Replace(result, "-");
 
         // Baştaki ve sondaki tireleri kaldır
-        return result.Trim('-');
+        result = result.Trim('-');
+
+        // Uzunluk kontrolü - maxLength'i aşarsa kes
+        if (result.Length > maxLength)
+        {
+            result = result[..maxLength].TrimEnd('-');
+        }
+
+        return result;
     }
 
     [GeneratedRegex(@"^[a-z0-9]+(?:-[a-z0-9]+)*$")]

@@ -48,10 +48,27 @@ export function Header() {
         e.preventDefault();
         const element = document.getElementById(hash);
         if (element) {
-          element.scrollIntoView({ behavior: 'smooth' });
+          // Close mobile menu if open
+          setMobileMenuOpen(false);
+          
+          // Smooth scroll with offset for fixed header
+          const headerOffset = 80;
+          const elementPosition = element.getBoundingClientRect().top;
+          const offsetPosition = elementPosition + window.scrollY - headerOffset;
+
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
+          
+          // Update URL without triggering navigation
+          window.history.pushState({}, '', href);
         }
+      } else {
+        // Navigating to different page with hash
+        // Let Next.js Link handle this, then scroll on page load
+        setMobileMenuOpen(false);
       }
-      // Otherwise, let the Link handle navigation normally
     }
   };
 
@@ -60,7 +77,6 @@ export function Header() {
   const navLinks = [
     { href: '/', label: 'Ana Sayfa', icon: Home },
     { href: '/posts', label: 'Yazılar', icon: BookOpen },
-    { href: '/#about', label: 'Hakkımda', icon: Info },
   ];
 
   const socialLinks = [
@@ -81,7 +97,7 @@ export function Header() {
             <span className="text-xl font-bold font-serif tracking-tight">
               MrBekoX
             </span>
-            <span className="text-xs text-muted-foreground block -mt-1">Backend, Yazılım Mimarisi & AI</span>
+            <span className="text-xs text-muted-foreground block -mt-1">Software Developer</span>
           </div>
         </Link>
 
@@ -131,7 +147,7 @@ export function Header() {
             <>
               {isAuthorOrAbove && (
                 <Button asChild variant="default" size="sm" className="hidden sm:flex">
-                  <Link href="/admin/dashboard/posts/new">
+                  <Link href="/mrbekox-console/dashboard/posts/new">
                     <PenSquare className="mr-2 h-4 w-4" />
                     Yeni Yazı
                   </Link>
@@ -161,7 +177,7 @@ export function Header() {
                   <DropdownMenuSeparator />
                   {isAuthorOrAbove && (
                     <DropdownMenuItem asChild>
-                      <Link href="/admin/dashboard" className="cursor-pointer">
+                      <Link href="/mrbekox-console/dashboard" className="cursor-pointer">
                         <LayoutDashboard className="mr-2 h-4 w-4" />
                         Kontrol Paneli
                       </Link>

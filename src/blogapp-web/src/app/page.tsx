@@ -27,6 +27,28 @@ export default function HomePage() {
     fetchPosts({ pageSize: 6, status: "Published" }, true);
   }, [cacheVersion, fetchPosts]);
 
+  // Handle hash navigation on page load
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      // Wait for content to load
+      setTimeout(() => {
+        const element = document.getElementById(hash.substring(1));
+        if (element) {
+          const headerOffset = 80;
+          const elementPosition = element.getBoundingClientRect().top;
+          const offsetPosition = elementPosition + window.scrollY - headerOffset;
+
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
+        }
+      }, 100);
+    }
+  }, []);
+
+
   return (
     <div className="relative">
       {/* Background decoration */}
@@ -107,11 +129,6 @@ export default function HomePage() {
                     <span className="absolute -bottom-2 left-0 w-full h-1 bg-gradient-to-r from-primary to-accent rounded-full" />
                   </span>
                 </h1>
-                <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed mx-auto max-w-2xl">
-                  Yazılım geliştirici, teknoloji meraklısı ve sürekli öğrenen
-                  biri. Bu blogda kod yazarken öğrendiklerimi, projelerimi ve
-                  düşüncelerimi paylaşıyorum.
-                </p>
               </div>
 
               <div className="flex flex-wrap gap-4 justify-center">
@@ -121,9 +138,6 @@ export default function HomePage() {
                     Yazıları Keşfet
                     <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                   </Link>
-                </Button>
-                <Button asChild variant="outline" size="lg">
-                  <a href="#about">Hakkımda</a>
                 </Button>
               </div>
 
@@ -185,55 +199,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* About Section */}
-      <section id="about" className="border-t bg-muted/30">
-        <div className="container py-20 md:py-28">
-          <div className="mx-auto max-w-4xl">
-            <div className="text-left space-y-4 mb-16 animate-fade-in-up">
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
-                Hakkımda
-              </h2>
-              <div className="w-20 h-1 bg-gradient-to-r from-primary to-accent rounded-full" />
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8">
-              <div className="group p-8 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5">
-                <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Code2 className="w-7 h-7 text-primary" />
-                </div>
-                <h3 className="text-xl font-semibold mb-3">
-                  Mühendislik Yaklaşımı
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Bilgisayar Mühendisliği temelimle, karşılaştığım problemlere analitik bir bakış açısıyla yaklaşıyorum. Sadece kod yazmayı değil, sürdürülebilir ve ölçeklenebilir sistemler tasarlamayı önemsiyorum.
-                </p>
-              </div>
-
-              <div className="group p-8 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5">
-                <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Sparkles className="w-7 h-7 text-primary" />
-                </div>
-                <h3 className="text-xl font-semibold mb-3">
-                  İnovasyon ve Teknoloji
-                </h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Teknoloji dünyasının hızına ayak uydurarak yapay zeka ve modern geliştirme araçlarını yakından takip ediyorum. Yenilikçi fikirleri projelere entegre ederek değer yaratmayı seviyorum.
-                </p>
-              </div>
-
-              <div className="group p-8 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5">
-                <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Terminal className="w-7 h-7 text-primary" />
-                </div>
-                <h3 className="text-xl font-semibold mb-3">Uçtan Uca Geliştirme</h3>
-                <p className="text-muted-foreground leading-relaxed">
-                  Fikirden ürüne giden yolda, arka plan mimarisinden kullanıcı deneyimine kadar her aşamada titizlikle çalışıyorum. Temiz, anlaşılır ve bakımı kolay çözümler üretmek benim için bir tutku.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* Latest Posts Section */}
       <section className="border-t">

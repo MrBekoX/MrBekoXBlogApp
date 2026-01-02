@@ -1,18 +1,46 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { usePostsStore } from '@/stores/posts-store';
 import { PostCard } from '@/components/posts/post-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, ChevronLeft, ChevronRight, BookOpen, Sparkles } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, BookOpen, Sparkles, Loader2 } from 'lucide-react';
+
+// Debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+// Minimum arama uzunluğu
+const MIN_SEARCH_LENGTH = 2;
+const DEBOUNCE_DELAY = 400;
 
 function PostsContent() {
   const searchParams = useSearchParams();
   const { posts, isLoading, fetchPosts, cacheVersion } = usePostsStore();
   const [search, setSearch] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  
+  // Debounced search term
+  const debouncedSearch = useDebounce(search, DEBOUNCE_DELAY);
+  
+  // Track if this is initial load or search
+  const isInitialLoad = useRef(true);
   
   // Initialize currentPage from URL searchParams to avoid calling setState in useEffect
   const pageParam = searchParams.get('page');
@@ -30,25 +58,61 @@ function PostsContent() {
     }
   }, [pageParam, currentPage]);
 
-  // Refetch when cache is invalidated (cacheVersion changes)
+  // Fetch posts with debounced search
   useEffect(() => {
-    fetchPosts({
-      pageNumber: currentPage,
-      pageSize: 9,
-      status: 'Published',
-      search: search || undefined,
-    }, true); // force refresh
-  }, [currentPage, search, cacheVersion, fetchPosts]);
+    const performSearch = async () => {
+      // Minimum karakter kontrolü - boş veya yeterli uzunlukta olmalı
+      const searchTerm = debouncedSearch.trim();
+      const shouldSearch = searchTerm.length === 0 || searchTerm.length >= MIN_SEARCH_LENGTH;
+      
+      if (!shouldSearch) {
+        return;
+      }
+
+      setIsSearching(true);
+      
+      // Arama yapılırken sayfa 1'e dön (ilk yükleme değilse)
+      const page = !isInitialLoad.current && searchTerm.length > 0 ? 1 : currentPage;
+      if (page !== currentPage && !isInitialLoad.current) {
+        setCurrentPage(1);
+      }
+      
+      await fetchPosts({
+        pageNumber: page,
+        pageSize: 9,
+        status: 'Published',
+        search: searchTerm || undefined,
+      }, true);
+      
+      setIsSearching(false);
+      isInitialLoad.current = false;
+    };
+
+    performSearch();
+  }, [debouncedSearch, currentPage, cacheVersion, fetchPosts]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setCurrentPage(1);
-    fetchPosts({
-      pageNumber: 1,
-      pageSize: 9,
-      status: 'Published',
-      search: search || undefined,
-    });
+    // Form submit'te anında arama yap
+    const searchTerm = search.trim();
+    if (searchTerm.length >= MIN_SEARCH_LENGTH || searchTerm.length === 0) {
+      setCurrentPage(1);
+      fetchPosts({
+        pageNumber: 1,
+        pageSize: 9,
+        status: 'Published',
+        search: searchTerm || undefined,
+      });
+    }
+  };
+  
+  // Arama input'u değiştiğinde gösterilecek helper text
+  const getSearchHelperText = () => {
+    const trimmed = search.trim();
+    if (trimmed.length > 0 && trimmed.length < MIN_SEARCH_LENGTH) {
+      return `En az ${MIN_SEARCH_LENGTH} karakter girin`;
+    }
+    return null;
   };
 
   return (
@@ -78,7 +142,11 @@ function PostsContent() {
             {/* Search Form */}
             <form onSubmit={handleSearch} className="flex max-w-lg mx-auto gap-3 pt-4">
               <div className="relative flex-1">
-                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                {isSearching ? (
+                  <Loader2 className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-primary animate-spin" />
+                ) : (
+                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                )}
                 <Input
                   placeholder="Yazılarda ara..."
                   value={search}
@@ -86,10 +154,16 @@ function PostsContent() {
                   className="pl-11 h-12 bg-background/80 border-border/50 focus:border-primary"
                 />
               </div>
-              <Button type="submit" size="lg" className="px-6">
-                Ara
+              <Button type="submit" size="lg" className="px-6" disabled={isSearching}>
+                {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Ara'}
               </Button>
             </form>
+            {/* Helper text for minimum characters */}
+            {getSearchHelperText() && (
+              <p className="text-sm text-muted-foreground mt-2 animate-fade-in">
+                {getSearchHelperText()}
+              </p>
+            )}
           </div>
         </div>
       </section>
@@ -117,18 +191,30 @@ function PostsContent() {
               </div>
             ))
           ) : (
-            <div className="col-span-full py-20 text-center">
+            <div className="col-span-full py-20 text-center animate-fade-in">
               <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
                 <BookOpen className="w-10 h-10 text-muted-foreground" />
               </div>
               <h3 className="text-xl font-semibold mb-2">
-                {search ? 'Sonuç bulunamadı' : 'Henüz yazı yok'}
+                {search.trim() ? 'Böyle bir makale bulunamadı' : 'Henüz yazı yok'}
               </h3>
-              <p className="text-muted-foreground">
-                {search 
-                  ? 'Aramanızla eşleşen yazı bulunamadı. Farklı anahtar kelimeler deneyin.' 
+              <p className="text-muted-foreground max-w-md mx-auto">
+                {search.trim() 
+                  ? `"${search.trim()}" aramasıyla eşleşen makale bulunamadı. Farklı anahtar kelimeler deneyebilir veya arama terimini kısaltabilirsiniz.` 
                   : 'Yakında yeni içerikler eklenecek!'}
               </p>
+              {search.trim() && (
+                <Button 
+                  variant="outline" 
+                  className="mt-6"
+                  onClick={() => {
+                    setSearch('');
+                    setCurrentPage(1);
+                  }}
+                >
+                  Aramayı Temizle
+                </Button>
+              )}
             </div>
           )}
         </div>

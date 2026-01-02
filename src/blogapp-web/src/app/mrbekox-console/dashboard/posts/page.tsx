@@ -108,7 +108,7 @@ export default function PostsPage() {
           <p className="text-muted-foreground">{totalCount} yazı bulunuyor</p>
         </div>
         <Button asChild>
-          <Link href="/admin/dashboard/posts/new">
+          <Link href="/mrbekox-console/dashboard/posts/new">
             <Plus className="mr-2 h-4 w-4" />
             Yeni Yazı
           </Link>
@@ -164,7 +164,7 @@ export default function PostsPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem asChild>
-                            <Link href={`/admin/dashboard/posts/${post.id}`}>
+                            <Link href={`/mrbekox-console/dashboard/posts/edit?id=${post.id}`}>
                               <Pencil className="mr-2 h-4 w-4" />
                               Düzenle
                             </Link>
@@ -221,7 +221,7 @@ export default function PostsPage() {
               İlk blog yazınızı oluşturarak başlayın
             </p>
             <Button asChild className="mt-4">
-              <Link href="/admin/dashboard/posts/new">
+              <Link href="/mrbekox-console/dashboard/posts/new">
                 <Plus className="mr-2 h-4 w-4" />
                 İlk Yazıyı Oluştur
               </Link>

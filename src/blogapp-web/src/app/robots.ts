@@ -1,5 +1,8 @@
 import { MetadataRoute } from 'next';
 
+// Required for static export
+export const dynamic = 'force-static';
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
 
 export default function robots(): MetadataRoute.Robots {
@@ -9,7 +12,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: '*',
         allow: '/',
         disallow: [
-          '/admin/*',
+          '/mrbekox-console/*',
           '/dashboard/*',
           '/login',
           '/register',

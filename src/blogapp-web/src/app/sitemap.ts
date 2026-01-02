@@ -1,5 +1,8 @@
 import { MetadataRoute } from 'next';
 
+// Required for static export
+export const dynamic = 'force-static';
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://mrbekox.dev/api/v1';
 
@@ -10,8 +13,9 @@ interface Post {
 
 async function getPosts(): Promise<Post[]> {
   try {
+    // Fetch at build time for static export (no revalidation)
     const response = await fetch(`${API_URL}/posts?pageSize=1000&status=Published`, {
-      next: { revalidate: 3600 }, // Revalidate every hour
+      cache: 'no-store'
     });
     
     if (!response.ok) {
@@ -48,7 +52,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Dynamic blog post pages
   const postPages: MetadataRoute.Sitemap = posts.map((post) => ({
-    url: `${SITE_URL}/posts/${post.slug}`,
+    url: `${SITE_URL}/posts/view?slug=${post.slug}`,
     lastModified: new Date(post.updatedAt),
     changeFrequency: 'weekly' as const,
     priority: 0.8,

@@ -195,9 +195,16 @@ public static class PostsEndpoints
                 Id = response.Result.Value
             }, cancellationToken);
 
+            // Null güvenlik kontrolü: Post oluşturuldu ancak fetch başarısız olabilir
+            if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
+            {
+                return Results.Created($"/api/posts/{response.Result.Value}",
+                    ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post created but details could not be fetched"));
+            }
+
             return Results.Created(
                 $"/api/posts/{response.Result.Value}",
-                ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post created successfully"));
+                ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post created successfully"));
         })
         .WithName("CreatePost")
         .WithDescription("Create a new post")
@@ -228,7 +235,13 @@ public static class PostsEndpoints
                 Id = id
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post updated successfully"));
+            // Null safety check
+            if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
+            {
+                return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post updated but details could not be fetched"));
+            }
+
+            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post updated successfully"));
         })
         .WithName("UpdatePost")
         .WithDescription("Update an existing post")
@@ -278,7 +291,13 @@ public static class PostsEndpoints
                 Id = id
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post published successfully"));
+            // Null safety check
+            if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
+            {
+                return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post published but details could not be fetched"));
+            }
+
+            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post published successfully"));
         })
         .WithName("PublishPost")
         .WithDescription("Publish a post")
@@ -305,7 +324,13 @@ public static class PostsEndpoints
                 Id = id
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post unpublished successfully"));
+            // Null safety check
+            if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
+            {
+                return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post unpublished but details could not be fetched"));
+            }
+
+            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post unpublished successfully"));
         })
         .WithName("UnpublishPost")
         .WithDescription("Unpublish a post")
@@ -332,7 +357,13 @@ public static class PostsEndpoints
                 Id = id
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value!, "Post archived successfully"));
+            // Null safety check
+            if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
+            {
+                return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post archived but details could not be fetched"));
+            }
+
+            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post archived successfully"));
         })
         .WithName("ArchivePost")
         .WithDescription("Archive a post")

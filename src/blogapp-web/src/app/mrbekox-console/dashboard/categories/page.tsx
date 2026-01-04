@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { categoriesApi } from '@/lib/api';
+import { useCategoriesStore } from '@/stores/categories-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,29 +12,25 @@ import { Plus, Pencil, Trash2, Folder } from 'lucide-react';
 import type { Category } from '@/types';
 
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { 
+    categories, 
+    isLoading, 
+    fetchCategories, 
+    createCategory, 
+    updateCategory, 
+    deleteCategory,
+    cacheVersion 
+  } = useCategoriesStore();
+  
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', description: '' });
 
-  const fetchCategories = async () => {
-    try {
-      const response = await categoriesApi.getAll();
-      if (response.success && response.data) {
-        setCategories(response.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch categories:', error);
-      toast.error('Kategoriler yüklenemedi');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchCategories();
-  }, []);
+    // Dashboard'da tüm kategorileri göster (boş olanlar dahil)
+    // forceRefresh = true: Cache farklı parametrelerle doldurulmuş olabilir
+    fetchCategories(true, false);
+  }, [fetchCategories, cacheVersion]);
 
   const handleCreate = async () => {
     if (!formData.name.trim()) {
@@ -42,20 +38,16 @@ export default function CategoriesPage() {
       return;
     }
 
-    try {
-      const response = await categoriesApi.create({
-        name: formData.name,
-        description: formData.description || undefined,
-      });
-      if (response.success) {
-        toast.success('Kategori oluşturuldu');
-        setFormData({ name: '', description: '' });
-        setIsCreating(false);
-        fetchCategories();
-      } else {
-        toast.error(response.message || 'Kategori oluşturulamadı');
-      }
-    } catch (error) {
+    const result = await createCategory({
+      name: formData.name,
+      description: formData.description || undefined,
+    });
+    
+    if (result) {
+      toast.success('Kategori oluşturuldu');
+      setFormData({ name: '', description: '' });
+      setIsCreating(false);
+    } else {
       toast.error('Kategori oluşturulamadı');
     }
   };
@@ -66,20 +58,16 @@ export default function CategoriesPage() {
       return;
     }
 
-    try {
-      const response = await categoriesApi.update(id, {
-        name: formData.name,
-        description: formData.description || undefined,
-      });
-      if (response.success) {
-        toast.success('Kategori güncellendi');
-        setFormData({ name: '', description: '' });
-        setEditingId(null);
-        fetchCategories();
-      } else {
-        toast.error(response.message || 'Kategori güncellenemedi');
-      }
-    } catch (error) {
+    const result = await updateCategory(id, {
+      name: formData.name,
+      description: formData.description || undefined,
+    });
+    
+    if (result) {
+      toast.success('Kategori güncellendi');
+      setFormData({ name: '', description: '' });
+      setEditingId(null);
+    } else {
       toast.error('Kategori güncellenemedi');
     }
   };
@@ -87,15 +75,10 @@ export default function CategoriesPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Bu kategoriyi silmek istediğinize emin misiniz?')) return;
 
-    try {
-      const response = await categoriesApi.delete(id);
-      if (response.success) {
-        toast.success('Kategori silindi');
-        fetchCategories();
-      } else {
-        toast.error(response.message || 'Kategori silinemedi');
-      }
-    } catch (error) {
+    const success = await deleteCategory(id);
+    if (success) {
+      toast.success('Kategori silindi');
+    } else {
       toast.error('Kategori silinemedi');
     }
   };
@@ -164,7 +147,7 @@ export default function CategoriesPage() {
       )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {isLoading ? (
+        {isLoading && categories.length === 0 ? (
           Array.from({ length: 6 }).map((_, i) => (
             <Card key={i}>
               <CardHeader>
@@ -225,4 +208,3 @@ export default function CategoriesPage() {
     </div>
   );
 }
-

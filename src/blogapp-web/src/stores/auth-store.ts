@@ -3,24 +3,38 @@ import { persist } from 'zustand/middleware';
 import type { User } from '@/types';
 import { authApi } from '@/lib/api';
 
+/**
+ * Auth status represents the current authentication state.
+ * - 'idle': Initial state, auth hasn't been checked yet
+ * - 'checking': Currently verifying auth with backend
+ * - 'authenticated': User is authenticated
+ * - 'unauthenticated': User is not authenticated
+ */
+type AuthStatus = 'idle' | 'checking' | 'authenticated' | 'unauthenticated';
+
 interface AuthState {
   user: User | null;
-  isAuthenticated: boolean;
+  authStatus: AuthStatus;
   isLoading: boolean;
   error: string | null;
 
+  // Actions
   login: (email: string, password: string) => Promise<boolean>;
   register: (data: { userName: string; email: string; password: string; confirmPassword: string; firstName?: string; lastName?: string }) => Promise<boolean>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   clearError: () => void;
+  reset: () => void;
 }
+
+// Store for tracking in-flight auth check to prevent duplicates
+let authCheckPromise: Promise<void> | null = null;
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
-      isAuthenticated: false,
+      authStatus: 'idle',
       isLoading: false,
       error: null,
 
@@ -29,10 +43,9 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await authApi.login({ email, password });
           if (response.success && response.data) {
-            // HttpOnly cookies are set automatically by the server
             set({
               user: response.data.user,
-              isAuthenticated: true,
+              authStatus: 'authenticated',
               isLoading: false,
             });
             return true;
@@ -52,10 +65,9 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await authApi.register(data);
           if (response.success && response.data) {
-            // HttpOnly cookies are set automatically by the server
             set({
               user: response.data.user,
-              isAuthenticated: true,
+              authStatus: 'authenticated',
               isLoading: false,
             });
             return true;
@@ -72,36 +84,86 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
-          // Server clears HttpOnly cookies
           await authApi.logout();
         } catch {
           // Ignore logout errors
         } finally {
-          set({ user: null, isAuthenticated: false });
+          set({ user: null, authStatus: 'unauthenticated' });
         }
       },
 
       checkAuth: async () => {
-        // No token check needed - just try to get current user
-        // If cookies are valid, server will authenticate
-        try {
-          const response = await authApi.getCurrentUser();
-          if (response.success && response.data) {
-            set({ user: response.data, isAuthenticated: true });
-          } else {
-            set({ user: null, isAuthenticated: false });
+        const state = get();
+
+        // If already checking, wait for the existing check to complete
+        if (authCheckPromise) {
+          await authCheckPromise;
+          // Re-check state after promise completes - another call may have set auth
+          const newState = get();
+          if (newState.authStatus !== 'unauthenticated') {
+            return;
           }
-        } catch {
-          set({ user: null, isAuthenticated: false });
+          return;
         }
+
+        // If already authenticated and we have a user, skip the check
+        // (login/register already set the state correctly)
+        if (state.authStatus === 'authenticated' && state.user) {
+          return;
+        }
+
+        set({ authStatus: 'checking' });
+
+        authCheckPromise = (async () => {
+          try {
+            const response = await authApi.getCurrentUser();
+            if (response.success && response.data) {
+              set({ user: response.data, authStatus: 'authenticated' });
+            } else {
+              set({ user: null, authStatus: 'unauthenticated' });
+            }
+          } catch (error) {
+            if (error && typeof error === 'object' && 'response' in error) {
+              const axiosError = error as { response?: { status?: number } };
+
+              // 401 means not authenticated
+              if (axiosError.response?.status === 401) {
+                set({ user: null, authStatus: 'unauthenticated' });
+                return;
+              }
+
+              // 429 rate limit - treat as unauthenticated to prevent infinite loop
+              if (axiosError.response?.status === 429) {
+                console.warn('Auth check rate limited, treating as unauthenticated');
+                set({ user: null, authStatus: 'unauthenticated' });
+                return;
+              }
+            }
+
+            // Network errors or 5xx - treat as unauthenticated to prevent infinite loop
+            console.warn('Auth check failed:', error);
+            set({ user: null, authStatus: 'unauthenticated' });
+          } finally {
+            authCheckPromise = null;
+          }
+        })();
+
+        await authCheckPromise;
       },
 
       clearError: () => set({ error: null }),
+
+      reset: () => set({ user: null, authStatus: 'idle', error: null }),
     }),
     {
       name: 'auth-storage',
-      // Only persist user state for UI, not for authentication
-      partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
+      // Persist both user and authStatus to prevent infinite loops
+      // On page load, if unauthenticated, don't call checkAuth
+      // If authenticated, verify with backend once
+      partialize: (state) => ({
+        user: state.user,
+        authStatus: state.authStatus === 'checking' ? 'idle' : state.authStatus,
+      }),
     }
   )
 );

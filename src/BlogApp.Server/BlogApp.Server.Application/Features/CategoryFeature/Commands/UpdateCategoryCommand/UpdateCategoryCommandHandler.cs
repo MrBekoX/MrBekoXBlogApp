@@ -11,7 +11,8 @@ namespace BlogApp.Server.Application.Features.CategoryFeature.Commands.UpdateCat
 
 public class UpdateCategoryCommandHandler(
     IUnitOfWork unitOfWork,
-    ICategoryBusinessRules categoryBusinessRules) : IRequestHandler<UpdateCategoryCommandRequest, UpdateCategoryCommandResponse>
+    ICategoryBusinessRules categoryBusinessRules,
+    ICacheService cacheService) : IRequestHandler<UpdateCategoryCommandRequest, UpdateCategoryCommandResponse>
 {
     public async Task<UpdateCategoryCommandResponse> Handle(UpdateCategoryCommandRequest request, CancellationToken cancellationToken)
     {
@@ -51,6 +52,9 @@ public class UpdateCategoryCommandHandler(
 
         await unitOfWork.CategoriesWrite.UpdateAsync(category, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Invalidate categories cache
+        await cacheService.RotateGroupVersionAsync(CategoryCacheKeys.ListGroup, cancellationToken);
 
         return new UpdateCategoryCommandResponse
         {

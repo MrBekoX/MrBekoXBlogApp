@@ -29,9 +29,10 @@ public class CategoryConfiguration : IEntityTypeConfiguration<Category>
         builder.Property(c => c.ImageUrl)
             .HasMaxLength(500);
 
-        // Indexes
+        // Indexes - Partial unique index (only for non-deleted records)
         builder.HasIndex(c => c.Slug)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"IsDeleted\" = false");
 
         builder.HasIndex(c => c.DisplayOrder);
         builder.HasIndex(c => c.IsActive);

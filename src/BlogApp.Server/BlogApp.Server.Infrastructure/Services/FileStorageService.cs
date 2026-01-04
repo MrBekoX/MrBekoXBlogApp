@@ -88,10 +88,9 @@ public class FileStorageService(IHostEnvironment environment, ILogger<FileStorag
             var extension = options.ConvertToWebP ? ".webp" : Path.GetExtension(fileName);
             var uniqueFileName = $"{baseFileName}_{uniqueId}{extension}";
 
-            // Images klasörünü oluştur
+            // Images klasörünü oluştur (thread-safe: Directory.CreateDirectory doesn't throw if exists)
             var imagesFolder = Path.Combine(_uploadsFolder, "images");
-            if (!Directory.Exists(imagesFolder))
-                Directory.CreateDirectory(imagesFolder);
+            Directory.CreateDirectory(imagesFolder); // Idempotent - safe for concurrent calls
 
             var filePath = Path.Combine(imagesFolder, uniqueFileName);
 
@@ -184,14 +183,24 @@ public class FileStorageService(IHostEnvironment environment, ILogger<FileStorag
                 return Task.FromResult(false);
             }
 
-            if (File.Exists(filePath))
+            // TOCTOU FIX: File.Exists + File.Delete yerine direkt delete + exception handling
+            // Bu yaklaşım race condition'ı önler
+            try
             {
                 File.Delete(filePath);
                 logger.LogInformation("File deleted: {FilePath}", filePath);
                 return Task.FromResult(true);
             }
-
-            return Task.FromResult(false);
+            catch (FileNotFoundException)
+            {
+                // Dosya zaten silinmiş - hata değil
+                return Task.FromResult(false);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                // Parent directory mevcut değil - hata değil
+                return Task.FromResult(false);
+            }
         }
         catch (Exception ex)
         {

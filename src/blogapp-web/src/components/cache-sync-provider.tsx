@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useCacheSync, CacheInvalidationEvent } from '@/hooks/use-cache-sync';
 import { usePostsStore } from '@/stores/posts-store';
+import { useCategoriesStore } from '@/stores/categories-store';
+import { useTagsStore } from '@/stores/tags-store';
 
 interface CacheSyncProviderProps {
   children: React.ReactNode;
@@ -16,6 +17,8 @@ interface CacheSyncProviderProps {
  */
 export function CacheSyncProvider({ children, debug = false }: CacheSyncProviderProps) {
   const invalidatePostsCache = usePostsStore((state) => state.invalidateCache);
+  const invalidateCategoriesCache = useCategoriesStore((state) => state.invalidateCache);
+  const invalidateTagsCache = useTagsStore((state) => state.invalidateCache);
 
   const handleCacheInvalidation = (event: CacheInvalidationEvent) => {
     if (debug) {
@@ -32,18 +35,24 @@ export function CacheSyncProvider({ children, debug = false }: CacheSyncProvider
       invalidatePostsCache();
     }
 
-    // Add more store invalidations here as needed:
-    // if (target.includes('categories') || target.includes('category')) {
-    //   invalidateCategoriesCache();
-    // }
-    // if (target.includes('tags') || target.includes('tag')) {
-    //   invalidateTagsCache();
-    // }
+    if (target.includes('categories') || target.includes('category')) {
+      if (debug) {
+        console.log('[CacheSyncProvider] Invalidating categories cache');
+      }
+      invalidateCategoriesCache();
+    }
+
+    if (target.includes('tags') || target.includes('tag')) {
+      if (debug) {
+        console.log('[CacheSyncProvider] Invalidating tags cache');
+      }
+      invalidateTagsCache();
+    }
   };
 
   useCacheSync({
     onInvalidate: handleCacheInvalidation,
-    groups: ['posts'], // Subscribe to posts group for targeted notifications
+    groups: ['posts', 'categories', 'tags'], // Subscribe to all groups
     debug,
   });
 
@@ -56,6 +65,8 @@ export function CacheSyncProvider({ children, debug = false }: CacheSyncProvider
  */
 export function useCacheSyncConnection(debug = false) {
   const invalidatePostsCache = usePostsStore((state) => state.invalidateCache);
+  const invalidateCategoriesCache = useCategoriesStore((state) => state.invalidateCache);
+  const invalidateTagsCache = useTagsStore((state) => state.invalidateCache);
 
   return useCacheSync({
     onInvalidate: (event) => {
@@ -63,7 +74,14 @@ export function useCacheSyncConnection(debug = false) {
       if (target.includes('posts') || target.includes('post')) {
         invalidatePostsCache();
       }
+      if (target.includes('categories') || target.includes('category')) {
+        invalidateCategoriesCache();
+      }
+      if (target.includes('tags') || target.includes('tag')) {
+        invalidateTagsCache();
+      }
     },
+    groups: ['posts', 'categories', 'tags'],
     debug,
   });
 }

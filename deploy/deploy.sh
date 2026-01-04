@@ -27,7 +27,12 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 COMPOSE_FILE="docker-compose.prod.yml"
 POSTGRES_CONTAINER="blogapp-postgres-prod"
 BACKUP_DIR="./backups"
-MIGRATION_FILE="../src/BlogApp.Server/BlogApp.Server.Infrastructure/Persistence/Migrations/SearchOptimization.sql"
+MIGRATIONS_DIR="../src/BlogApp.Server/BlogApp.Server.Infrastructure/Persistence/Migrations"
+# Migration dosyalari (sirayla calistirilir)
+MIGRATION_FILES=(
+    "SearchOptimization.sql"
+    "PartialUniqueIndexes.sql"
+)
 
 # Parametreleri isle
 WITH_MIGRATION=false
@@ -89,24 +94,30 @@ log_success "Image'lar guncellendi"
 # Step 3: Migration (eger istendi ise)
 echo ""
 if [ "$WITH_MIGRATION" = true ]; then
-    log_info "Step 3: Database migration uygulanıyor..."
+    log_info "Step 3: Database migrations uygulanıyor..."
     
-    if [ -f "$MIGRATION_FILE" ]; then
-        # Migration dosyasini container'a kopyala
-        docker cp "$MIGRATION_FILE" "${POSTGRES_CONTAINER}:/tmp/migration.sql"
+    MIGRATION_SUCCESS=true
+    for migration in "${MIGRATION_FILES[@]}"; do
+        MIGRATION_PATH="${MIGRATIONS_DIR}/${migration}"
         
-        # Migration'i calistir
-        if docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -f /tmp/migration.sql; then
-            log_success "Migration basarili"
-            docker exec "$POSTGRES_CONTAINER" rm /tmp/migration.sql
+        if [ -f "$MIGRATION_PATH" ]; then
+            log_info "Migration uygulanıyor: $migration"
+            
+            # Migration dosyasini container'a kopyala
+            docker cp "$MIGRATION_PATH" "${POSTGRES_CONTAINER}:/tmp/migration.sql"
+            
+            # Migration'i calistir
+            if docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -f /tmp/migration.sql 2>/dev/null; then
+                log_success "Migration basarili: $migration"
+                docker exec "$POSTGRES_CONTAINER" rm /tmp/migration.sql
+            else
+                log_warn "Migration zaten uygulanmis veya hata: $migration"
+                docker exec "$POSTGRES_CONTAINER" rm -f /tmp/migration.sql
+            fi
         else
-            log_error "Migration basarisiz!"
-            log_warn "Backup dosyasi: $BACKUP_FILE"
-            exit 1
+            log_warn "Migration dosyasi bulunamadi: $migration"
         fi
-    else
-        log_warn "Migration dosyasi bulunamadi: $MIGRATION_FILE"
-    fi
+    done
 else
     log_info "Step 3: Migration atlanıyor (--with-migration kullanilmadi)"
 fi
@@ -114,13 +125,12 @@ fi
 # Step 4: Container'lari yeniden baslat
 echo ""
 log_info "Step 4: Container'lar yeniden baslatiliyor..."
-docker compose -f "$COMPOSE_FILE" up -d
+docker compose -f "$COMPOSE_FILE" up -d --force-recreate
 log_success "Container'lar baslatildi"
 
-# Step 5: EF Core migration (API icinde)
+# Step 5: API container başlarken EF Core migration otomatik uygulanır (Program.cs MigrateAsync)
 echo ""
-log_info "Step 5: EF Core migrations kontrol ediliyor..."
-docker compose -f "$COMPOSE_FILE" exec -T api dotnet ef database update 2>/dev/null || log_warn "EF migration atlandi veya hata"
+log_info "Step 5: EF Core migrations API başlatılırken otomatik uygulanacak..."
 
 # Step 6: Health check
 echo ""

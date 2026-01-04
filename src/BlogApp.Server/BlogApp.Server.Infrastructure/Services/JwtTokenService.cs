@@ -5,6 +5,7 @@ using System.Text;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Domain.Entities;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -13,7 +14,7 @@ namespace BlogApp.Server.Infrastructure.Services;
 /// <summary>
 /// JWT Token servisi implementasyonu
 /// </summary>
-public class JwtTokenService(IOptions<JwtSettings> jwtSettings) : IJwtTokenService
+public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtTokenService> logger) : IJwtTokenService
 {
     private readonly JwtSettings _settings = jwtSettings.Value;
 
@@ -77,8 +78,13 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings) : IJwtTokenServi
 
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            // Log token validation failures for security audit trail
+            var tokenPreview = !string.IsNullOrEmpty(token) && token.Length > 10 
+                ? token[..10] + "..." 
+                : "invalid/empty";
+            logger.LogWarning(ex, "Token validation failed for token prefix: {TokenPrefix}", tokenPreview);
             return false;
         }
     }
@@ -107,8 +113,16 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings) : IJwtTokenServi
 
     public DateTime GetTokenExpiration(string token)
     {
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var jwtToken = tokenHandler.ReadJwtToken(token);
-        return jwtToken.ValidTo;
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var jwtToken = tokenHandler.ReadJwtToken(token);
+            return jwtToken.ValidTo;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to get token expiration, returning MinValue");
+            return DateTime.MinValue;
+        }
     }
 }

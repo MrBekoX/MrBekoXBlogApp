@@ -23,8 +23,13 @@ public class TagConfiguration : IEntityTypeConfiguration<Tag>
             .IsRequired()
             .HasMaxLength(70);
 
-        // Indexes
+        // Indexes - Partial unique index (only for non-deleted records)
         builder.HasIndex(t => t.Slug)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"IsDeleted\" = false");
+
+        builder.HasIndex(t => t.Name)
+            .IsUnique()
+            .HasFilter("\"IsDeleted\" = false");
     }
 }

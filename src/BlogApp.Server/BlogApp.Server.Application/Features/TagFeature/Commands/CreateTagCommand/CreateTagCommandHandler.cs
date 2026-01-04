@@ -2,6 +2,7 @@ using BlogApp.Server.Application.Common.BusinessRuleEngine;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
+using BlogApp.Server.Application.Features.TagFeature.Constants;
 using BlogApp.Server.Application.Features.TagFeature.Rules;
 using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.ValueObjects;
@@ -11,7 +12,8 @@ namespace BlogApp.Server.Application.Features.TagFeature.Commands.CreateTagComma
 
 public class CreateTagCommandHandler(
     IUnitOfWork unitOfWork,
-    ITagBusinessRules tagBusinessRules) : IRequestHandler<CreateTagCommandRequest, CreateTagCommandResponse>
+    ITagBusinessRules tagBusinessRules,
+    ICacheService cacheService) : IRequestHandler<CreateTagCommandRequest, CreateTagCommandResponse>
 {
     public async Task<CreateTagCommandResponse> Handle(CreateTagCommandRequest request, CancellationToken cancellationToken)
     {
@@ -40,6 +42,9 @@ public class CreateTagCommandHandler(
 
         await unitOfWork.TagsWrite.AddAsync(tag, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Invalidate tags cache
+        await cacheService.RotateGroupVersionAsync(TagCacheKeys.ListGroup, cancellationToken);
 
         return new CreateTagCommandResponse
         {

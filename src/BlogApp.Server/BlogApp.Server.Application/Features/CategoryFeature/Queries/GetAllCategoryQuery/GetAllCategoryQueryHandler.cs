@@ -2,6 +2,7 @@ using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.CategoryFeature.DTOs;
+using BlogApp.Server.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,10 +35,17 @@ public class GetAllCategoryQueryHandler(
                 ImageUrl = c.ImageUrl,
                 DisplayOrder = c.DisplayOrder,
                 IsActive = c.IsActive,
-                PostCount = c.Posts.Count(p => !p.IsDeleted),
+                // Yalnızca yayınlanmış ve silinmemiş postları say
+                PostCount = c.Posts.Count(p => !p.IsDeleted && p.Status == PostStatus.Published),
                 CreatedAt = c.CreatedAt
             })
             .ToListAsync(cancellationToken);
+
+        // Boş kategorileri filtrele (istenirse)
+        if (request.ExcludeEmptyCategories)
+        {
+            categories = categories.Where(c => c.PostCount > 0).ToList();
+        }
 
         if (!categories.Any())
         {

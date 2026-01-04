@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth-store';
 import { postsApi } from '@/lib/api';
+import { getImageUrl } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -152,7 +153,7 @@ export default function AdminDashboardPage() {
                 >
                   {post.featuredImageUrl ? (
                     <img
-                      src={post.featuredImageUrl}
+                      src={getImageUrl(post.featuredImageUrl)}
                       alt={post.title}
                       className="h-12 w-12 rounded object-cover"
                     />

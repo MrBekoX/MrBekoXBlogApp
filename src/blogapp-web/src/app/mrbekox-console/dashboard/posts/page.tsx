@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { postsApi } from '@/lib/api';
+import { getImageUrl } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -139,7 +140,7 @@ export default function PostsPage() {
                 <div className="flex items-start gap-4">
                   {post.featuredImageUrl ? (
                     <img
-                      src={post.featuredImageUrl}
+                      src={getImageUrl(post.featuredImageUrl)}
                       alt={post.title}
                       className="h-16 w-16 rounded object-cover"
                     />

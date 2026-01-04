@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
+import { AuthGuard } from '@/components/auth/auth-guard';
 import { cn } from '@/lib/utils';
 import { LayoutDashboard, FileText, FolderOpen, Tags, Settings, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,38 +16,8 @@ const sidebarItems = [
   { href: '/mrbekox-console/dashboard/settings', label: 'Ayarlar', icon: Settings },
 ];
 
-export default function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
+function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, isAuthenticated, checkAuth } = useAuthStore();
-
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/mrbekox-console');
-    }
-  }, [isAuthenticated, router]);
-
-  const isAuthorOrAbove = user?.role && ['Author', 'Editor', 'Admin'].includes(user.role);
-
-  if (!isAuthenticated || !isAuthorOrAbove) {
-    return (
-      <div className="container flex min-h-[50vh] items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">Erişim Engellendi</h1>
-          <p className="mt-2 text-muted-foreground">
-            Bu sayfaya erişim yetkiniz bulunmuyor.
-          </p>
-          <Button asChild className="mt-4">
-            <Link href="/">Ana Sayfaya Dön</Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="container flex min-h-[calc(100vh-16rem)] gap-8 py-8">
@@ -81,6 +50,14 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
 
       <main className="flex-1">{children}</main>
     </div>
+  );
+}
+
+export default function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthGuard allowedRoles={['Author', 'Editor', 'Admin']}>
+      <DashboardContent>{children}</DashboardContent>
+    </AuthGuard>
   );
 }
 

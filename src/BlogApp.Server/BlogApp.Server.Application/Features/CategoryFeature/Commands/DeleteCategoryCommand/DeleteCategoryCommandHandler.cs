@@ -10,7 +10,8 @@ namespace BlogApp.Server.Application.Features.CategoryFeature.Commands.DeleteCat
 
 public class DeleteCategoryCommandHandler(
     IUnitOfWork unitOfWork,
-    ICategoryBusinessRules categoryBusinessRules) : IRequestHandler<DeleteCategoryCommandRequest, DeleteCategoryCommandResponse>
+    ICategoryBusinessRules categoryBusinessRules,
+    ICacheService cacheService) : IRequestHandler<DeleteCategoryCommandRequest, DeleteCategoryCommandResponse>
 {
     public async Task<DeleteCategoryCommandResponse> Handle(DeleteCategoryCommandRequest request, CancellationToken cancellationToken)
     {
@@ -42,6 +43,9 @@ public class DeleteCategoryCommandHandler(
 
         await unitOfWork.CategoriesWrite.UpdateAsync(category, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Invalidate categories cache
+        await cacheService.RotateGroupVersionAsync(CategoryCacheKeys.ListGroup, cancellationToken);
 
         return new DeleteCategoryCommandResponse
         {

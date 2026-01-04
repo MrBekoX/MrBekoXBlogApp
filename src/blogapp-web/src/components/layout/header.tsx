@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
+import { useCategoriesStore } from '@/stores/categories-store';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -13,15 +14,24 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { PenSquare, LogOut, LayoutDashboard, Menu, X, Home, BookOpen, Info, Github, Linkedin } from 'lucide-react';
+import { PenSquare, LogOut, LayoutDashboard, Menu, X, Home, BookOpen, FolderOpen, ChevronDown, Github, Linkedin } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { SearchCommand } from '@/components/search-command';
 
 export function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, authStatus, logout } = useAuthStore();
+  const { categories, fetchCategories, cacheVersion } = useCategoriesStore();
+  const isAuthenticated = authStatus === 'authenticated';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Fetch categories on mount and when cache is invalidated
+  useEffect(() => {
+    fetchCategories().catch((error) => {
+      console.error('Failed to fetch categories:', error);
+    });
+  }, [fetchCategories, cacheVersion]);
 
   const handleLogout = async () => {
     await logout();
@@ -113,6 +123,33 @@ export function Header() {
               {link.label}
             </Link>
           ))}
+          
+          {/* Categories Dropdown */}
+          {categories.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="px-4 py-2 h-auto text-sm font-medium text-muted-foreground hover:text-primary hover:bg-primary/5">
+                  <FolderOpen className="mr-2 h-4 w-4" />
+                  Kategoriler
+                  <ChevronDown className="ml-1 h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                {categories.map((category) => (
+                  <DropdownMenuItem key={category.id} asChild>
+                    <Link href={`/posts?categoryId=${category.id}`} className="cursor-pointer">
+                      {category.name}
+                      {category.postCount !== undefined && category.postCount > 0 && (
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {category.postCount}
+                        </span>
+                      )}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </nav>
 
         {/* Right Side Actions */}
@@ -228,6 +265,28 @@ export function Header() {
                 );
               })}
             </nav>
+            
+            {/* Mobile Categories */}
+            {categories.length > 0 && (
+              <div className="px-4 pt-2 border-t">
+                <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                  <FolderOpen className="h-3 w-3" />
+                  Kategoriler
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {categories.map((category) => (
+                    <Link
+                      key={category.id}
+                      href={`/posts?categoryId=${category.id}`}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="px-3 py-1.5 text-xs font-medium bg-primary/5 hover:bg-primary/10 text-primary rounded-full transition-colors"
+                    >
+                      {category.name}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
             
             {/* Mobile Social Links */}
             <div className="flex items-center gap-2 px-4 pt-2 border-t">

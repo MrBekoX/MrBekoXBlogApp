@@ -2,6 +2,7 @@ using BlogApp.Server.Application.Common.BusinessRuleEngine;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
+using BlogApp.Server.Application.Features.CategoryFeature.Constants;
 using BlogApp.Server.Application.Features.CategoryFeature.Rules;
 using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.ValueObjects;
@@ -11,7 +12,8 @@ namespace BlogApp.Server.Application.Features.CategoryFeature.Commands.CreateCat
 
 public class CreateCategoryCommandHandler(
     IUnitOfWork unitOfWork,
-    ICategoryBusinessRules categoryBusinessRules) : IRequestHandler<CreateCategoryCommandRequest, CreateCategoryCommandResponse>
+    ICategoryBusinessRules categoryBusinessRules,
+    ICacheService cacheService) : IRequestHandler<CreateCategoryCommandRequest, CreateCategoryCommandResponse>
 {
     public async Task<CreateCategoryCommandResponse> Handle(CreateCategoryCommandRequest request, CancellationToken cancellationToken)
     {
@@ -44,6 +46,9 @@ public class CreateCategoryCommandHandler(
 
         await unitOfWork.CategoriesWrite.AddAsync(category, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Invalidate categories cache
+        await cacheService.RotateGroupVersionAsync(CategoryCacheKeys.ListGroup, cancellationToken);
 
         return new CreateCategoryCommandResponse
         {

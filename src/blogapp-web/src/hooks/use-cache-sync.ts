@@ -37,6 +37,9 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
   const connectionRef = useRef<signalR.HubConnection | null>(null);
   const onInvalidateRef = useRef(onInvalidate);
   const isConnectedRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const isRateLimitedRef = useRef(false);
+  const MAX_RETRIES = 3;
 
   // Keep callback ref updated
   useEffect(() => {
@@ -82,19 +85,19 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
         isConnectedRef.current = false;
       });
 
-      connection.onreconnected((connectionId?: string) => {
+      connection.onreconnected(async (connectionId?: string) => {
         log('Reconnected with ID:', connectionId);
         isConnectedRef.current = true;
 
-        // Re-subscribe to groups after reconnect
-        groups.forEach(async (group) => {
+        // Re-subscribe to groups after reconnect - use for...of for proper async handling
+        for (const group of groups) {
           try {
             await connection.invoke('SubscribeToGroup', group);
             log(`Re-subscribed to group: ${group}`);
           } catch (err) {
             console.error(`Failed to re-subscribe to group ${group}:`, err);
           }
-        });
+        }
       });
 
       connection.onclose((error?: Error) => {
@@ -121,12 +124,36 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
       console.error('Failed to connect to cache sync hub:', error);
       isConnectedRef.current = false;
 
-      // Retry connection after delay if autoReconnect is enabled
-      if (autoReconnect) {
+      // Check if this is a rate limit error (429)
+      const isRateLimitError = error instanceof Error && 
+        (error.message.includes('429') || error.message.includes('quota exceeded'));
+      
+      if (isRateLimitError) {
+        isRateLimitedRef.current = true;
+        console.warn('[CacheSync] Rate limited - stopping reconnection attempts for 60 seconds');
+        
+        // Reset rate limit flag after 60 seconds
         setTimeout(() => {
-          log('Retrying initial connection...');
-          connect();
-        }, 5000);
+          isRateLimitedRef.current = false;
+          retryCountRef.current = 0;
+          log('Rate limit cooldown finished, reconnection attempts enabled');
+        }, 60000);
+        
+        return; // Don't retry immediately
+      }
+
+      // Retry connection with limits
+      retryCountRef.current++;
+      
+      if (autoReconnect && retryCountRef.current <= MAX_RETRIES && !isRateLimitedRef.current) {
+        const delay = Math.min(5000 * retryCountRef.current, 30000); // Exponential backoff
+        log(`Retrying connection in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})...`);
+        setTimeout(() => {
+          // void operator explicitly marks this as fire-and-forget
+          void connect();
+        }, delay);
+      } else if (retryCountRef.current > MAX_RETRIES) {
+        console.warn('[CacheSync] Max retries reached, stopping reconnection attempts');
       }
     }
   }, [groups, autoReconnect, debug, log]);

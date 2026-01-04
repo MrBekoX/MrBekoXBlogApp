@@ -115,7 +115,8 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
                     b.HasIndex("PublishedAt");
 
                     b.HasIndex("Slug")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.HasIndex("Status");
 
@@ -192,7 +193,8 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
                     b.HasIndex("IsActive");
 
                     b.HasIndex("Slug")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("categories", (string)null);
                 });
@@ -347,8 +349,13 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
+
                     b.HasIndex("Slug")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"IsDeleted\" = false");
 
                     b.ToTable("tags", (string)null);
                 });

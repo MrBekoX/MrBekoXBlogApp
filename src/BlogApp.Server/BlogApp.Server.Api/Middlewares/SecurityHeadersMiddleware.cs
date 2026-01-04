@@ -22,8 +22,8 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
         // Restrict browser features
         context.Response.Headers.Append("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()");
 
-        // Content Security Policy - adjust based on your frontend needs
-        context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none';");
+        // Content Security Policy - includes Google Fonts support
+        context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self'; frame-ancestors 'none';");
 
         await next(context);
     }

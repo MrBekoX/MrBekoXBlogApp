@@ -38,7 +38,8 @@ public class AppDbContext : DbContext, IApplicationDbContext
 
         // RefreshToken needs matching filter because User has filter and RefreshToken.User is required navigation
         // This prevents "required entity filtered out" warnings
-        modelBuilder.Entity<RefreshToken>().HasQueryFilter(r => !r.User.IsDeleted);
+        // Added explicit null check for safer query execution
+        modelBuilder.Entity<RefreshToken>().HasQueryFilter(r => r.User != null && !r.User.IsDeleted);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

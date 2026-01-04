@@ -8,6 +8,7 @@ using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.Enums;
 using BlogApp.Server.Domain.ValueObjects;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.UpdatePostCommand;
 
@@ -35,7 +36,11 @@ public class UpdatePostCommandHandler(
             };
         }
 
-        var post = await unitOfWork.PostsRead.GetByIdAsync(dto.Id, cancellationToken);
+        // Include Tags to ensure EF Core tracks existing relationships correctly
+        // This prevents "duplicate key violates unique constraint PK_post_tags" error
+        var post = await unitOfWork.PostsRead.Query()
+            .Include(p => p.Tags)
+            .FirstOrDefaultAsync(p => p.Id == dto.Id, cancellationToken);
         if (post is null)
         {
             return new UpdatePostCommandResponse

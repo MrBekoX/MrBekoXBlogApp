@@ -18,9 +18,13 @@ public class EfCoreTagReadRepository : EfCoreReadRepository<Tag>, ITagReadReposi
 
     public async Task<IEnumerable<Tag>> GetByNamesAsync(IEnumerable<string> names, CancellationToken cancellationToken = default)
     {
+        // PostgreSQL is case-sensitive, so we need to compare in lowercase
+        // Note: We intentionally do NOT use AsNoTracking() here because these tags 
+        // will be added to Post.Tags collection. EF Core needs to track them to 
+        // recognize them as existing entities, otherwise it will try to INSERT them again.
+        var lowerNames = names.Select(n => n.ToLower()).ToList();
         return await _dbSet
-            .AsNoTracking()
-            .Where(t => names.Contains(t.Name))
+            .Where(t => lowerNames.Contains(t.Name.ToLower()))
             .ToListAsync(cancellationToken);
     }
 

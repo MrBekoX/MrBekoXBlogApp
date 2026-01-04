@@ -33,6 +33,13 @@ export const apiClient = axios.create({
 // No request interceptor needed - cookies are sent automatically with withCredentials: true
 
 // Response interceptor for handling token refresh
+// Global flags to prevent infinite redirect loops
+let isRefreshing = false;
+let refreshPromise: Promise<boolean> | null = null;
+let isRedirecting = false;
+let lastRedirectTime = 0;
+const REDIRECT_COOLDOWN = 10000; // 10 seconds cooldown between redirects
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -44,24 +51,63 @@ apiClient.interceptors.response.use(
       originalRequest &&
       !originalRequest._retry &&
       !originalRequest.url?.includes('/auth/login') &&
-      !originalRequest.url?.includes('/auth/register')
+      !originalRequest.url?.includes('/auth/register') &&
+      !originalRequest.url?.includes('/auth/refresh-token') &&
+      !isRedirecting
     ) {
       originalRequest._retry = true;
 
-      try {
-        // Refresh endpoint reads token from HttpOnly cookie automatically
-        const response = await apiClient.post<ApiResponse<AuthResponse>>('/auth/refresh-token');
+      // If already refreshing, wait for the existing refresh to complete
+      if (isRefreshing && refreshPromise) {
+        try {
+          const success = await refreshPromise;
+          if (success) {
+            return apiClient(originalRequest);
+          }
+        } catch {
+          // Refresh failed, will redirect below
+        }
+      } else {
+        // Start new refresh attempt
+        isRefreshing = true;
+        refreshPromise = (async () => {
+          try {
+            const response = await apiClient.post<ApiResponse<AuthResponse>>('/auth/refresh-token');
+            if (response.data.success) {
+              return true;
+            }
+            return false;
+          } catch {
+            return false;
+          } finally {
+            isRefreshing = false;
+            refreshPromise = null;
+          }
+        })();
 
-        if (response.data.success) {
-          // New cookies are set automatically by the server response
-          // Retry the original request
-          return apiClient(originalRequest);
+        try {
+          const success = await refreshPromise;
+          if (success) {
+            return apiClient(originalRequest);
+          }
+        } catch {
+          // Refresh failed
         }
-      } catch {
-        // Refresh failed - redirect to login
-        if (typeof window !== 'undefined') {
-          window.location.href = '/login';
-        }
+      }
+
+      // Refresh failed - redirect to login (with cooldown protection)
+      const now = Date.now();
+      const timeSinceLastRedirect = now - lastRedirectTime;
+      
+      if (!isRedirecting && typeof window !== 'undefined' && timeSinceLastRedirect > REDIRECT_COOLDOWN) {
+        isRedirecting = true;
+        lastRedirectTime = now;
+        
+        // Use replace to prevent going back to protected page
+        window.location.replace('/mrbekox-console');
+        
+        // Reset after cooldown to allow for future redirects
+        setTimeout(() => { isRedirecting = false; }, REDIRECT_COOLDOWN);
       }
     }
 
@@ -106,8 +152,14 @@ export const authApi = {
 
 // Posts API
 export const postsApi = {
-  getAll: async (params?: PaginationParams & { status?: string; categoryId?: string; tagId?: string; search?: string }): Promise<ApiResponse<PaginatedResult<BlogPost>>> => {
-    const response = await apiClient.get<ApiResponse<PaginatedResult<BlogPost>>>('/posts', { params });
+  getAll: async (params?: PaginationParams & { status?: string; categoryId?: string; tagId?: string; search?: string; sortBy?: string; sortDescending?: boolean }): Promise<ApiResponse<PaginatedResult<BlogPost>>> => {
+    // Map 'search' to 'searchTerm' for backend compatibility
+    const apiParams = params ? {
+      ...params,
+      searchTerm: params.search,
+      search: undefined,
+    } : undefined;
+    const response = await apiClient.get<ApiResponse<PaginatedResult<BlogPost>>>('/posts', { params: apiParams });
     return response.data;
   },
 
@@ -163,8 +215,9 @@ export const postsApi = {
 
 // Categories API
 export const categoriesApi = {
-  getAll: async (): Promise<ApiResponse<Category[]>> => {
-    const response = await apiClient.get<ApiResponse<Category[]>>('/categories');
+  getAll: async (excludeEmptyCategories?: boolean): Promise<ApiResponse<Category[]>> => {
+    const params = excludeEmptyCategories !== undefined ? { excludeEmptyCategories } : {};
+    const response = await apiClient.get<ApiResponse<Category[]>>('/categories', { params });
     return response.data;
   },
 
@@ -184,7 +237,11 @@ export const categoriesApi = {
   },
 
   delete: async (id: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.delete<ApiResponse<void>>(`/categories/${id}`);
+    const response = await apiClient.delete(`/categories/${id}`);
+    // 204 No Content means success
+    if (response.status === 204) {
+      return { success: true, data: undefined, message: 'Kategori silindi' };
+    }
     return response.data;
   },
 };
@@ -207,7 +264,11 @@ export const tagsApi = {
   },
 
   delete: async (id: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.delete<ApiResponse<void>>(`/tags/${id}`);
+    const response = await apiClient.delete(`/tags/${id}`);
+    // 204 No Content means success
+    if (response.status === 204) {
+      return { success: true, data: undefined, message: 'Etiket silindi' };
+    }
     return response.data;
   },
 };
@@ -237,30 +298,61 @@ export const commentsApi = {
 
 // AI API
 const AI_API_URL = process.env.NEXT_PUBLIC_AI_API_URL || 'http://localhost:8000';
+const AI_API_TIMEOUT = 30000; // 30 seconds timeout for AI operations
+
+/**
+ * Creates an AbortSignal that times out after specified milliseconds.
+ * For memory leak prevention in AI API calls.
+ */
+const createTimeoutSignal = (timeoutMs: number): AbortSignal => {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeoutMs);
+  return controller.signal;
+};
 
 export const aiApi = {
-  generateTitle: async (content: string): Promise<{ title: string }> => {
-    const response = await axios.post<{ title: string }>(`${AI_API_URL}/ai/generate-title`, { content });
+  generateTitle: async (content: string, signal?: AbortSignal): Promise<{ title: string }> => {
+    const response = await axios.post<{ title: string }>(
+      `${AI_API_URL}/ai/generate-title`, 
+      { content },
+      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+    );
     return response.data;
   },
 
-  generateExcerpt: async (content: string): Promise<{ excerpt: string }> => {
-    const response = await axios.post<{ excerpt: string }>(`${AI_API_URL}/ai/generate-excerpt`, { content });
+  generateExcerpt: async (content: string, signal?: AbortSignal): Promise<{ excerpt: string }> => {
+    const response = await axios.post<{ excerpt: string }>(
+      `${AI_API_URL}/ai/generate-excerpt`, 
+      { content },
+      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+    );
     return response.data;
   },
 
-  generateTags: async (content: string): Promise<{ tags: string[] }> => {
-    const response = await axios.post<{ tags: string[] }>(`${AI_API_URL}/ai/generate-tags`, { content });
+  generateTags: async (content: string, signal?: AbortSignal): Promise<{ tags: string[] }> => {
+    const response = await axios.post<{ tags: string[] }>(
+      `${AI_API_URL}/ai/generate-tags`, 
+      { content },
+      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+    );
     return response.data;
   },
 
-  generateSeoDescription: async (content: string): Promise<{ description: string }> => {
-    const response = await axios.post<{ description: string }>(`${AI_API_URL}/ai/generate-seo`, { content });
+  generateSeoDescription: async (content: string, signal?: AbortSignal): Promise<{ description: string }> => {
+    const response = await axios.post<{ description: string }>(
+      `${AI_API_URL}/ai/generate-seo`, 
+      { content },
+      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+    );
     return response.data;
   },
 
-  improveContent: async (content: string): Promise<{ content: string }> => {
-    const response = await axios.post<{ content: string }>(`${AI_API_URL}/ai/improve-content`, { content });
+  improveContent: async (content: string, signal?: AbortSignal): Promise<{ content: string }> => {
+    const response = await axios.post<{ content: string }>(
+      `${AI_API_URL}/ai/improve-content`, 
+      { content },
+      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+    );
     return response.data;
   },
 };

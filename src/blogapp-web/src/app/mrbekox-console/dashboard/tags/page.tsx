@@ -1,40 +1,31 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { tagsApi } from '@/lib/api';
+import { useTagsStore } from '@/stores/tags-store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { Plus, Trash2, Tag } from 'lucide-react';
-import type { Tag as TagType } from '@/types';
 
 export default function TagsPage() {
-  const [tags, setTags] = useState<TagType[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { 
+    tags, 
+    isLoading, 
+    fetchTags, 
+    createTag, 
+    deleteTag,
+    cacheVersion 
+  } = useTagsStore();
+  
   const [isCreating, setIsCreating] = useState(false);
   const [newTagName, setNewTagName] = useState('');
 
-  const fetchTags = async () => {
-    try {
-      const response = await tagsApi.getAll();
-      if (response.success && response.data) {
-        setTags(response.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch tags:', error);
-      toast.error('Etiketler yüklenemedi');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
     fetchTags();
-  }, []);
+  }, [fetchTags, cacheVersion]);
 
   const handleCreate = async () => {
     if (!newTagName.trim()) {
@@ -42,17 +33,12 @@ export default function TagsPage() {
       return;
     }
 
-    try {
-      const response = await tagsApi.create({ name: newTagName });
-      if (response.success) {
-        toast.success('Etiket oluşturuldu');
-        setNewTagName('');
-        setIsCreating(false);
-        fetchTags();
-      } else {
-        toast.error(response.message || 'Etiket oluşturulamadı');
-      }
-    } catch (error) {
+    const result = await createTag({ name: newTagName });
+    if (result) {
+      toast.success('Etiket oluşturuldu');
+      setNewTagName('');
+      setIsCreating(false);
+    } else {
       toast.error('Etiket oluşturulamadı');
     }
   };
@@ -60,15 +46,10 @@ export default function TagsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Bu etiketi silmek istediğinize emin misiniz?')) return;
 
-    try {
-      const response = await tagsApi.delete(id);
-      if (response.success) {
-        toast.success('Etiket silindi');
-        fetchTags();
-      } else {
-        toast.error(response.message || 'Etiket silinemedi');
-      }
-    } catch (error) {
+    const success = await deleteTag(id);
+    if (success) {
+      toast.success('Etiket silindi');
+    } else {
       toast.error('Etiket silinemedi');
     }
   };
@@ -122,7 +103,7 @@ export default function TagsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isLoading && tags.length === 0 ? (
             <div className="flex flex-wrap gap-2">
               {Array.from({ length: 12 }).map((_, i) => (
                 <Skeleton key={i} className="h-8 w-24" />
@@ -160,4 +141,3 @@ export default function TagsPage() {
     </div>
   );
 }
-

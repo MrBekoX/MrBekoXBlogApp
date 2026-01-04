@@ -44,10 +44,16 @@ public class LoginCommandHandler(
         // Güvenli şifre doğrulama (BCrypt)
         if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         {
-            // Başarısız giriş sayısını artır
-            user.FailedLoginAttempts++;
+            // Başarısız giriş sayısını thread-safe (atomik) olarak artır
+            await unitOfWork.UsersWrite.IncrementFailedLoginAttemptsAsync(user.Id, cancellationToken);
 
-            if (user.FailedLoginAttempts >= MaxFailedAttempts)
+            // Güncel durumu kontrol etmek için kullanıcıyı yeniden çek (Race condition önlemi)
+            var updatedUser = await unitOfWork.UsersRead.GetByIdAsync(user.Id, cancellationToken);
+            
+            // updatedUser null gelirse (silinmişse vb.) eski user ile devam et (defensive)
+            var currentAttempts = updatedUser?.FailedLoginAttempts ?? (user.FailedLoginAttempts + 1);
+
+            if (currentAttempts >= MaxFailedAttempts)
             {
                 // Hesabı kilitle
                 user.LockoutEndTime = DateTime.UtcNow.Add(LockoutDuration);
@@ -60,10 +66,9 @@ public class LoginCommandHandler(
                 };
             }
 
-            await unitOfWork.UsersWrite.UpdateAsync(user, cancellationToken);
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-
-            var remainingAttempts = MaxFailedAttempts - user.FailedLoginAttempts;
+            // Not: IncrementFailedLoginAttemptsAsync zaten veritabanına yazdığı için tekrar Update/Save çağırmaya gerek yok
+            
+            var remainingAttempts = MaxFailedAttempts - currentAttempts;
             return new LoginCommandResponse
             {
                 Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.RemainingAttempts(remainingAttempts))

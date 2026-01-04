@@ -41,9 +41,10 @@ public class BlogPostConfiguration : IEntityTypeConfiguration<BlogPost>
         builder.Property(p => p.MetaKeywords)
             .HasMaxLength(200);
 
-        // Indexes
+        // Indexes - Partial unique index (only for non-deleted records)
         builder.HasIndex(p => p.Slug)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"IsDeleted\" = false");
 
         builder.HasIndex(p => p.Status);
         builder.HasIndex(p => p.PublishedAt);

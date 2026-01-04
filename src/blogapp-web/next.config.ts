@@ -5,7 +5,6 @@ const nextConfig: NextConfig = {
   output: 'export',
   
   // Disable image optimization for static export
-  // You can use external image CDN or unoptimized images
   images: {
     unoptimized: true,
   },
@@ -16,6 +15,14 @@ const nextConfig: NextConfig = {
   // Skip build-time type checking (optional, for faster builds)
   typescript: {
     ignoreBuildErrors: false,
+  },
+
+  // Experimental features
+  experimental: {
+    // Optimize CSS chunking to reduce preload warnings
+    cssChunking: 'strict',
+    // Optimize CSS to reduce unused preload warnings
+    optimizeCss: true,
   },
 };
 

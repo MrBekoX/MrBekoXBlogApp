@@ -583,9 +583,14 @@ public class CacheService : ICacheService, IDisposable
         if (_locks.Count <= MaxTrackedLocks)
             return;
 
+        // TOCTOU FIX: Use TryRemove with value comparison for atomic check-and-remove
+        // Only remove if the lock is both available (CurrentCount == 1) and still the same instance
         if (keyLock.CurrentCount == 1)
         {
-            _locks.TryRemove(key, out _);
+            // Atomic remove only if value matches - prevents TOCTOU where lock could be reacquired
+            // between CurrentCount check and TryRemove
+            ((ICollection<KeyValuePair<string, SemaphoreSlim>>)_locks)
+                .Remove(new KeyValuePair<string, SemaphoreSlim>(key, keyLock));
         }
     }
 

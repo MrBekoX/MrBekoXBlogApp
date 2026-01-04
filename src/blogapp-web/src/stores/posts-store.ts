@@ -31,6 +31,8 @@ interface PostsState {
     categoryId?: string;
     tagId?: string;
     search?: string;
+    sortBy?: string;
+    sortDescending?: boolean;
   }, forceRefresh?: boolean) => Promise<void>;
   fetchPostById: (id: string) => Promise<void>;
   fetchPostBySlug: (slug: string, forceRefresh?: boolean) => Promise<void>;
@@ -38,6 +40,7 @@ interface PostsState {
   updatePost: (id: string, data: UpdatePostRequest) => Promise<BlogPost | null>;
   deletePost: (id: string) => Promise<boolean>;
   publishPost: (id: string) => Promise<boolean>;
+  unpublishPost: (id: string) => Promise<boolean>;
   archivePost: (id: string) => Promise<boolean>;
   clearCurrentPost: () => void;
   clearError: () => void;
@@ -276,8 +279,8 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
     set((state) => ({
       cache: {},
       postCache: {},
-      posts: null, // Clear current list to force visual refresh if needed
-      currentPost: null,
+      // posts: null, // Removed to prevent UI flicker/empty state while fetching
+      // currentPost: null, // Keep current post visible
       cacheVersion: state.cacheVersion + 1
     }));
   },

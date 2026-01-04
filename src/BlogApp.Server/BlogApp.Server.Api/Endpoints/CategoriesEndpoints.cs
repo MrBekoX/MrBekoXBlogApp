@@ -21,12 +21,14 @@ public static class CategoriesEndpoints
         // GET /api/categories
         group.MapGet("/", async (
             bool? includeInactive,
+            bool? excludeEmptyCategories,
             IMediator mediator,
             CancellationToken cancellationToken) =>
         {
             var response = await mediator.Send(new GetAllCategoryQueryRequest
             {
-                IncludeInactive = includeInactive ?? false
+                IncludeInactive = includeInactive ?? false,
+                ExcludeEmptyCategories = excludeEmptyCategories ?? false
             }, cancellationToken);
 
             if (!response.Result.IsSuccess)

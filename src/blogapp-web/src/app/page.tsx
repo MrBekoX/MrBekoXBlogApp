@@ -3,9 +3,11 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePostsStore } from "@/stores/posts-store";
+import { useTagsStore } from "@/stores/tags-store";
 import { PostCard } from "@/components/posts/post-card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   ArrowRight,
   Code2,
@@ -17,15 +19,22 @@ import {
   BookOpen,
   Terminal,
   Lightbulb,
+  Hash,
 } from "lucide-react";
 
 export default function HomePage() {
-  const { posts, isLoading, fetchPosts, cacheVersion } = usePostsStore();
+  const { posts, isLoading, fetchPosts, cacheVersion: postsCacheVersion } = usePostsStore();
+  const { tags, fetchTags, cacheVersion: tagsCacheVersion } = useTagsStore();
 
-  // Refetch when cache is invalidated (cacheVersion changes)
+  // Refetch posts when cache is invalidated
   useEffect(() => {
-    fetchPosts({ pageSize: 6, status: "Published" }, true);
-  }, [cacheVersion, fetchPosts]);
+    fetchPosts({ pageSize: 6, status: "Published", sortBy: "publishedat", sortDescending: true }, true);
+  }, [postsCacheVersion, fetchPosts]);
+
+  // Fetch tags when cache is invalidated
+  useEffect(() => {
+    fetchTags();
+  }, [tagsCacheVersion, fetchTags]);
 
   // Handle hash navigation on page load
   useEffect(() => {
@@ -199,6 +208,45 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Popular Tags Section */}
+      {tags.length > 0 && (
+        <section className="border-t bg-muted/30">
+          <div className="container py-12 md:py-16">
+            <div className="text-center space-y-4 mb-8">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm text-primary">
+                <Hash className="w-4 h-4" />
+                <span>Popüler Etiketler</span>
+              </div>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight">
+                Konulara Göre Keşfet
+              </h2>
+            </div>
+            
+            <div className="flex flex-wrap justify-center gap-3 max-w-4xl mx-auto">
+              {tags.slice(0, 15).map((tag, index) => (
+                <Link
+                  key={tag.id}
+                  href={`/posts?tagId=${tag.id}`}
+                  className="animate-fade-in"
+                  style={{ animationDelay: `${index * 0.05}s` }}
+                >
+                  <Badge 
+                    variant="outline" 
+                    className="px-4 py-2 text-sm font-medium cursor-pointer hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all duration-200"
+                  >
+                    #{tag.name}
+                    {tag.postCount !== undefined && tag.postCount > 0 && (
+                      <span className="ml-2 text-xs opacity-60">
+                        {tag.postCount}
+                      </span>
+                    )}
+                  </Badge>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Latest Posts Section */}
       <section className="border-t">

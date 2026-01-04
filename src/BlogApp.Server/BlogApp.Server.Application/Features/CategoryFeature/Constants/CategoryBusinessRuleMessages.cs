@@ -14,9 +14,9 @@ public static class CategoryBusinessRuleMessages
 
     // Delete Validation Messages
     public static string CannotDeleteCategoryWithPosts(int postCount)
-        => $"Cannot delete category. It has {postCount} post(s). Remove all posts first.";
+        => $"Bu kategori silinemez. Kategoriye ait {postCount} makale bulunmaktadır. Önce makaleleri başka bir kategoriye taşıyın veya silin.";
 
-    public const string CategoryHasPostsCannotDelete = "Cannot delete category with posts";
+    public const string CategoryHasPostsCannotDelete = "Makaleleri bulunan kategori silinemez";
 
     // State Messages
     public const string CategoryNotActive = "Category is not active";

@@ -1,13 +1,51 @@
 import type { Metadata } from 'next';
+import { Playfair_Display, Source_Sans_3, JetBrains_Mono, Merriweather, Crimson_Text } from 'next/font/google';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
 import { CacheSyncProvider } from '@/components/cache-sync-provider';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { OrganizationSchema } from '@/components/seo/organization-schema';
 import { WebsiteSchema } from '@/components/seo/website-schema';
 import { PersonSchema } from '@/components/seo/person-schema';
 import './globals.css';
+
+// Google Fonts with Next.js optimization
+const playfairDisplay = Playfair_Display({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-playfair-display',
+  display: 'swap',
+});
+
+const sourceSans3 = Source_Sans_3({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  variable: '--font-source-sans',
+  display: 'swap',
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-jetbrains-mono',
+  display: 'swap',
+});
+
+const merriweather = Merriweather({
+  subsets: ['latin'],
+  weight: ['300', '400', '700', '900'],
+  variable: '--font-merriweather',
+  display: 'swap',
+});
+
+const crimsonText = Crimson_Text({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  variable: '--font-crimson-text',
+  display: 'swap',
+});
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
 
@@ -102,27 +140,25 @@ export default function RootLayout({
       <head>
         {/* Enable View Transitions API for smooth page transitions (modern browsers) */}
         <meta name="view-transition" content="same-origin" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Merriweather:wght@300;400;700;900&family=Crimson+Text:wght@400;600;700&display=swap"
-          rel="stylesheet"
-        />
         <OrganizationSchema />
         <WebsiteSchema />
         <PersonSchema />
       </head>
-      <body className="antialiased min-h-screen flex flex-col">
+      <body className={`${playfairDisplay.variable} ${sourceSans3.variable} ${jetbrainsMono.variable} ${merriweather.variable} ${crimsonText.variable} antialiased min-h-screen flex flex-col`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
         >
-          <CacheSyncProvider>
-            <Header />
-            <main className="flex-1">{children}</main>
-            <Footer />
-            <Toaster position="top-right" />
-          </CacheSyncProvider>
+          <ErrorBoundary>
+            <CacheSyncProvider>
+              <Header />
+              <main className="flex-1">{children}</main>
+              <Footer />
+              <Toaster position="top-right" />
+            </CacheSyncProvider>
+          </ErrorBoundary>
         </ThemeProvider>
       </body>
     </html>

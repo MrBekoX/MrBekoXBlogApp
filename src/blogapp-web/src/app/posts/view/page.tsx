@@ -102,11 +102,22 @@ function PostViewContent() {
         {currentPost.categories && currentPost.categories.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {currentPost.categories.map((category) => (
-              <Badge key={category.id} variant="secondary">
-                {category.name}
-              </Badge>
+              <Link key={category.id} href={`/posts?categoryId=${category.id}`}>
+                <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80 transition-colors">
+                  {category.name}
+                </Badge>
+              </Link>
             ))}
           </div>
+        )}
+        
+        {/* Single category display as fallback */}
+        {currentPost.category && (!currentPost.categories || currentPost.categories.length === 0) && (
+          <Link href={`/posts?categoryId=${currentPost.category.id}`}>
+            <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80 transition-colors">
+              {currentPost.category.name}
+            </Badge>
+          </Link>
         )}
 
         <h1 className="text-4xl font-bold tracking-tight">{currentPost.title}</h1>
@@ -162,9 +173,11 @@ function PostViewContent() {
           <div className="flex flex-wrap items-center gap-2">
             <Tag className="h-4 w-4 text-muted-foreground" />
             {currentPost.tags.map((tag) => (
-              <Badge key={tag.id} variant="outline">
-                #{tag.name}
-              </Badge>
+              <Link key={tag.id} href={`/posts?tagId=${tag.id}`}>
+                <Badge variant="outline" className="cursor-pointer hover:bg-accent transition-colors">
+                  #{tag.name}
+                </Badge>
+              </Link>
             ))}
           </div>
         </>

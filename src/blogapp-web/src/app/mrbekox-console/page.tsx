@@ -15,16 +15,11 @@ import { loginSchema, type LoginFormData } from '@/lib/validations';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { login, isLoading, error, clearError, isAuthenticated } = useAuthStore();
+  const { login, isLoading, error, clearError, authStatus, checkAuth } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
 
-  // Zaten giriş yapılmışsa dashboard'a yönlendir
-  useEffect(() => {
-    if (isAuthenticated) {
-      router.push('/mrbekox-console/dashboard');
-    }
-  }, [isAuthenticated, router]);
-
+  // IMPORTANT: All hooks must be called before any conditional returns
   const {
     register,
     handleSubmit,
@@ -32,6 +27,28 @@ export default function AdminLoginPage() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
+
+  // Mark as mounted after hydration
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  // Check auth status after mount ONLY if idle (not if already unauthenticated)
+  // This prevents infinite API calls when user is not logged in
+  useEffect(() => {
+    if (hasMounted && authStatus === 'idle') {
+      checkAuth();
+    }
+    // Don't include checkAuth in deps to prevent re-runs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMounted, authStatus]);
+
+  // Redirect to dashboard if already authenticated
+  useEffect(() => {
+    if (hasMounted && authStatus === 'authenticated') {
+      router.replace('/mrbekox-console/dashboard');
+    }
+  }, [hasMounted, authStatus, router]);
 
   const onSubmit = async (data: LoginFormData) => {
     clearError();
@@ -43,6 +60,48 @@ export default function AdminLoginPage() {
       toast.error(error || 'Giriş başarısız');
     }
   };
+
+  // Show loading only during initial hydration or active auth check
+  // If 'unauthenticated', show login form immediately (no API call needed)
+  const showLoading = !hasMounted || authStatus === 'checking' ||
+    (authStatus === 'idle' && !hasMounted);
+
+  if (showLoading) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+          <p className="mt-4 text-muted-foreground">Yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If authenticated, show loading (redirect is happening)
+  if (authStatus === 'authenticated') {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+          <p className="mt-4 text-muted-foreground">Yönlendiriliyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If 'idle' and mounted, checkAuth is running - show loading
+  if (authStatus === 'idle') {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+          <p className="mt-4 text-muted-foreground">Oturum kontrol ediliyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // authStatus === 'unauthenticated' - show login form
 
   return (
     <div className="min-h-[calc(100vh-4rem)] sm:min-h-[calc(100vh-8rem)] flex items-center justify-center py-6 sm:py-12 px-3 sm:px-4 relative">

@@ -42,6 +42,10 @@ function PostsContent() {
   // Track if this is initial load or search
   const isInitialLoad = useRef(true);
   
+  // Get categoryId and tagId from URL for filtering
+  const categoryId = searchParams.get('categoryId');
+  const tagId = searchParams.get('tagId');
+  
   // Initialize currentPage from URL searchParams to avoid calling setState in useEffect
   const pageParam = searchParams.get('page');
   const [currentPage, setCurrentPage] = useState(() => {
@@ -82,6 +86,8 @@ function PostsContent() {
         pageSize: 9,
         status: 'Published',
         search: searchTerm || undefined,
+        categoryId: categoryId || undefined,
+        tagId: tagId || undefined,
       }, true);
       
       setIsSearching(false);
@@ -89,7 +95,7 @@ function PostsContent() {
     };
 
     performSearch();
-  }, [debouncedSearch, currentPage, cacheVersion, fetchPosts]);
+  }, [debouncedSearch, currentPage, cacheVersion, categoryId, tagId, fetchPosts]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,6 +108,8 @@ function PostsContent() {
         pageSize: 9,
         status: 'Published',
         search: searchTerm || undefined,
+        categoryId: categoryId || undefined,
+        tagId: tagId || undefined,
       });
     }
   };

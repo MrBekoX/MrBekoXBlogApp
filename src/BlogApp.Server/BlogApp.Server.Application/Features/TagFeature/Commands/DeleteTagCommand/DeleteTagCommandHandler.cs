@@ -10,7 +10,8 @@ namespace BlogApp.Server.Application.Features.TagFeature.Commands.DeleteTagComma
 
 public class DeleteTagCommandHandler(
     IUnitOfWork unitOfWork,
-    ITagBusinessRules tagBusinessRules) : IRequestHandler<DeleteTagCommandRequest, DeleteTagCommandResponse>
+    ITagBusinessRules tagBusinessRules,
+    ICacheService cacheService) : IRequestHandler<DeleteTagCommandRequest, DeleteTagCommandResponse>
 {
     public async Task<DeleteTagCommandResponse> Handle(DeleteTagCommandRequest request, CancellationToken cancellationToken)
     {
@@ -42,6 +43,9 @@ public class DeleteTagCommandHandler(
 
         await unitOfWork.TagsWrite.UpdateAsync(tag, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Invalidate tags cache
+        await cacheService.RotateGroupVersionAsync(TagCacheKeys.ListGroup, cancellationToken);
 
         return new DeleteTagCommandResponse
         {

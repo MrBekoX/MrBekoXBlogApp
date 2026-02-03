@@ -6,6 +6,13 @@
 .env.*.local
 deploy/.env
 
+#ai gent skills files
+.agent
+.claude
+
+#deploy files
+.deploy
+
 # ASP.NET Core Sensitive Configuration
 # Development appsettings (contains secrets)
 **/appsettings.Development.json

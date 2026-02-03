@@ -32,8 +32,10 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
             .HasMaxLength(200);
 
         // Indexes
-        builder.HasIndex(r => r.Token);
+        builder.HasIndex(r => r.Token)
+            .IsUnique();  // Token must be unique
         builder.HasIndex(r => r.ExpiresAt);
+        builder.HasIndex(r => r.UserId);  // For querying user's tokens
 
         // Relationships
         builder.HasOne(r => r.User)

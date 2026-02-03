@@ -81,10 +81,8 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
         catch (Exception ex)
         {
             // Log token validation failures for security audit trail
-            var tokenPreview = !string.IsNullOrEmpty(token) && token.Length > 10 
-                ? token[..10] + "..." 
-                : "invalid/empty";
-            logger.LogWarning(ex, "Token validation failed for token prefix: {TokenPrefix}", tokenPreview);
+            // Note: Don't log token content for security reasons
+            logger.LogWarning(ex, "Token validation failed: {ExceptionType}", ex.GetType().Name);
             return false;
         }
     }

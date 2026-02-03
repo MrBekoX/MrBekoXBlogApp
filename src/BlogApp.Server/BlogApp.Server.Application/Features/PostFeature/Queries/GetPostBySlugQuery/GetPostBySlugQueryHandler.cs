@@ -50,12 +50,23 @@ public class GetPostBySlugQueryHandler(
             };
         }
 
-        // View count artır
+        // View count artır (atomic operation - race condition önlemi)
+        // Not: ReadCommitted isolation level yeterli - view count için strict consistency gerekmez
+        // Serializable deadlock ve performans sorunlarına yol açar
         if (request.IncrementViewCount)
         {
-            post.ViewCount++;
-            await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
-            await unitOfWork.SaveChangesAsync(cancellationToken);
+            try
+            {
+                // IncrementViewCountAsync uses atomic SQL UPDATE (SET view_count = view_count + 1)
+                // which is inherently thread-safe without requiring Serializable isolation
+                await unitOfWork.PostsWrite.IncrementViewCountAsync(post.Id, cancellationToken);
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                // View count increment failure should not break the page load
+                // Log and continue - the page content is more important
+            }
         }
 
         var dto = mapper.Map<PostDetailQueryDto>(post);

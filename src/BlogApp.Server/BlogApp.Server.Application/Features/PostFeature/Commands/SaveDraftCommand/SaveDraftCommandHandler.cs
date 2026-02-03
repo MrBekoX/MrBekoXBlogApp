@@ -11,7 +11,8 @@ namespace BlogApp.Server.Application.Features.PostFeature.Commands.SaveDraftComm
 
 public class SaveDraftCommandHandler(
     IUnitOfWork unitOfWork,
-    ICurrentUserService currentUserService) : IRequestHandler<SaveDraftCommandRequest, SaveDraftCommandResponse>
+    ICurrentUserService currentUserService,
+    ITagService tagService) : IRequestHandler<SaveDraftCommandRequest, SaveDraftCommandResponse>
 {
     public async Task<SaveDraftCommandResponse> Handle(SaveDraftCommandRequest request, CancellationToken cancellationToken)
     {
@@ -63,8 +64,8 @@ public class SaveDraftCommandHandler(
             post.FeaturedImageUrl = dto.FeaturedImageUrl;
             post.CategoryId = categoryId;
             // MetaTitle max 70 karakter limiti
-            post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
-                ? dto.MetaTitle 
+            post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
+                ? dto.MetaTitle
                 : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]);
             post.MetaDescription = dto.MetaDescription;
             post.MetaKeywords = dto.MetaKeywords;
@@ -114,8 +115,8 @@ public class SaveDraftCommandHandler(
                 AuthorId = userId.Value,
                 CategoryId = categoryId,
                 // MetaTitle max 70 karakter limiti
-                MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
-                    ? dto.MetaTitle 
+                MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
+                    ? dto.MetaTitle
                     : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]),
                 MetaDescription = dto.MetaDescription,
                 MetaKeywords = dto.MetaKeywords,
@@ -128,29 +129,14 @@ public class SaveDraftCommandHandler(
             await unitOfWork.PostsWrite.AddAsync(post, cancellationToken);
         }
 
-        // Tag'leri al veya oluştur
+        // Tag'leri al veya oluştur (batch query ile N+1 önleme)
+        post.Tags.Clear();
         if (dto.TagNames.Any())
         {
-            post.Tags.Clear();
-            foreach (var tagName in dto.TagNames)
+            var tags = await tagService.GetOrCreateTagsAsync(dto.TagNames, cancellationToken);
+            foreach (var tag in tags)
             {
-                var existingTag = await unitOfWork.TagsRead.GetSingleAsync(t => t.Name == tagName, cancellationToken);
-                if (existingTag is not null)
-                {
-                    post.Tags.Add(existingTag);
-                }
-                else
-                {
-                    var newTag = new Tag
-                    {
-                        Id = Guid.NewGuid(),
-                        Name = tagName,
-                        Slug = Slug.CreateFromTitle(tagName).Value,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    await unitOfWork.TagsWrite.AddAsync(newTag, cancellationToken);
-                    post.Tags.Add(newTag);
-                }
+                post.Tags.Add(tag);
             }
         }
 

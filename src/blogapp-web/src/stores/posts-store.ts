@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { BlogPost, CreatePostRequest, PaginatedResult, UpdatePostRequest } from '@/types';
-import { postsApi } from '@/lib/api';
+import { postsApi, getErrorMessage } from '@/lib/api';
 
 // Cache configuration
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
@@ -95,7 +95,7 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         set({ error: response.message || 'Failed to fetch posts', isLoading: false });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch posts';
+      const message = getErrorMessage(error, 'Yazılar yüklenemedi');
       set({ error: message, isLoading: false });
     }
   },
@@ -110,7 +110,7 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         set({ error: response.message || 'Failed to fetch post', isLoading: false });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch post';
+      const message = getErrorMessage(error, 'Yazı yüklenemedi');
       set({ error: message, isLoading: false });
     }
   },
@@ -137,17 +137,15 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         set({ error: response.message || 'Failed to fetch post', isLoading: false });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch post';
+      const message = getErrorMessage(error, 'Yazı yüklenemedi');
       set({ error: message, isLoading: false });
     }
   },
 
   createPost: async (data: CreatePostRequest) => {
-    console.log('Creating post with data:', data);
     set({ isLoading: true, error: null });
     try {
       const response = await postsApi.create(data);
-      console.log('Create post response:', response);
       if (response.success && response.data) {
         // Invalidate cache immediately
         get().invalidateCache();
@@ -156,13 +154,11 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         await get().fetchPosts(undefined, true);
         return response.data;
       } else {
-        console.error('Create post failed:', response.message);
         set({ error: response.message || 'Failed to create post', isLoading: false });
         return null;
       }
     } catch (error) {
-      console.error('Create post error:', error);
-      const message = error instanceof Error ? error.message : 'Failed to create post';
+      const message = getErrorMessage(error, 'Yazı oluşturulamadı');
       set({ error: message, isLoading: false });
       return null;
     }
@@ -183,7 +179,7 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         return null;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update post';
+      const message = getErrorMessage(error, 'Yazı güncellenemedi');
       set({ error: message, isLoading: false });
       return null;
     }
@@ -203,7 +199,7 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         return false;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to delete post';
+      const message = getErrorMessage(error, 'Yazı silinemedi');
       set({ error: message, isLoading: false });
       return false;
     }
@@ -219,13 +215,26 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         set({ currentPost: response.data, isLoading: false });
         // Force refresh all lists immediately
         await get().fetchPosts(undefined, true);
+        
+        // Also refresh Next.js server cache for SSR pages
+        try {
+          const { revalidateCacheTag } = await import('@/app/actions/revalidate');
+          await revalidateCacheTag('posts');
+          // Trigger router refresh for current page
+          if (typeof window !== 'undefined') {
+            window.location.reload();
+          }
+        } catch (error) {
+          console.error('Failed to revalidate server cache:', error);
+        }
+        
         return true;
       } else {
         set({ error: response.message || 'Failed to publish post', isLoading: false });
         return false;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to publish post';
+      const message = getErrorMessage(error, 'Yazı yayınlanamadı');
       set({ error: message, isLoading: false });
       return false;
     }
@@ -245,7 +254,7 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         return false;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to archive post';
+      const message = getErrorMessage(error, 'Yazı arşivlenemedi');
       set({ error: message, isLoading: false });
       return false;
     }
@@ -266,7 +275,7 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
           return false;
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to unpublish post';
+        const message = getErrorMessage(error, 'Yazı yayından kaldırılamadı');
         set({ error: message, isLoading: false });
         return false;
       }

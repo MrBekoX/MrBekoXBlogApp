@@ -2,6 +2,7 @@ using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.TagFeature.DTOs;
+using BlogApp.Server.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,17 +13,26 @@ public class GetAllTagQueryHandler(
 {
     public async Task<GetAllTagQueryResponse> Handle(GetAllTagQueryRequest request, CancellationToken cancellationToken)
     {
-        var tags = await unitOfWork.TagsRead.Query()
+        // Fix N+1 Query: Use projection without Include
+        var query = unitOfWork.TagsRead.Query()
             .AsNoTracking()
-            .Include(t => t.Posts)
-            .Where(t => !t.IsDeleted)
+            .Where(t => !t.IsDeleted);
+
+        // Only filter by published posts if IncludeEmpty is false
+        if (!request.IncludeEmpty)
+        {
+            query = query.Where(t => t.Posts.Any(p => !p.IsDeleted && p.Status == PostStatus.Published));
+        }
+
+        var tags = await query
             .OrderBy(t => t.Name)
             .Select(t => new GetAllTagQueryDto
             {
                 Id = t.Id,
                 Name = t.Name,
                 Slug = t.Slug,
-                PostCount = t.Posts.Count(p => !p.IsDeleted),
+                // Fix N+1: Use subquery instead of loading Posts collection
+                PostCount = t.Posts.Count(p => !p.IsDeleted && p.Status == PostStatus.Published),
                 CreatedAt = t.CreatedAt
             })
             .ToListAsync(cancellationToken);
@@ -33,6 +43,3 @@ public class GetAllTagQueryHandler(
         };
     }
 }
-
-
-

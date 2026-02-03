@@ -64,7 +64,6 @@ public static class MediaEndpoints
         })
         .WithName("UploadImage")
         .WithDescription("Upload an image")
-        .DisableAntiforgery()
         .Produces<ApiResponse<ImageUploadResult>>(200)
         .Produces(400);
 
@@ -130,7 +129,6 @@ public static class MediaEndpoints
         })
         .WithName("UploadImages")
         .WithDescription("Upload multiple images")
-        .DisableAntiforgery()
         .Produces<ApiResponse<List<ImageUploadResult>>>(200)
         .Produces(400);
 

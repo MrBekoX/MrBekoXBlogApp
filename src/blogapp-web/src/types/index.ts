@@ -46,6 +46,19 @@ export interface BlogPost {
   category?: Category;
   categories?: Category[];
   tags: Tag[];
+  // AI-generated fields
+  aiSummary?: string;
+  aiKeywords?: string;
+  aiEstimatedReadingTime?: number;
+  aiSeoDescription?: string;
+  aiProcessedAt?: string;
+  aiGeoOptimization?: string;
+}
+
+// AI Summary Response
+export interface AISummaryResponse {
+  summary: string;
+  wordCount: number;
 }
 
 export interface Author {
@@ -69,6 +82,7 @@ export interface CreatePostRequest {
 
 export interface UpdatePostRequest extends CreatePostRequest {
   id: string;
+  aiSummary?: string;
 }
 
 // Category types
@@ -165,4 +179,52 @@ export interface ImageUploadResult {
   height: number;
   fileSize: number;
   contentType: string;
+}
+
+// Chat types
+export type AgentType = 'normal' | 'summary' | 'web-search';
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  agentType?: AgentType;
+  isWebSearchResult?: boolean;
+  sources?: WebSearchSource[];
+  timestamp: Date;
+}
+
+export interface WebSearchSource {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface ChatRequest {
+  postId: string;
+  message: string;
+  sessionId?: string;
+  conversationHistory?: ChatHistoryItem[];
+  language?: string;
+  enableWebSearch?: boolean;
+}
+
+export interface ChatHistoryItem {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatResponse {
+  correlationId: string;
+  sessionId: string;
+  message: string;
+}
+
+export interface ChatMessageReceivedEvent {
+  sessionId: string;
+  correlationId: string;
+  response: string;
+  isWebSearchResult: boolean;
+  sources?: WebSearchSource[];
+  timestamp: string;
 }

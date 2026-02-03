@@ -3,9 +3,8 @@
 # BlogApp Production Deployment Script
 # ============================================
 # Kullanim:
-#   ./deploy.sh                    # Normal deployment
-#   ./deploy.sh --with-migration   # Database migration ile deployment
-#   ./deploy.sh --help             # Yardim
+#   ./deploy.sh         # Normal deployment (migrations otomatik uygulanir)
+#   ./deploy.sh --help  # Yardim
 # ============================================
 
 set -e
@@ -27,31 +26,19 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 COMPOSE_FILE="docker-compose.prod.yml"
 POSTGRES_CONTAINER="blogapp-postgres-prod"
 BACKUP_DIR="./backups"
-MIGRATIONS_DIR="../src/BlogApp.Server/BlogApp.Server.Infrastructure/Persistence/Migrations"
-# Migration dosyalari (sirayla calistirilir)
-MIGRATION_FILES=(
-    "SearchOptimization.sql"
-    "PartialUniqueIndexes.sql"
-)
 
 # Parametreleri isle
-WITH_MIGRATION=false
 for arg in "$@"; do
     case $arg in
-        --with-migration)
-            WITH_MIGRATION=true
-            shift
-            ;;
         --help)
-            echo "Kullanim: ./deploy.sh [OPTIONS]"
+            echo "Kullanim: ./deploy.sh"
             echo ""
-            echo "Options:"
-            echo "  --with-migration   Database migration'i da uygula (SearchOptimization.sql)"
-            echo "  --help             Bu yardim mesajini goster"
-            echo ""
-            echo "Ornekler:"
-            echo "  ./deploy.sh                    # Normal deployment"
-            echo "  ./deploy.sh --with-migration   # Migration ile deployment"
+            echo "Bu script:"
+            echo "  1. Database backup alir"
+            echo "  2. Docker image'lari ceker"
+            echo "  3. Container'lari yeniden baslatir"
+            echo "  4. EF Core migrations otomatik uygulanir (Program.cs MigrateAsync)"
+            echo "  5. Health check yapar"
             exit 0
             ;;
     esac
@@ -78,11 +65,16 @@ DB_NAME="${POSTGRES_DB:-blogdb}"
 log_info "Step 1: Database backup aliniyor..."
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="${BACKUP_DIR}/backup_$(date +%Y%m%d_%H%M%S).sql"
+BACKUP_ERROR_FILE="${BACKUP_DIR}/backup_error_$(date +%Y%m%d_%H%M%S).log"
 
-if docker exec "$POSTGRES_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" > "$BACKUP_FILE" 2>/dev/null; then
+if docker exec "$POSTGRES_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" > "$BACKUP_FILE" 2>"$BACKUP_ERROR_FILE"; then
     log_success "Backup olusturuldu: $BACKUP_FILE"
+    rm -f "$BACKUP_ERROR_FILE"  # Hata yok, error log'u sil
 else
-    log_warn "Backup alinamadi (database henuz calisiyor olabilir)"
+    log_warn "Backup alinamadi. Hata detaylari: $BACKUP_ERROR_FILE"
+    if [ -s "$BACKUP_ERROR_FILE" ]; then
+        cat "$BACKUP_ERROR_FILE"
+    fi
 fi
 
 # Step 2: Pull images
@@ -91,69 +83,27 @@ log_info "Step 2: Yeni image'lar cekiliyor..."
 docker compose -f "$COMPOSE_FILE" pull
 log_success "Image'lar guncellendi"
 
-# Step 3: Migration (eger istendi ise)
+# Step 3: Container'lari yeniden baslat
 echo ""
-if [ "$WITH_MIGRATION" = true ]; then
-    log_info "Step 3: Database migrations uygulanıyor..."
-    
-    MIGRATION_SUCCESS=true
-    for migration in "${MIGRATION_FILES[@]}"; do
-        MIGRATION_PATH="${MIGRATIONS_DIR}/${migration}"
-        
-        if [ -f "$MIGRATION_PATH" ]; then
-            log_info "Migration uygulanıyor: $migration"
-            
-            # Migration dosyasini container'a kopyala
-            docker cp "$MIGRATION_PATH" "${POSTGRES_CONTAINER}:/tmp/migration.sql"
-            
-            # Migration'i calistir
-            if docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -f /tmp/migration.sql 2>/dev/null; then
-                log_success "Migration basarili: $migration"
-                docker exec "$POSTGRES_CONTAINER" rm /tmp/migration.sql
-            else
-                log_warn "Migration zaten uygulanmis veya hata: $migration"
-                docker exec "$POSTGRES_CONTAINER" rm -f /tmp/migration.sql
-            fi
-        else
-            log_warn "Migration dosyasi bulunamadi: $migration"
-        fi
-    done
-else
-    log_info "Step 3: Migration atlanıyor (--with-migration kullanilmadi)"
-fi
-
-# Step 4: Container'lari yeniden baslat
-echo ""
-log_info "Step 4: Container'lar yeniden baslatiliyor..."
+log_info "Step 3: Container'lar yeniden baslatiliyor..."
 docker compose -f "$COMPOSE_FILE" up -d --force-recreate
 log_success "Container'lar baslatildi"
 
-# Step 5: API container başlarken EF Core migration otomatik uygulanır (Program.cs MigrateAsync)
+# Step 4: EF Core migrations otomatik uygulanir
 echo ""
-log_info "Step 5: EF Core migrations API başlatılırken otomatik uygulanacak..."
+log_info "Step 4: EF Core migrations API baslatilirken otomatik uygulanacak..."
+log_info "       (Program.cs MigrateAsync)"
 
-# Step 6: Health check
+# Step 5: Health check
 echo ""
-log_info "Step 6: Health check yapiliyor..."
+log_info "Step 5: Health check yapiliyor..."
 sleep 5
 
 if docker compose -f "$COMPOSE_FILE" ps | grep -q "Up"; then
     log_success "Tum container'lar calisiyor"
 else
-    log_error "Bazi container'lar calismıyor!"
+    log_error "Bazi container'lar calismiyor!"
     docker compose -f "$COMPOSE_FILE" ps
-fi
-
-# Step 7: Migration dogrulama (eger uygulandi ise)
-if [ "$WITH_MIGRATION" = true ]; then
-    echo ""
-    log_info "Step 7: Migration dogrulaniyor..."
-    
-    if docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT column_name FROM information_schema.columns WHERE table_name = 'posts' AND column_name = 'search_vector';" 2>/dev/null | grep -q "search_vector"; then
-        log_success "search_vector kolonu mevcut"
-    else
-        log_warn "search_vector kolonu bulunamadi"
-    fi
 fi
 
 # Ozet

@@ -43,7 +43,7 @@ export function BlogPostingSchema({
     '@type': 'BlogPosting',
     headline: title,
     description: description,
-    url: `${SITE_URL}/posts/view?slug=${slug}`,
+    url: `${SITE_URL}/posts/${slug}`,
     datePublished: publishedAt,
     dateModified: updatedAt,
     author: authorSchema,
@@ -71,7 +71,7 @@ export function BlogPostingSchema({
     inLanguage: 'tr-TR',
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': `${SITE_URL}/posts/view?slug=${slug}`,
+      '@id': `${SITE_URL}/posts/${slug}`,
     },
   };
 

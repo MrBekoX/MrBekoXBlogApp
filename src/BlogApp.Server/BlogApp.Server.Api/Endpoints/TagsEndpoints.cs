@@ -18,10 +18,14 @@ public static class TagsEndpoints
 
         // GET /api/tags
         group.MapGet("/", async (
+            bool? includeEmpty,
             IMediator mediator,
             CancellationToken cancellationToken) =>
         {
-            var response = await mediator.Send(new GetAllTagQueryRequest(), cancellationToken);
+            var response = await mediator.Send(new GetAllTagQueryRequest 
+            { 
+                IncludeEmpty = includeEmpty ?? false 
+            }, cancellationToken);
 
             if (!response.Result.IsSuccess)
                 return Results.NotFound(ApiResponse<IEnumerable<GetAllTagQueryDto>>.FailureResult(response.Result.Error!));
@@ -29,7 +33,7 @@ public static class TagsEndpoints
             return Results.Ok(ApiResponse<IEnumerable<GetAllTagQueryDto>>.SuccessResult(response.Result.Value!));
         })
         .WithName("GetAllTags")
-        .WithDescription("Get all tags")
+        .WithDescription("Get all tags. Use includeEmpty=true to include tags without published posts.")
         .CacheOutput("Tags")
         .Produces<ApiResponse<IEnumerable<GetAllTagQueryDto>>>(200);
 

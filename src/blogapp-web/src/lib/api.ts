@@ -1,9 +1,12 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type {
   ApiResponse,
+  AISummaryResponse,
   AuthResponse,
   BlogPost,
   Category,
+  ChatRequest,
+  ChatResponse,
   Comment,
   CreateCategoryRequest,
   CreateCommentRequest,
@@ -21,6 +24,101 @@ import type {
 // API Base URL - Production'da NEXT_PUBLIC_API_URL environment variable kullanılmalı
 // Örnek: NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api/v1
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
+
+// Auth storage key used by Zustand persist middleware
+const AUTH_STORAGE_KEY = 'auth-storage';
+
+/**
+ * Axios hatasından kullanıcı dostu mesaj çıkarır.
+ * Hassas bilgileri (stack trace, internal error details) gizler.
+ */
+export function getErrorMessage(error: unknown, fallbackMessage = 'Bir hata oluştu'): string {
+  if (!error) return fallbackMessage;
+
+  // Axios error
+  if (axios.isAxiosError(error)) {
+    const axiosError = error as AxiosError<ApiResponse<unknown>>;
+    
+    // Backend'den gelen hata mesajı
+    if (axiosError.response?.data?.message) {
+      return axiosError.response.data.message;
+    }
+    
+    // Backend'den gelen errors array
+    if (axiosError.response?.data?.errors?.length) {
+      return axiosError.response.data.errors[0];
+    }
+
+    // HTTP status bazlı generic mesajlar
+    switch (axiosError.response?.status) {
+      case 400:
+        return 'Geçersiz istek';
+      case 401:
+        return 'Oturum süresi dolmuş, lütfen tekrar giriş yapın';
+      case 403:
+        return 'Bu işlem için yetkiniz yok';
+      case 404:
+        return 'İstenen kaynak bulunamadı';
+      case 429:
+        return 'Çok fazla istek gönderdiniz, lütfen bekleyin';
+      case 500:
+      case 502:
+      case 503:
+        return 'Sunucu hatası, lütfen daha sonra tekrar deneyin';
+      default:
+        break;
+    }
+
+    // Network error
+    if (axiosError.code === 'ERR_NETWORK') {
+      return 'Bağlantı hatası, internet bağlantınızı kontrol edin';
+    }
+
+    // Timeout
+    if (axiosError.code === 'ECONNABORTED') {
+      return 'İstek zaman aşımına uğradı';
+    }
+  }
+
+  // Standard Error
+  if (error instanceof Error) {
+    // Hassas bilgileri içerebilecek mesajları filtrele
+    const message = error.message.toLowerCase();
+    if (message.includes('network') || message.includes('fetch')) {
+      return 'Bağlantı hatası';
+    }
+    if (message.includes('timeout') || message.includes('aborted')) {
+      return 'İstek zaman aşımına uğradı';
+    }
+    // Generic hata mesajı - detay sızdırma
+    return fallbackMessage;
+  }
+
+  return fallbackMessage;
+}
+
+/**
+ * Clear auth state from localStorage to prevent infinite redirect loops.
+ * This directly updates the persisted Zustand state without importing the store
+ * to avoid circular dependencies (auth-store -> api -> auth-store).
+ */
+function clearAuthState(): void {
+  try {
+    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      parsed.state = {
+        ...parsed.state,
+        user: null,
+        authStatus: 'unauthenticated',
+      };
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsed));
+    }
+  } catch {
+    // If parsing fails, just remove the entire storage
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+}
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -95,17 +193,22 @@ apiClient.interceptors.response.use(
         }
       }
 
-      // Refresh failed - redirect to login (with cooldown protection)
+      // Refresh failed - clear auth state and redirect to login (with cooldown protection)
       const now = Date.now();
       const timeSinceLastRedirect = now - lastRedirectTime;
-      
+
       if (!isRedirecting && typeof window !== 'undefined' && timeSinceLastRedirect > REDIRECT_COOLDOWN) {
         isRedirecting = true;
         lastRedirectTime = now;
-        
+
+        // CRITICAL: Clear auth state BEFORE redirect to prevent infinite loop
+        // Without this, localStorage keeps 'authenticated' status and login page
+        // redirects back to dashboard, creating an infinite loop
+        clearAuthState();
+
         // Use replace to prevent going back to protected page
         window.location.replace('/mrbekox-console');
-        
+
         // Reset after cooldown to allow for future redirects
         setTimeout(() => { isRedirecting = false; }, REDIRECT_COOLDOWN);
       }
@@ -211,6 +314,19 @@ export const postsApi = {
     const response = await apiClient.get<ApiResponse<PaginatedResult<BlogPost>>>('/posts/my', { params });
     return response.data;
   },
+
+  generateAiSummary: async (id: string, maxSentences?: number, language?: string): Promise<ApiResponse<AISummaryResponse>> => {
+    const params: { maxSentences?: number; language?: string } = {};
+    if (maxSentences !== undefined) params.maxSentences = maxSentences;
+    if (language !== undefined) params.language = language;
+
+    const response = await apiClient.post<ApiResponse<AISummaryResponse>>(
+      `/posts/${id}/generate-ai-summary`,
+      null,
+      { params }
+    );
+    return response.data;
+  },
 };
 
 // Categories API
@@ -248,8 +364,9 @@ export const categoriesApi = {
 
 // Tags API
 export const tagsApi = {
-  getAll: async (): Promise<ApiResponse<Tag[]>> => {
-    const response = await apiClient.get<ApiResponse<Tag[]>>('/tags');
+  getAll: async (includeEmpty?: boolean): Promise<ApiResponse<Tag[]>> => {
+    const params = includeEmpty !== undefined ? { includeEmpty } : {};
+    const response = await apiClient.get<ApiResponse<Tag[]>>('/tags', { params });
     return response.data;
   },
 
@@ -296,63 +413,58 @@ export const commentsApi = {
   },
 };
 
-// AI API
-const AI_API_URL = process.env.NEXT_PUBLIC_AI_API_URL || 'http://localhost:8000';
-const AI_API_TIMEOUT = 30000; // 30 seconds timeout for AI operations
-
-/**
- * Creates an AbortSignal that times out after specified milliseconds.
- * For memory leak prevention in AI API calls.
- */
-const createTimeoutSignal = (timeoutMs: number): AbortSignal => {
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), timeoutMs);
-  return controller.signal;
-};
-
+// AI API - Backend üzerinden yönlendiriliyor
 export const aiApi = {
   generateTitle: async (content: string, signal?: AbortSignal): Promise<{ title: string }> => {
-    const response = await axios.post<{ title: string }>(
-      `${AI_API_URL}/ai/generate-title`, 
+    const response = await apiClient.post<{ title: string }>(
+      '/ai/generate-title',
       { content },
-      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+      { signal }
     );
     return response.data;
   },
 
   generateExcerpt: async (content: string, signal?: AbortSignal): Promise<{ excerpt: string }> => {
-    const response = await axios.post<{ excerpt: string }>(
-      `${AI_API_URL}/ai/generate-excerpt`, 
+    const response = await apiClient.post<{ excerpt: string }>(
+      '/ai/generate-excerpt',
       { content },
-      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+      { signal }
     );
     return response.data;
   },
 
   generateTags: async (content: string, signal?: AbortSignal): Promise<{ tags: string[] }> => {
-    const response = await axios.post<{ tags: string[] }>(
-      `${AI_API_URL}/ai/generate-tags`, 
+    const response = await apiClient.post<{ tags: string[] }>(
+      '/ai/generate-tags',
       { content },
-      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+      { signal }
     );
     return response.data;
   },
 
   generateSeoDescription: async (content: string, signal?: AbortSignal): Promise<{ description: string }> => {
-    const response = await axios.post<{ description: string }>(
-      `${AI_API_URL}/ai/generate-seo`, 
+    const response = await apiClient.post<{ description: string }>(
+      '/ai/generate-seo',
       { content },
-      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+      { signal }
     );
     return response.data;
   },
 
   improveContent: async (content: string, signal?: AbortSignal): Promise<{ content: string }> => {
-    const response = await axios.post<{ content: string }>(
-      `${AI_API_URL}/ai/improve-content`, 
+    const response = await apiClient.post<{ content: string }>(
+      '/ai/improve-content',
       { content },
-      { signal: signal ?? createTimeoutSignal(AI_API_TIMEOUT) }
+      { signal }
     );
+    return response.data;
+  },
+};
+
+// Chat API
+export const chatApi = {
+  sendMessage: async (data: ChatRequest): Promise<ApiResponse<ChatResponse>> => {
+    const response = await apiClient.post<ApiResponse<ChatResponse>>('/chat/message', data);
     return response.data;
   },
 };

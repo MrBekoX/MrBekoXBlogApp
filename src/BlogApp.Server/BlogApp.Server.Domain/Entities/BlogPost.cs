@@ -23,6 +23,38 @@ public class BlogPost : BaseAuditableEntity
     public string? MetaKeywords { get; set; }
     public int ReadingTimeMinutes { get; set; }
 
+    // AI-Generated Fields
+    /// <summary>
+    /// AI tarafından oluşturulan makale özeti (RAG-based)
+    /// </summary>
+    public string? AiSummary { get; set; }
+
+    /// <summary>
+    /// AI tarafından çıkarılan anahtar kelimeler (virgülle ayrılmış)
+    /// </summary>
+    public string? AiKeywords { get; set; }
+
+    /// <summary>
+    /// AI tarafından hesaplanan tahmini okuma süresi (dakika)
+    /// </summary>
+    public int? AiEstimatedReadingTime { get; set; }
+
+    /// <summary>
+    /// AI tarafından oluşturulan SEO meta description
+    /// </summary>
+    public string? AiSeoDescription { get; set; }
+
+    /// <summary>
+    /// AI işlemesinin tamamlandığı tarih
+    /// </summary>
+    public DateTime? AiProcessedAt { get; set; }
+
+    /// <summary>
+    /// AI tarafından oluşturulan GEO optimizasyon verileri (JSON serialized)
+    /// İçerir: optimized_title, geo_keywords, cultural_adaptations, vs.
+    /// </summary>
+    public string? AiGeoOptimization { get; set; }
+
     // Foreign keys
     public Guid AuthorId { get; set; }
     public Guid? CategoryId { get; set; }

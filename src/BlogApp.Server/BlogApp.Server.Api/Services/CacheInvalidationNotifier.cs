@@ -11,14 +11,10 @@ namespace BlogApp.Server.Api.Services;
 public class CacheInvalidationNotifier : ICacheInvalidationNotifier
 {
     private readonly IHubContext<CacheInvalidationHub> _hubContext;
-    private readonly ILogger<CacheInvalidationNotifier> _logger;
 
-    public CacheInvalidationNotifier(
-        IHubContext<CacheInvalidationHub> hubContext,
-        ILogger<CacheInvalidationNotifier> logger)
+    public CacheInvalidationNotifier(IHubContext<CacheInvalidationHub> hubContext)
     {
         _hubContext = hubContext;
-        _logger = logger;
     }
 
     public async Task NotifyGroupInvalidatedAsync(string groupName, CancellationToken cancellationToken = default)
@@ -32,11 +28,10 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         try
         {
             await _hubContext.Clients.All.SendAsync("CacheInvalidated", evt, cancellationToken);
-            _logger.LogDebug("Broadcasted cache group invalidation: {GroupName}", groupName);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogWarning(ex, "Failed to broadcast cache group invalidation: {GroupName}", groupName);
+            // Silently fail - cache invalidation is not critical
         }
     }
 
@@ -51,11 +46,10 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         try
         {
             await _hubContext.Clients.All.SendAsync("CacheInvalidated", evt, cancellationToken);
-            _logger.LogDebug("Broadcasted cache key removal: {Key}", key);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogWarning(ex, "Failed to broadcast cache key removal: {Key}", key);
+            // Silently fail - cache invalidation is not critical
         }
     }
 
@@ -70,11 +64,10 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         try
         {
             await _hubContext.Clients.All.SendAsync("CacheInvalidated", evt, cancellationToken);
-            _logger.LogDebug("Broadcasted cache prefix removal: {Prefix}", prefix);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogWarning(ex, "Failed to broadcast cache prefix removal: {Prefix}", prefix);
+            // Silently fail - cache invalidation is not critical
         }
     }
 
@@ -89,11 +82,10 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         try
         {
             await _hubContext.Clients.Group(groupName).SendAsync("CacheInvalidated", evt, cancellationToken);
-            _logger.LogDebug("Broadcasted cache invalidation to group {GroupName}: {CacheGroup}", groupName, cacheGroup);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogWarning(ex, "Failed to broadcast cache invalidation to group {GroupName}", groupName);
+            // Silently fail - cache invalidation is not critical
         }
     }
 }

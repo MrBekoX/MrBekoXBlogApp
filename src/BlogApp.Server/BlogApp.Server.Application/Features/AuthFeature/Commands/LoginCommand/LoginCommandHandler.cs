@@ -44,30 +44,51 @@ public class LoginCommandHandler(
         // Güvenli şifre doğrulama (BCrypt)
         if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         {
-            // Başarısız giriş sayısını thread-safe (atomik) olarak artır
-            await unitOfWork.UsersWrite.IncrementFailedLoginAttemptsAsync(user.Id, cancellationToken);
-
-            // Güncel durumu kontrol etmek için kullanıcıyı yeniden çek (Race condition önlemi)
-            var updatedUser = await unitOfWork.UsersRead.GetByIdAsync(user.Id, cancellationToken);
+            // Fix Race Condition: Use transaction to prevent concurrent login attempts
+            using var transaction = await unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
             
-            // updatedUser null gelirse (silinmişse vb.) eski user ile devam et (defensive)
-            var currentAttempts = updatedUser?.FailedLoginAttempts ?? (user.FailedLoginAttempts + 1);
-
-            if (currentAttempts >= MaxFailedAttempts)
+            try
             {
-                // Hesabı kilitle
-                user.LockoutEndTime = DateTime.UtcNow.Add(LockoutDuration);
-                user.FailedLoginAttempts = 0;
-                await unitOfWork.UsersWrite.UpdateAsync(user, cancellationToken);
+                // Başarısız giriş sayısını thread-safe (atomik) olarak artır
+                await unitOfWork.UsersWrite.IncrementFailedLoginAttemptsAsync(user.Id, cancellationToken);
+                
+                // Transaction içinde kullanıcıyı yeniden çek (Race condition önlemi)
+                var updatedUser = await unitOfWork.UsersRead.GetByIdAsync(user.Id, cancellationToken);
+                
+                if (updatedUser != null)
+                {
+                    if (updatedUser.FailedLoginAttempts >= MaxFailedAttempts)
+                    {
+                        // Hesabı kilitle
+                        updatedUser.LockoutEndTime = DateTime.UtcNow.Add(LockoutDuration);
+                        updatedUser.FailedLoginAttempts = 0;
+                        await unitOfWork.UsersWrite.UpdateAsync(updatedUser, cancellationToken);
+                    }
+                }
+                
                 await unitOfWork.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+
+            // Güncel durumu kontrol et
+            var finalUser = await unitOfWork.UsersRead.GetByIdAsync(user.Id, cancellationToken);
+            if (finalUser?.LockoutEndTime > DateTime.UtcNow)
+            {
+                var remainingMinutes = (int)Math.Ceiling((finalUser.LockoutEndTime.Value - DateTime.UtcNow).TotalMinutes);
                 return new LoginCommandResponse
                 {
-                    Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.TooManyAttempts((int)LockoutDuration.TotalMinutes))
+                    Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.AccountLockedWithTime(remainingMinutes))
                 };
             }
 
             // Not: IncrementFailedLoginAttemptsAsync zaten veritabanına yazdığı için tekrar Update/Save çağırmaya gerek yok
-            
+
+            var currentAttempts = finalUser?.FailedLoginAttempts ?? 0;
             var remainingAttempts = MaxFailedAttempts - currentAttempts;
             return new LoginCommandResponse
             {

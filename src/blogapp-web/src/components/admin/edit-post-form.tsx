@@ -24,12 +24,13 @@ import { toast } from 'sonner';
 import { Loader2, X, Save, Send, ArrowLeft } from 'lucide-react';
 import { MarkdownEditor } from '@/components/markdown-editor';
 import { ImageUpload } from '@/components/image-upload';
+import { AIAnalysisCard } from '@/components/admin/ai-analysis-card';
 import type { Category, Tag, PostStatus, BlogPost } from '@/types';
 import Link from 'next/link';
 
 const postSchema = z.object({
   title: z.string().min(1, 'Başlık gerekli').max(200),
-  content: z.string().min(1, 'İçerik gerekli'),
+  content: z.string().min(1, 'İçerik gerekli').max(500000, 'İçerik çok uzun (maks. 500.000 karakter)'),
   excerpt: z.string().max(500).optional(),
   // Accept full URLs, relative paths (/uploads/...), or empty string
   featuredImageUrl: z.string().optional().refine(
@@ -38,6 +39,16 @@ const postSchema = z.object({
   ),
   status: z.enum(['Draft', 'Published', 'Archived']),
 });
+
+/**
+ * Tag ismini temizler - XSS ve injection saldırılarını önler.
+ */
+function sanitizeTagName(tag: string): string {
+  return tag
+    .trim()
+    .replace(/[<>"'&]/g, '') // Tehlikeli karakterleri kaldır
+    .slice(0, 50); // Max 50 karakter
+}
 
 type PostFormData = z.infer<typeof postSchema>;
 
@@ -144,8 +155,9 @@ export function EditPostForm({ postId }: EditPostFormProps) {
   };
 
   const handleAddTag = () => {
-    if (newTag && !selectedTags.includes(newTag)) {
-      setSelectedTags([...selectedTags, newTag]);
+    const sanitized = sanitizeTagName(newTag);
+    if (sanitized && !selectedTags.includes(sanitized)) {
+      setSelectedTags([...selectedTags, sanitized]);
       setNewTag('');
     }
   };
@@ -404,6 +416,9 @@ export function EditPostForm({ postId }: EditPostFormProps) {
             </Card>
           </div>
         </div>
+
+        {/* AI Analysis Section */}
+        <AIAnalysisCard postId={postId} />
       </form>
     </div>
   );

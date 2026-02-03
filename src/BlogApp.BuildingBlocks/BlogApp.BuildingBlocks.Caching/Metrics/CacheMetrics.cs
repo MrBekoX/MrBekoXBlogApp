@@ -1,14 +1,15 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using BlogApp.BuildingBlocks.Caching.Extensions;
 
-namespace BlogApp.Server.Infrastructure.Services;
+namespace BlogApp.BuildingBlocks.Caching.Metrics;
 
 /// <summary>
 /// Provides cache-related metrics for observability.
 /// Uses System.Diagnostics.Metrics for OpenTelemetry compatibility.
 /// Supports L1 (in-memory) and L2 (distributed) cache layer tracking.
 /// </summary>
-public sealed class CacheMetrics : IDisposable
+public class CacheMetrics : IDisposable
 {
     private readonly Meter _meter;
 
@@ -42,14 +43,23 @@ public sealed class CacheMetrics : IDisposable
     private int _activeLocksCount;
     private int _l1KeysCount;
 
-    public const string MeterName = "BlogApp.Cache";
+    /// <summary>
+    /// Default meter name for cache metrics.
+    /// Can be overridden via constructor for domain-specific naming.
+    /// </summary>
+    public const string DefaultMeterName = "BuildingBlocks.Cache";
 
-    public CacheMetrics(IMeterFactory? meterFactory = null)
+    /// <summary>
+    /// Gets the meter name used by this instance.
+    /// </summary>
+    public string MeterName { get; }
+
+    public CacheMetrics(IMeterFactory? meterFactory = null, string? meterName = null)
     {
+        MeterName = meterName ?? DefaultMeterName;
         _meter = meterFactory?.Create(MeterName) ?? new Meter(MeterName, "1.0.0");
 
         // L1 (in-memory) cache counters
-        
         _l1Hits = _meter.CreateCounter<long>(
             "cache.l1.hits",
             unit: "{hit}",
@@ -312,6 +322,7 @@ public sealed class CacheMetrics : IDisposable
     public void Dispose()
     {
         _meter.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -328,7 +339,7 @@ public sealed class CacheMetrics : IDisposable
         {
             _metrics = metrics;
             _operation = operation;
-            _keyPrefix = ExtractKeyPrefix(key);
+            _keyPrefix = key.GetKeyPrefix();
             _startTimestamp = Stopwatch.GetTimestamp();
         }
 
@@ -337,33 +348,5 @@ public sealed class CacheMetrics : IDisposable
             var elapsed = Stopwatch.GetElapsedTime(_startTimestamp);
             _metrics.RecordOperationDuration(_operation, _keyPrefix, elapsed.TotalMilliseconds);
         }
-
-        private static string ExtractKeyPrefix(string key)
-        {
-            if (string.IsNullOrEmpty(key))
-                return "unknown";
-
-            // Extract prefix before first colon (e.g., "post:slug:xyz" -> "post")
-            var colonIndex = key.IndexOf(':');
-            return colonIndex > 0 ? key[..colonIndex] : key;
-        }
-    }
-}
-
-/// <summary>
-/// Extension methods for extracting key prefix from cache keys.
-/// </summary>
-public static class CacheKeyExtensions
-{
-    /// <summary>
-    /// Extracts the prefix from a cache key for metric tagging.
-    /// </summary>
-    public static string GetKeyPrefix(this string key)
-    {
-        if (string.IsNullOrEmpty(key))
-            return "unknown";
-
-        var colonIndex = key.IndexOf(':');
-        return colonIndex > 0 ? key[..colonIndex] : key;
     }
 }

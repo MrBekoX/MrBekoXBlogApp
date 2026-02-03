@@ -1,3 +1,7 @@
+using BlogApp.BuildingBlocks.Caching.Abstractions;
+using BlogApp.BuildingBlocks.Caching.Metrics;
+using BlogApp.BuildingBlocks.Caching.Options;
+using BlogApp.BuildingBlocks.Messaging;
 using BlogApp.Server.Application.Common.Interfaces.Data;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Persistence.BlogPostRepository;
@@ -43,7 +47,10 @@ public static class DependencyInjection
         });
 
         // Database
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        var connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException(
+                "Connection string 'DefaultConnection' not found. " +
+                "Please ensure it is configured in appsettings.json or environment variables.");
         services.AddDbContext<AppDbContext>(options =>
         {
             options.UseNpgsql(connectionString, npgsqlOptions =>
@@ -60,22 +67,48 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(provider =>
             provider.GetRequiredService<AppDbContext>());
 
-        // Redis Cache
-        var redisConnectionString = configuration.GetConnectionString("Redis");
-        if (!string.IsNullOrEmpty(redisConnectionString))
+        // Redis Cache Configuration (using BuildingBlocks shared settings)
+        services.Configure<RedisSettings>(configuration.GetSection(RedisSettings.SectionName));
+        
+        var redisSettings = configuration.GetSection(RedisSettings.SectionName).Get<RedisSettings>();
+        var redisConnectionString = redisSettings?.ConnectionString 
+                                    ?? configuration.GetConnectionString("Redis");
+        
+        if (redisSettings?.Enabled == true && !string.IsNullOrEmpty(redisConnectionString))
         {
-            services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(sp =>
-                StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString));
+            // Configure Redis connection with retry policy
+            var options = StackExchange.Redis.ConfigurationOptions.Parse(redisConnectionString);
+            options.ConnectRetry = 3;
+            options.ReconnectRetryPolicy = new StackExchange.Redis.ExponentialRetry(1000);
+            options.AbortOnConnectFail = false;
+            options.ConnectTimeout = 10000;
+            options.SyncTimeout = 5000;
+            options.AsyncTimeout = 5000;
+
+            services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
+                StackExchange.Redis.ConnectionMultiplexer.Connect(options));
             
-            services.AddStackExchangeRedisCache(options =>
+            services.AddStackExchangeRedisCache(opts =>
             {
-                options.Configuration = redisConnectionString;
-                options.InstanceName = "BlogApp_";
+                opts.Configuration = redisConnectionString;
+                opts.InstanceName = redisSettings.InstanceName;
             });
         }
         else
         {
+            // Fallback to in-memory cache when Redis is disabled or not configured
             services.AddDistributedMemoryCache();
+            
+            // Ensure RedisSettings is configured with defaults for CacheService
+            if (redisSettings == null)
+            {
+                services.Configure<RedisSettings>(opts =>
+                {
+                    opts.Enabled = false;
+                    opts.InstanceName = "BlogApp_";
+                    opts.DefaultExpirationMinutes = 60;
+                });
+            }
         }
 
         // UnitOfWork
@@ -100,18 +133,34 @@ public static class DependencyInjection
         services.AddScoped(typeof(IReadRepository<>), typeof(EfCoreReadRepository<>));
         services.AddScoped(typeof(IWriteRepository<>), typeof(EfCoreWriteRepository<>));
 
-        // Cache Metrics
-        services.AddSingleton<CacheMetrics>();
+        // Cache Metrics (using BuildingBlocks with domain-specific meter name)
+        services.AddSingleton(sp =>
+        {
+            var meterFactory = sp.GetService<System.Diagnostics.Metrics.IMeterFactory>();
+            return new CacheMetrics(meterFactory, "BlogApp.Cache");
+        });
 
         // Services
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+
+        // Cache Services - ICacheService extends IHybridCacheService extends IBasicCacheService
+        // All interfaces resolve to the same CacheService instance
         services.AddScoped<ICacheService, CacheService>();
+        services.AddScoped<IHybridCacheService>(sp => sp.GetRequiredService<ICacheService>());
+        services.AddScoped<IBasicCacheService>(sp => sp.GetRequiredService<ICacheService>());
+        
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddScoped<ITagService, TagService>();
 
         // Database Seeder
         services.AddScoped<DbSeeder>();
+
+        // Background Services
+        services.AddHostedService<RefreshTokenCleanupService>();
+
+        // Messaging Services (RabbitMQ via Shared Library)
+        services.AddMessagingServices(configuration);
 
         return services;
     }

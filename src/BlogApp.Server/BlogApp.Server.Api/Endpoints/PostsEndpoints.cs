@@ -1,9 +1,15 @@
 using System.Security.Claims;
+using BlogApp.BuildingBlocks.Messaging;
+using BlogApp.BuildingBlocks.Messaging.Abstractions;
+using BlogApp.Server.Application.Common.Events;
+using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Commands.CreatePostCommand;
 using BlogApp.Server.Application.Features.PostFeature.Commands.DeletePostCommand;
+using BlogApp.Server.Application.Features.PostFeature.Commands.GenerateAiSummaryCommand;
 using BlogApp.Server.Application.Features.PostFeature.Commands.PublishPostCommand;
 using BlogApp.Server.Application.Features.PostFeature.Commands.SaveDraftCommand;
+using BlogApp.Server.Application.Features.PostFeature.Commands.UpdateAiAnalysisCommand;
 using BlogApp.Server.Application.Features.PostFeature.Commands.UpdatePostCommand;
 using BlogApp.Server.Application.Features.PostFeature.DTOs;
 using BlogApp.Server.Application.Features.PostFeature.Queries.GetMyPostsQuery;
@@ -195,11 +201,13 @@ public static class PostsEndpoints
                 Id = response.Result.Value
             }, cancellationToken);
 
-            // Null güvenlik kontrolü: Post oluşturuldu ancak fetch başarısız olabilir
+            // Null safety: Post created but fetch failed - return partial success with ID
             if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
             {
-                return Results.Created($"/api/posts/{response.Result.Value}",
-                    ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post created but details could not be fetched"));
+                return Results.Problem(
+                    detail: $"Post created successfully (ID: {response.Result.Value}) but details could not be fetched. Please fetch manually.",
+                    statusCode: StatusCodes.Status207MultiStatus,
+                    title: "Partial Success");
             }
 
             return Results.Created(
@@ -235,10 +243,13 @@ public static class PostsEndpoints
                 Id = id
             }, cancellationToken);
 
-            // Null safety check
+            // Null safety: Post updated but fetch failed - return partial success with ID
             if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
             {
-                return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post updated but details could not be fetched"));
+                return Results.Problem(
+                    detail: $"Post updated successfully (ID: {id}) but details could not be fetched. Please fetch manually.",
+                    statusCode: StatusCodes.Status207MultiStatus,
+                    title: "Partial Success");
             }
 
             return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post updated successfully"));
@@ -291,10 +302,13 @@ public static class PostsEndpoints
                 Id = id
             }, cancellationToken);
 
-            // Null safety check
+            // Null safety: Post published but fetch failed - return partial success with ID
             if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
             {
-                return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post published but details could not be fetched"));
+                return Results.Problem(
+                    detail: $"Post published successfully (ID: {id}) but details could not be fetched. Please fetch manually.",
+                    statusCode: StatusCodes.Status207MultiStatus,
+                    title: "Partial Success");
             }
 
             return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post published successfully"));
@@ -324,10 +338,13 @@ public static class PostsEndpoints
                 Id = id
             }, cancellationToken);
 
-            // Null safety check
+            // Null safety: Post unpublished but fetch failed - return partial success with ID
             if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
             {
-                return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post unpublished but details could not be fetched"));
+                return Results.Problem(
+                    detail: $"Post unpublished successfully (ID: {id}) but details could not be fetched. Please fetch manually.",
+                    statusCode: StatusCodes.Status207MultiStatus,
+                    title: "Partial Success");
             }
 
             return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post unpublished successfully"));
@@ -357,10 +374,13 @@ public static class PostsEndpoints
                 Id = id
             }, cancellationToken);
 
-            // Null safety check
+            // Null safety: Post archived but fetch failed - return partial success with ID
             if (!postResponse.Result.IsSuccess || postResponse.Result.Value is null)
             {
-                return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(null!, "Post archived but details could not be fetched"));
+                return Results.Problem(
+                    detail: $"Post archived successfully (ID: {id}) but details could not be fetched. Please fetch manually.",
+                    statusCode: StatusCodes.Status207MultiStatus,
+                    title: "Partial Success");
             }
 
             return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(postResponse.Result.Value, "Post archived successfully"));
@@ -415,7 +435,187 @@ public static class PostsEndpoints
         .Produces<ApiResponse<Guid>>(200)
         .Produces(400);
 
+        // PATCH /api/posts/{id}/ai-analysis
+        // AI Agent Service tarafından çağrılır - makale AI analiz sonuçlarını günceller
+        group.MapPatch("/{id:guid}/ai-analysis", async (
+            Guid id,
+            UpdateAiAnalysisDto dto,
+            IMediator mediator,
+            CancellationToken cancellationToken) =>
+        {
+            var response = await mediator.Send(new UpdateAiAnalysisCommandRequest
+            {
+                PostId = id,
+                AiSummary = dto.AiSummary,
+                AiKeywords = dto.AiKeywords,
+                AiEstimatedReadingTime = dto.EstimatedReadingTime,
+                AiSeoDescription = dto.AiSeoDescription,
+                AiGeoOptimization = dto.AiGeoOptimization
+            }, cancellationToken);
+
+            if (!response.Result.IsSuccess)
+                return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
+
+            return Results.NoContent();
+        })
+        .WithName("UpdateAiAnalysis")
+        .WithDescription("Update AI analysis results for a post (called by AI Agent Service)")
+        .Produces(204)
+        .Produces(404);
+
+        // POST /api/posts/{id}/generate-ai-summary
+        // Kullanıcılar ve Admin için - Makalenin AI özetini oluşturur
+        group.MapPost("/{id:guid}/generate-ai-summary", async (
+            Guid id,
+            int? maxSentences,
+            string? language,
+            IMediator mediator,
+            CancellationToken cancellationToken) =>
+        {
+            var response = await mediator.Send(new GenerateAiSummaryCommandRequest
+            {
+                PostId = id,
+                MaxSentences = maxSentences ?? 3,
+                Language = language ?? "tr"
+            }, cancellationToken);
+
+            if (!response.Result.IsSuccess)
+                return Results.BadRequest(ApiResponse<GenerateAiSummaryResponseDto>.FailureResult(response.Result.Error!));
+
+            return Results.Ok(ApiResponse<GenerateAiSummaryResponseDto>.SuccessResult(
+                new GenerateAiSummaryResponseDto
+                {
+                    Summary = response.Summary,
+                    WordCount = response.WordCount
+                },
+                "AI summary generated successfully"));
+        })
+        .WithName("GenerateAiSummary")
+        .WithDescription("Generate AI summary for a post (available for both users and admin)")
+        .Produces<ApiResponse<GenerateAiSummaryResponseDto>>(200)
+        .Produces(400)
+        .Produces(404);
+
+        // POST /api/posts/{id}/request-ai-analysis
+        // Event-driven AI analysis request - publishes to RabbitMQ
+        // AI Agent listens and processes, then publishes result back
+        group.MapPost("/{id:guid}/request-ai-analysis", async (
+            Guid id,
+            RequestAiAnalysisDto? dto,
+            IEventBus eventBus,
+            IUnitOfWork unitOfWork,
+            ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken) =>
+        {
+            var logger = loggerFactory.CreateLogger("PostsEndpoints");
+
+            // Get the post
+            var post = await unitOfWork.PostsRead.GetByIdAsync(id, cancellationToken);
+            if (post is null)
+                return Results.NotFound(ApiResponse<object>.FailureResult("Post not found"));
+
+            // Generate correlation ID for tracking
+            var correlationId = Guid.NewGuid().ToString();
+
+            // Publish analysis request to RabbitMQ
+            var analysisEvent = new ArticleAnalysisRequestedEvent
+            {
+                CorrelationId = correlationId,
+                Payload = new ArticlePayload
+                {
+                    ArticleId = post.Id,
+                    Title = post.Title,
+                    Content = post.Content,
+                    AuthorId = post.AuthorId,
+                    Language = dto?.Language ?? "tr",
+                    TargetRegion = dto?.TargetRegion ?? "TR"
+                }
+            };
+
+            await eventBus.PublishAsync(
+                analysisEvent,
+                MessagingConstants.RoutingKeys.AiAnalysisRequested,
+                cancellationToken);
+
+            logger.LogInformation(
+                "Published AI analysis request for post {PostId} with CorrelationId {CorrelationId}",
+                id,
+                correlationId);
+
+            return Results.Accepted(
+                value: ApiResponse<RequestAiAnalysisResponseDto>.SuccessResult(
+                    new RequestAiAnalysisResponseDto
+                    {
+                        PostId = id,
+                        CorrelationId = correlationId,
+                        Message = "AI analysis request submitted. Results will be delivered via SignalR."
+                    },
+                    "AI analysis request accepted"));
+        })
+        .WithName("RequestAiAnalysis")
+        .WithDescription("Request AI analysis for a post (event-driven, results via SignalR)")
+        .Produces<ApiResponse<RequestAiAnalysisResponseDto>>(202)
+        .Produces(404);
+
         return app;
     }
+}
+
+/// <summary>
+/// DTO for AI analysis update request
+/// </summary>
+public record UpdateAiAnalysisDto
+{
+    public string? AiSummary { get; init; }
+    public string? AiKeywords { get; init; }
+    public int? EstimatedReadingTime { get; init; }
+    public string? AiSeoDescription { get; init; }
+    public string? AiGeoOptimization { get; init; }
+}
+
+/// <summary>
+/// DTO for AI summary generation response
+/// </summary>
+public record GenerateAiSummaryResponseDto
+{
+    public string? Summary { get; init; }
+    public int WordCount { get; init; }
+}
+
+/// <summary>
+/// DTO for AI analysis request
+/// </summary>
+public record RequestAiAnalysisDto
+{
+    /// <summary>
+    /// Content language (default: tr)
+    /// </summary>
+    public string? Language { get; init; }
+
+    /// <summary>
+    /// Target region for GEO optimization (default: TR)
+    /// </summary>
+    public string? TargetRegion { get; init; }
+}
+
+/// <summary>
+/// DTO for AI analysis request response
+/// </summary>
+public record RequestAiAnalysisResponseDto
+{
+    /// <summary>
+    /// Post ID that analysis was requested for
+    /// </summary>
+    public Guid PostId { get; init; }
+
+    /// <summary>
+    /// Correlation ID for tracking the request
+    /// </summary>
+    public string CorrelationId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Status message
+    /// </summary>
+    public string Message { get; init; } = string.Empty;
 }
 

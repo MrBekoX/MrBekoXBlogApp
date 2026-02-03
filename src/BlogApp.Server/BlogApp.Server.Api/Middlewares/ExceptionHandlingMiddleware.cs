@@ -69,6 +69,12 @@ public class ExceptionHandlingMiddleware
                 _logger.LogWarning(exception, "Unauthorized access attempt");
                 break;
 
+            case DomainException domainEx:
+                statusCode = HttpStatusCode.BadRequest;
+                errors.Add(domainEx.Message);
+                _logger.LogWarning(exception, "Domain error: {Message}", domainEx.Message);
+                break;
+
             default:
                 errors.Add("An unexpected error occurred. Please try again later.");
                 _logger.LogError(exception, "Unhandled exception occurred");

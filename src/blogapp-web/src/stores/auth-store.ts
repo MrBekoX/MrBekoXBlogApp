@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User } from '@/types';
-import { authApi } from '@/lib/api';
+import { authApi, getErrorMessage } from '@/lib/api';
 
 /**
  * Auth status represents the current authentication state.
@@ -54,7 +54,7 @@ export const useAuthStore = create<AuthState>()(
             return false;
           }
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'Login failed';
+          const message = getErrorMessage(error, 'Giriş başarısız');
           set({ error: message, isLoading: false });
           return false;
         }
@@ -72,11 +72,11 @@ export const useAuthStore = create<AuthState>()(
             });
             return true;
           } else {
-            set({ error: response.message || 'Registration failed', isLoading: false });
+            set({ error: response.message || 'Kayıt başarısız', isLoading: false });
             return false;
           }
         } catch (error) {
-          const message = error instanceof Error ? error.message : 'Registration failed';
+          const message = getErrorMessage(error, 'Kayıt başarısız');
           set({ error: message, isLoading: false });
           return false;
         }

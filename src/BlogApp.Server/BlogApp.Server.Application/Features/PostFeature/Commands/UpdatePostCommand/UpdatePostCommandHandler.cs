@@ -2,13 +2,13 @@ using BlogApp.Server.Application.Common.BusinessRuleEngine;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
-using BlogApp.Server.Application.Features.PostFeature.Constants;
-using BlogApp.Server.Application.Features.PostFeature.Rules;
-using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.Enums;
-using BlogApp.Server.Domain.ValueObjects;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using BlogApp.Server.Application.Features.PostFeature.Constants;
+using BlogApp.Server.Application.Features.PostFeature.Rules;
+using BlogApp.Server.Domain.ValueObjects;
+using Microsoft.Extensions.Logging;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.UpdatePostCommand;
 
@@ -17,7 +17,8 @@ public class UpdatePostCommandHandler(
     ICurrentUserService currentUserService,
     IPostBusinessRules postBusinessRules,
     ITagService tagService,
-    ICacheService cacheService) : IRequestHandler<UpdatePostCommandRequest, UpdatePostCommandResponse>
+    ICacheService cacheService,
+    ILogger<UpdatePostCommandHandler> logger) : IRequestHandler<UpdatePostCommandRequest, UpdatePostCommandResponse>
 {
     public async Task<UpdatePostCommandResponse> Handle(UpdatePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -91,8 +92,8 @@ public class UpdatePostCommandHandler(
         post.FeaturedImageUrl = dto.FeaturedImageUrl;
         post.CategoryId = categoryId;
         // MetaTitle max 70 karakter limiti
-        post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
-            ? dto.MetaTitle 
+        post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
+            ? dto.MetaTitle
             : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]);
         post.MetaDescription = dto.MetaDescription;
         post.MetaKeywords = dto.MetaKeywords;
@@ -110,8 +111,36 @@ public class UpdatePostCommandHandler(
         // Okuma süresini yeniden hesapla
         post.CalculateReadingTime();
 
-        await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex)
+        {
+            // Handle database constraint violations
+            if (ex.InnerException?.Message.Contains("duplicate key") == true)
+            {
+                return new UpdatePostCommandResponse
+                {
+                    Result = Result.Failure("A post with this slug already exists.")
+                };
+            }
+
+            return new UpdatePostCommandResponse
+            {
+                Result = Result.Failure("Database error occurred while updating post.")
+            };
+        }
+        catch (Exception ex)
+        {
+            // Log the exception details but don't expose them to the client
+            logger.LogError(ex, "Unexpected error while updating post {PostId}", dto.Id);
+            return new UpdatePostCommandResponse
+            {
+                Result = Result.Failure("An unexpected error occurred while updating the post. Please try again later.")
+            };
+        }
 
         // Cache invalidation
         // Invalidate by Id

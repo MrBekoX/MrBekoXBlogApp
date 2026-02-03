@@ -39,6 +39,8 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
   const isConnectedRef = useRef(false);
   const retryCountRef = useRef(0);
   const isRateLimitedRef = useRef(false);
+  const rateLimitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const MAX_RETRIES = 3;
 
   // Keep callback ref updated
@@ -58,6 +60,8 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
     }
 
     try {
+      log(`Attempting to connect to SignalR hub at: ${HUB_URL}`);
+      
       const connection = new signalR.HubConnectionBuilder()
         .withUrl(HUB_URL, {
           withCredentials: true,
@@ -70,7 +74,7 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
             return delay;
           }
         })
-        .configureLogging(debug ? signalR.LogLevel.Debug : signalR.LogLevel.Warning)
+        .configureLogging(signalR.LogLevel.Debug) // Always enable debug for troubleshooting
         .build();
 
       // Handle cache invalidation events
@@ -78,6 +82,17 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
         log('Received cache invalidation:', event);
         onInvalidateRef.current?.(event);
       });
+
+      // Register no-op handlers for events broadcast to all clients
+      // These prevent "No client method found" warnings in the console
+      // The actual handling is done by use-article-chat.ts
+      const noop = () => {};
+      connection.on('ChatMessageReceived', noop);
+      connection.on('chatMessageReceived', noop);
+      connection.on('chatmessagereceived', noop);
+      connection.on('AIAnalysisCompleted', noop);
+      connection.on('aiAnalysisCompleted', noop);
+      connection.on('aianalysiscompleted', noop);
 
       // Connection state handlers
       connection.onreconnecting((error?: Error) => {
@@ -121,8 +136,22 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
         }
       }
     } catch (error) {
-      console.error('Failed to connect to cache sync hub:', error);
       isConnectedRef.current = false;
+
+      // Suppress benign errors (backend not running)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isBenignError =
+        errorMessage.includes('WebSocket failed') ||
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('Failed to complete negotiation') ||
+        errorMessage.includes('abort');
+
+      if (isBenignError) {
+        if (debug) console.debug('[CacheSync] Backend not available');
+        return;
+      }
+
+      console.error('Failed to connect to cache sync hub:', error);
 
       // Check if this is a rate limit error (429)
       const isRateLimitError = error instanceof Error && 
@@ -131,24 +160,37 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
       if (isRateLimitError) {
         isRateLimitedRef.current = true;
         console.warn('[CacheSync] Rate limited - stopping reconnection attempts for 60 seconds');
-        
+
+        // Clear any existing timeout before setting new one
+        if (rateLimitTimeoutRef.current) {
+          clearTimeout(rateLimitTimeoutRef.current);
+        }
+
         // Reset rate limit flag after 60 seconds
-        setTimeout(() => {
+        rateLimitTimeoutRef.current = setTimeout(() => {
           isRateLimitedRef.current = false;
           retryCountRef.current = 0;
+          rateLimitTimeoutRef.current = null;
           log('Rate limit cooldown finished, reconnection attempts enabled');
         }, 60000);
-        
+
         return; // Don't retry immediately
       }
 
       // Retry connection with limits
       retryCountRef.current++;
-      
+
       if (autoReconnect && retryCountRef.current <= MAX_RETRIES && !isRateLimitedRef.current) {
         const delay = Math.min(5000 * retryCountRef.current, 30000); // Exponential backoff
         log(`Retrying connection in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})...`);
-        setTimeout(() => {
+
+        // Clear any existing reconnect timeout before setting new one
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+
+        reconnectTimeoutRef.current = setTimeout(() => {
+          reconnectTimeoutRef.current = null;
           // void operator explicitly marks this as fire-and-forget
           void connect();
         }, delay);
@@ -184,6 +226,15 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
     connect();
 
     return () => {
+      // Clear any pending timers to prevent memory leaks
+      if (rateLimitTimeoutRef.current) {
+        clearTimeout(rateLimitTimeoutRef.current);
+        rateLimitTimeoutRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       disconnect();
     };
   }, [connect, disconnect]);

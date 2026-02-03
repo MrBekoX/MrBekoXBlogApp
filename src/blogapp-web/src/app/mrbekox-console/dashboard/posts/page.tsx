@@ -33,8 +33,7 @@ export default function PostsPage() {
         setPosts(data.items);
         setTotalCount(data.totalCount);
       }
-    } catch (error) {
-      console.error('Failed to fetch posts:', error);
+    } catch {
       toast.error('Yazılar yüklenemedi');
     } finally {
       setIsLoading(false);
@@ -43,6 +42,8 @@ export default function PostsPage() {
 
   useEffect(() => {
     fetchPosts();
+    // fetchPosts is defined inside component but doesn't change between renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleDelete = async (id: string) => {

@@ -5,6 +5,7 @@ using BlogApp.Server.Application.Features.AuthFeature.Constants;
 using BlogApp.Server.Application.Features.AuthFeature.DTOs;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace BlogApp.Server.Application.Features.AuthFeature.Commands.RefreshTokenCommand;
 
@@ -16,80 +17,96 @@ public class RefreshTokenCommandHandler(
     {
         var dto = request.RefreshTokenCommandRequestDto!;
 
-        // Refresh token'ı bul
-        var storedToken = await unitOfWork.RefreshTokensRead.Query()
-            .Include(t => t.User)
-            .FirstOrDefaultAsync(t => t.Token == dto.RefreshToken, cancellationToken);
-
-        if (storedToken is null)
+        // Use transaction to prevent race conditions
+        using var transaction = await unitOfWork.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        
+        try
         {
-            return new RefreshTokenCommandResponse
+            // Refresh token'ı bul ve lock'la
+            var storedToken = await unitOfWork.RefreshTokensRead.Query()
+                .Include(t => t.User)
+                .FirstOrDefaultAsync(t => t.Token == dto.RefreshToken, cancellationToken);
+
+            if (storedToken is null)
             {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidRefreshToken)
-            };
-        }
-
-        if (!storedToken.IsActive)
-        {
-            return new RefreshTokenCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.RefreshTokenExpired)
-            };
-        }
-
-        var user = storedToken.User;
-        if (user is null || !user.IsActive || user.IsDeleted)
-        {
-            return new RefreshTokenCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.UserNotFound)
-            };
-        }
-
-        // Eski token'ı iptal et
-        storedToken.RevokedAt = DateTime.UtcNow;
-        storedToken.RevokedByIp = dto.IpAddress;
-        storedToken.ReasonRevoked = "Replaced by new token";
-
-        // Yeni tokenlar oluştur
-        var newAccessToken = jwtTokenService.GenerateAccessToken(user);
-        var newRefreshToken = jwtTokenService.GenerateRefreshToken();
-
-        storedToken.ReplacedByToken = newRefreshToken;
-
-        // Yeni refresh token kaydet
-        var refreshTokenEntity = new Domain.Entities.RefreshToken
-        {
-            Id = Guid.NewGuid(),
-            Token = newRefreshToken,
-            UserId = user.Id,
-            ExpiresAt = DateTime.UtcNow.AddDays(7),
-            CreatedAt = DateTime.UtcNow,
-            CreatedByIp = dto.IpAddress
-        };
-
-        await unitOfWork.RefreshTokensWrite.AddAsync(refreshTokenEntity, cancellationToken);
-        await unitOfWork.RefreshTokensWrite.UpdateAsync(storedToken, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return new RefreshTokenCommandResponse
-        {
-            Result = Result<AuthResponseDto>.Success(new AuthResponseDto
-            {
-                AccessToken = newAccessToken,
-                RefreshToken = newRefreshToken,
-                ExpiresAt = jwtTokenService.GetTokenExpiration(newAccessToken),
-                User = new UserInfoDto
+                await transaction.RollbackAsync(cancellationToken);
+                return new RefreshTokenCommandResponse
                 {
-                    Id = user.Id,
-                    UserName = user.UserName,
-                    Email = user.Email,
-                    FullName = user.FullName,
-                    AvatarUrl = user.AvatarUrl,
-                    Role = user.Role.ToString()
-                }
-            })
-        };
+                    Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidRefreshToken)
+                };
+            }
+
+            if (!storedToken.IsActive)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new RefreshTokenCommandResponse
+                {
+                    Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.RefreshTokenExpired)
+                };
+            }
+
+            var user = storedToken.User;
+            if (user is null || !user.IsActive || user.IsDeleted)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new RefreshTokenCommandResponse
+                {
+                    Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.UserNotFound)
+                };
+            }
+
+            // Eski token'ı iptal et
+            storedToken.RevokedAt = DateTime.UtcNow;
+            storedToken.RevokedByIp = dto.IpAddress;
+            storedToken.ReasonRevoked = "Replaced by new token";
+
+            // Yeni tokenlar oluştur
+            var newAccessToken = jwtTokenService.GenerateAccessToken(user);
+            var newRefreshToken = jwtTokenService.GenerateRefreshToken();
+
+            storedToken.ReplacedByToken = newRefreshToken;
+
+            // Yeni refresh token kaydet
+            var refreshTokenEntity = new Domain.Entities.RefreshToken
+            {
+                Id = Guid.NewGuid(),
+                Token = newRefreshToken,
+                UserId = user.Id,
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+                CreatedAt = DateTime.UtcNow,
+                CreatedByIp = dto.IpAddress
+            };
+
+            await unitOfWork.RefreshTokensWrite.AddAsync(refreshTokenEntity, cancellationToken);
+            await unitOfWork.RefreshTokensWrite.UpdateAsync(storedToken, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            
+            await transaction.CommitAsync(cancellationToken);
+
+            return new RefreshTokenCommandResponse
+            {
+                Result = Result<AuthResponseDto>.Success(new AuthResponseDto
+                {
+                    AccessToken = newAccessToken,
+                    RefreshToken = newRefreshToken,
+                    ExpiresAt = jwtTokenService.GetTokenExpiration(newAccessToken),
+                    User = new UserInfoDto
+                    {
+                        Id = user.Id,
+                        UserName = user.UserName,
+                        Email = user.Email,
+                        FullName = user.FullName,
+                        AvatarUrl = user.AvatarUrl,
+                        Role = user.Role.ToString()
+                    }
+                })
+            };
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 }
 

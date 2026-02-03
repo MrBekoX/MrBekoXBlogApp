@@ -1,12 +1,26 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Enable static export for true SPA behavior
-  output: 'export',
+  // SSR mode with standalone output for Docker deployment
+  output: 'standalone',
   
-  // Disable image optimization for static export
+  // Enable image optimization with remote patterns
   images: {
-    unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'mrbekox.dev',
+        pathname: '/uploads/**',
+      },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '5116',
+        pathname: '/uploads/**',
+      },
+    ],
+    // Allow localhost images in development (Next.js blocks private IPs by default)
+    unoptimized: process.env.NODE_ENV === 'development',
   },
   
   // Disable trailing slashes for cleaner URLs
@@ -23,6 +37,30 @@ const nextConfig: NextConfig = {
     cssChunking: 'strict',
     // Optimize CSS to reduce unused preload warnings
     optimizeCss: true,
+  },
+
+  // Cache lifetime profiles for revalidateTag
+  cacheLife: {
+    default: {
+      stale: 60,
+      revalidate: 300,
+      expire: 86400,
+    },
+    posts: {
+      stale: 30,
+      revalidate: 60,
+      expire: 3600,
+    },
+    categories: {
+      stale: 300,
+      revalidate: 600,
+      expire: 86400,
+    },
+    tags: {
+      stale: 300,
+      revalidate: 600,
+      expire: 86400,
+    },
   },
 };
 

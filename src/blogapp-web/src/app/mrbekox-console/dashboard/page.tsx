@@ -41,14 +41,16 @@ export default function AdminDashboardPage() {
 
           setRecentPosts(posts.items.slice(0, 5));
         }
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
+      } catch {
+        // Dashboard data fetch failed silently
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchDashboardData();
+    // fetchDashboardData is defined inside component and doesn't change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

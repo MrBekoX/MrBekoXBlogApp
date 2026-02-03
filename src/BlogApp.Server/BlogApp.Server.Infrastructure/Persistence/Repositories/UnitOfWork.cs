@@ -1,3 +1,4 @@
+using System.Data;
 using BlogApp.Server.Application.Common.Interfaces.Persistence.BlogPostRepository;
 using BlogApp.Server.Application.Common.Interfaces.Persistence.CategoryRepository;
 using BlogApp.Server.Application.Common.Interfaces.Persistence.CommentRepository;
@@ -12,6 +13,7 @@ using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreCommentReposi
 using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreRefreshTokenRepository;
 using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreTagRepository;
 using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreUserRepository;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
@@ -85,6 +87,16 @@ public class UnitOfWork(AppDbContext context) : Application.Common.Interfaces.Pe
         _transaction = await context.Database.BeginTransactionAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Belirtilen isolation level ile transaction başlatır ve ITransactionScope wrapper döner.
+    /// Race condition önleme gereken durumlarda (login, token refresh) Serializable kullanın.
+    /// </summary>
+    public async Task<Application.Common.Interfaces.Persistence.ITransactionScope> BeginTransactionAsync(IsolationLevel isolationLevel, CancellationToken cancellationToken = default)
+    {
+        _transaction = await context.Database.BeginTransactionAsync(isolationLevel, cancellationToken);
+        return new TransactionWrapper(_transaction);
+    }
+
     public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
     {
         if (_transaction is not null)
@@ -114,5 +126,51 @@ public class UnitOfWork(AppDbContext context) : Application.Common.Interfaces.Pe
         }
 
         await context.DisposeAsync();
+    }
+
+    public void Dispose()
+    {
+        _transaction?.Dispose();
+        _transaction = null;
+        context.Dispose();
+    }
+}
+
+/// <summary>
+/// IDbContextTransaction için ITransactionScope wrapper.
+/// Transaction'ın using block'unda kullanılmasını sağlar.
+/// </summary>
+internal sealed class TransactionWrapper : Application.Common.Interfaces.Persistence.ITransactionScope
+{
+    private readonly IDbContextTransaction _transaction;
+    private bool _disposed;
+
+    public TransactionWrapper(IDbContextTransaction transaction)
+    {
+        _transaction = transaction;
+    }
+
+    public async Task CommitAsync(CancellationToken cancellationToken = default)
+    {
+        await _transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task RollbackAsync(CancellationToken cancellationToken = default)
+    {
+        await _transaction.RollbackAsync(cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _transaction.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        await _transaction.DisposeAsync();
     }
 }

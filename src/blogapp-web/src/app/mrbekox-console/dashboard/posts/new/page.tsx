@@ -28,7 +28,7 @@ import type { Category, Tag, PostStatus } from '@/types';
 
 const postSchema = z.object({
   title: z.string().min(1, 'Başlık gerekli').max(200),
-  content: z.string().min(1, 'İçerik gerekli'),
+  content: z.string().min(1, 'İçerik gerekli').max(500000, 'İçerik çok uzun (maks. 500.000 karakter)'),
   excerpt: z.string().max(500).optional(),
   // Accept full URLs, relative paths (/uploads/...), or empty string
   featuredImageUrl: z.string().optional().refine(
@@ -37,6 +37,16 @@ const postSchema = z.object({
   ),
   status: z.enum(['Draft', 'Published']),
 });
+
+/**
+ * Tag ismini temizler - XSS ve injection saldırılarını önler.
+ */
+function sanitizeTagName(tag: string): string {
+  return tag
+    .trim()
+    .replace(/[<>"'&]/g, '') // Tehlikeli karakterleri kaldır
+    .slice(0, 50); // Max 50 karakter
+}
 
 type PostFormData = z.infer<typeof postSchema>;
 
@@ -78,15 +88,14 @@ export default function NewPostPage() {
         if (tagsRes.success && tagsRes.data) {
           setTags(tagsRes.data);
         }
-      } catch (error) {
-        console.error('Failed to fetch data:', error);
+      } catch {
+        // Silently fail - categories/tags are optional
       }
     };
     fetchData();
   }, []);
 
   const onInvalid = (errors: Record<string, unknown>) => {
-    console.log('Form validation errors:', errors);
     const errorMessages = Object.entries(errors)
       .map(([field, error]) => `${field}: ${(error as { message?: string })?.message || 'Geçersiz'}`)
       .join(', ');
@@ -121,8 +130,9 @@ export default function NewPostPage() {
   };
 
   const handleAddTag = () => {
-    if (newTag && !selectedTags.includes(newTag)) {
-      setSelectedTags([...selectedTags, newTag]);
+    const sanitized = sanitizeTagName(newTag);
+    if (sanitized && !selectedTags.includes(sanitized)) {
+      setSelectedTags([...selectedTags, sanitized]);
       setNewTag('');
     }
   };

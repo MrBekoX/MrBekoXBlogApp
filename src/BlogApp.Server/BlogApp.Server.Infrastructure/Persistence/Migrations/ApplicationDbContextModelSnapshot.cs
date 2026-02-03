@@ -28,6 +28,24 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("AiEstimatedReadingTime")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AiGeoOptimization")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AiKeywords")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("AiProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AiSeoDescription")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AiSummary")
+                        .HasColumnType("text");
+
                     b.Property<Guid>("AuthorId")
                         .HasColumnType("uuid");
 
@@ -306,7 +324,8 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ExpiresAt");
 
-                    b.HasIndex("Token");
+                    b.HasIndex("Token")
+                        .IsUnique();
 
                     b.HasIndex("UserId");
 

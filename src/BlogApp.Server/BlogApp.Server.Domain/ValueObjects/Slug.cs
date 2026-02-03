@@ -39,10 +39,15 @@ public sealed partial class Slug : IEquatable<Slug>
 
     private static string GenerateSlug(string title, int maxLength = 200)
     {
-        // Türkçe karakterleri dönüştür
-        var normalized = title.ToLowerInvariant();
-        normalized = normalized.Replace("ş", "s").Replace("ğ", "g").Replace("ı", "i")
-                              .Replace("ö", "o").Replace("ü", "u").Replace("ç", "c");
+        // Türkçe karakterleri dönüştür (hem büyük hem küçük harfler)
+        var normalized = title
+            .Replace("Ş", "s").Replace("ş", "s")
+            .Replace("Ğ", "g").Replace("ğ", "g")
+            .Replace("İ", "i").Replace("ı", "i")
+            .Replace("Ö", "o").Replace("ö", "o")
+            .Replace("Ü", "u").Replace("ü", "u")
+            .Replace("Ç", "c").Replace("ç", "c")
+            .ToLowerInvariant();
 
         // ASCII olmayan karakterleri kaldır
         var sb = new StringBuilder();

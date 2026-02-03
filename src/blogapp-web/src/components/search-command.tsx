@@ -11,9 +11,10 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { Search, FileText, Tag, Folder, Loader2 } from 'lucide-react';
+import { Search, FileText, Tag, Folder, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { postsApi, categoriesApi, tagsApi } from '@/lib/api';
+import { toast } from 'sonner';
 import type { BlogPost, Category, Tag as TagType } from '@/types';
 
 // Minimum arama uzunluğu
@@ -25,6 +26,7 @@ export function SearchCommand() {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
+  const [searchError, setSearchError] = React.useState<string | null>(null);
   const [posts, setPosts] = React.useState<BlogPost[]>([]);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [tags, setTags] = React.useState<TagType[]>([]);
@@ -63,6 +65,7 @@ export function SearchCommand() {
       }
 
       setIsLoading(true);
+      setSearchError(null);
       try {
         // Backend'den arama sonuçlarını al - tüm filtreleme server-side yapılır
         const postsRes = await postsApi.getAll({ 
@@ -121,6 +124,9 @@ export function SearchCommand() {
         }
       } catch (error) {
         console.error('Search error:', error);
+        const errorMessage = 'Arama sırasında bir hata oluştu. Lütfen tekrar deneyin.';
+        setSearchError(errorMessage);
+        toast.error(errorMessage);
         setPosts([]);
         setCategories([]);
         setTags([]);
@@ -133,18 +139,19 @@ export function SearchCommand() {
     return () => clearTimeout(debounce);
   }, [search]);
 
-  const handleSelect = (type: 'post' | 'category' | 'tag', slug: string) => {
+  const handleSelect = (type: 'post' | 'category' | 'tag', identifier: string) => {
     setOpen(false);
     setSearch('');
-    
+
     switch (type) {
       case 'post':
-        router.push(`/posts/view?slug=${slug}`);
+        router.push(`/posts/${identifier}`);
         break;
       case 'category':
+        router.push(`/posts?categoryId=${identifier}`);
+        break;
       case 'tag':
-        // Bu sayfalar henüz hazır değil
-        alert('Bu sayfa yakında eklenecek!');
+        router.push(`/posts?tagId=${identifier}`);
         break;
     }
   };
@@ -189,7 +196,14 @@ export function SearchCommand() {
               </CommandEmpty>
             )}
 
-            {!isLoading && search.trim().length >= MIN_SEARCH_LENGTH && posts.length === 0 && categories.length === 0 && tags.length === 0 && (
+            {!isLoading && searchError && (
+              <CommandEmpty className="py-6 text-center">
+                <AlertCircle className="h-8 w-8 mx-auto text-destructive mb-2" />
+                <p className="text-sm font-medium text-destructive">{searchError}</p>
+              </CommandEmpty>
+            )}
+
+            {!isLoading && !searchError && search.trim().length >= MIN_SEARCH_LENGTH && posts.length === 0 && categories.length === 0 && tags.length === 0 && (
               <CommandEmpty className="py-6 text-center">
                 <p className="text-sm font-medium">Böyle bir makale bulunamadı</p>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -225,7 +239,7 @@ export function SearchCommand() {
                   <CommandItem
                     key={category.id}
                     value={category.name}
-                    onSelect={() => handleSelect('category', category.slug)}
+                    onSelect={() => handleSelect('category', category.id)}
                     className="cursor-pointer"
                   >
                     <Folder className="mr-2 h-4 w-4" />
@@ -246,7 +260,7 @@ export function SearchCommand() {
                   <CommandItem
                     key={tag.id}
                     value={tag.name}
-                    onSelect={() => handleSelect('tag', tag.slug)}
+                    onSelect={() => handleSelect('tag', tag.id)}
                     className="cursor-pointer"
                   >
                     <Tag className="mr-2 h-4 w-4" />

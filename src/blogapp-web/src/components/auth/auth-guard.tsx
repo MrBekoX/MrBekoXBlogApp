@@ -63,8 +63,7 @@ export function AuthGuard({
     if (hasMounted && authStatus === 'idle') {
       checkAuth();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMounted, authStatus]);
+  }, [hasMounted, authStatus, checkAuth]);
 
   // Handle redirects
   useEffect(() => {

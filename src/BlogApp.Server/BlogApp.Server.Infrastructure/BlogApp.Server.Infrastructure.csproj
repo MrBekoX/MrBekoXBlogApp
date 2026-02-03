@@ -1,6 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\BlogApp.BuildingBlocks\BlogApp.BuildingBlocks.Caching\BlogApp.BuildingBlocks.Caching.csproj" />
+    <ProjectReference Include="..\..\BlogApp.BuildingBlocks\BlogApp.BuildingBlocks.Messaging\BlogApp.BuildingBlocks.Messaging.csproj" />
     <ProjectReference Include="..\BlogApp.Server.Application\BlogApp.Server.Application.csproj" />
     <ProjectReference Include="..\BlogApp.Server.Domain\BlogApp.Server.Domain.csproj" />
   </ItemGroup>
@@ -16,9 +18,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.1" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
-    <PackageReference Include="StackExchange.Redis" Version="2.10.1" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>

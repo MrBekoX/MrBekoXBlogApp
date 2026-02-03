@@ -14,6 +14,9 @@ interface CacheSyncProviderProps {
 /**
  * Provider component that automatically syncs frontend cache with backend.
  * Listens for cache invalidation events via SignalR and updates local stores.
+ *
+ * Client components using useCacheSyncedData hook will automatically refetch
+ * when store's cacheVersion changes.
  */
 export function CacheSyncProvider({ children, debug = false }: CacheSyncProviderProps) {
   const invalidatePostsCache = usePostsStore((state) => state.invalidateCache);
@@ -23,6 +26,8 @@ export function CacheSyncProvider({ children, debug = false }: CacheSyncProvider
   const handleCacheInvalidation = (event: CacheInvalidationEvent) => {
     if (debug) {
       console.log('[CacheSyncProvider] Received invalidation:', event);
+      console.log('[CacheSyncProvider] Event target:', event.target);
+      console.log('[CacheSyncProvider] Event type:', event.type);
     }
 
     // Determine which store to invalidate based on the event target
@@ -52,7 +57,7 @@ export function CacheSyncProvider({ children, debug = false }: CacheSyncProvider
 
   useCacheSync({
     onInvalidate: handleCacheInvalidation,
-    groups: ['posts', 'categories', 'tags'], // Subscribe to all groups
+    groups: ['posts_list', 'categories_list', 'tags_list'], // Subscribe to backend cache groups
     debug,
   });
 
@@ -81,7 +86,7 @@ export function useCacheSyncConnection(debug = false) {
         invalidateTagsCache();
       }
     },
-    groups: ['posts', 'categories', 'tags'],
+    groups: ['posts_list', 'categories_list', 'tags_list'],
     debug,
   });
 }

@@ -1,19 +1,23 @@
 using System.IO.Compression;
 using System.Text;
 using AspNetCoreRateLimit;
+using BlogApp.BuildingBlocks.Caching.Metrics;
+using BlogApp.BuildingBlocks.Messaging;
 using BlogApp.Server.Api.Extensions;
 using BlogApp.Server.Api.Hubs;
+using BlogApp.Server.Api.Messaging;
 using BlogApp.Server.Api.Middlewares;
 using BlogApp.Server.Api.Services;
 using BlogApp.Server.Application;
+using BlogApp.Server.Application.Common.Events;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Infrastructure;
-using BlogApp.Server.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using BlogApp.Server.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -184,17 +188,30 @@ builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddMessagingServices(builder.Configuration);
 
 // SignalR for real-time cache invalidation notifications
 builder.Services.AddSignalR();
 builder.Services.AddScoped<ICacheInvalidationNotifier, CacheInvalidationNotifier>();
+
+// Register RabbitMQ event consumers for AI analysis
+builder.Services.AddEventConsumer<AiAnalysisCompletedEvent, AiAnalysisCompletedHandler>(
+    queueName: MessagingConstants.QueueNames.AiAnalysisCompleted,
+    routingKey: MessagingConstants.RoutingKeys.AiAnalysisCompleted);
+
+// Register RabbitMQ event consumers for chat responses
+builder.Services.AddEventConsumer<ChatResponseEvent, ChatResponseHandler>(
+    queueName: MessagingConstants.QueueNames.ChatResponses,
+    routingKey: MessagingConstants.RoutingKeys.ChatMessageCompleted);
+
+builder.Services.AddEventConsumerHostedService();
 
 // OpenTelemetry Metrics for Cache Observability
 builder.Services.AddOpenTelemetry()
     .WithMetrics(metrics =>
     {
         metrics
-            .AddMeter(CacheMetrics.MeterName)
+            .AddMeter("BlogApp.Cache")
             .AddPrometheusExporter();
     });
 
@@ -286,7 +303,7 @@ app.MapPrometheusScrapingEndpoint("/metrics");
 
 using (var scope = app.Services.CreateScope())
 {
-    var context = scope.ServiceProvider.GetRequiredService<BlogApp.Server.Infrastructure.Persistence.AppDbContext>();
+    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     if (app.Environment.IsProduction())
     {
         Log.Information("Applying migrations...");
@@ -296,7 +313,7 @@ using (var scope = app.Services.CreateScope())
     {
         await context.Database.EnsureCreatedAsync();
     }
-    var seeder = scope.ServiceProvider.GetRequiredService<BlogApp.Server.Infrastructure.Persistence.DbSeeder>();
+    var seeder = scope.ServiceProvider.GetRequiredService<DbSeeder>();
     await seeder.SeedAsync();
 }
 

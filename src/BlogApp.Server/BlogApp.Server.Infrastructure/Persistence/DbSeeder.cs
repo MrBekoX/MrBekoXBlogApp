@@ -57,13 +57,47 @@ public class DbSeeder(
             return;
         }
 
-        // Tablo var mı kontrol et (Crash'i önler)
-        var adminExists = await context.Users
+        // Check if admin user exists
+        var existingAdmin = await context.Users
             .IgnoreQueryFilters()
-            .AnyAsync(u => u.Role == UserRole.Admin);
+            .FirstOrDefaultAsync(u => u.Role == UserRole.Admin);
 
-        if (adminExists) return;
+        if (existingAdmin != null)
+        {
+            // Admin exists - sync password if changed
+            var passwordMatches = BCrypt.Net.BCrypt.Verify(adminPassword, existingAdmin.PasswordHash);
+            
+            if (!passwordMatches)
+            {
+                existingAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword);
+                existingAdmin.UpdatedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+                logger.LogInformation("Admin password synced from environment variables.");
+            }
+            
+            // Also sync email and username if changed
+            var needsUpdate = false;
+            if (existingAdmin.Email != adminEmail.ToLower())
+            {
+                existingAdmin.Email = adminEmail.ToLower();
+                needsUpdate = true;
+            }
+            if (existingAdmin.UserName != adminUserName)
+            {
+                existingAdmin.UserName = adminUserName;
+                needsUpdate = true;
+            }
+            if (needsUpdate)
+            {
+                existingAdmin.UpdatedAt = DateTime.UtcNow;
+                await context.SaveChangesAsync();
+                logger.LogInformation("Admin user info synced from environment variables.");
+            }
+            
+            return;
+        }
 
+        // Create new admin if doesn't exist
         var adminUser = new User
         {
             Id = Guid.NewGuid(),

@@ -10,7 +10,7 @@ interface TagsState {
   lastFetched: number | null;
 
   // Actions
-  fetchTags: (forceRefresh?: boolean) => Promise<void>;
+  fetchTags: (forceRefresh?: boolean, includeEmpty?: boolean) => Promise<void>;
   createTag: (data: CreateTagRequest) => Promise<Tag | null>;
   deleteTag: (id: string) => Promise<boolean>;
   invalidateCache: () => void;
@@ -26,7 +26,7 @@ export const useTagsStore = create<TagsState>()((set, get) => ({
   cacheVersion: 0,
   lastFetched: null,
 
-  fetchTags: async (forceRefresh = false) => {
+  fetchTags: async (forceRefresh = false, includeEmpty = false) => {
     const { lastFetched, tags } = get();
     
     // Return cached data if valid and not forcing refresh
@@ -36,7 +36,7 @@ export const useTagsStore = create<TagsState>()((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      const response = await tagsApi.getAll();
+      const response = await tagsApi.getAll(includeEmpty);
       if (response.success && response.data) {
         set({ 
           tags: response.data, 

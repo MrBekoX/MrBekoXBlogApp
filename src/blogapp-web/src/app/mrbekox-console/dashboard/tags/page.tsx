@@ -24,7 +24,8 @@ export default function TagsPage() {
   const [newTagName, setNewTagName] = useState('');
 
   useEffect(() => {
-    fetchTags();
+    // Admin panel needs to see all tags, including those without published posts
+    fetchTags(false, true);
   }, [fetchTags, cacheVersion]);
 
   const handleCreate = async () => {

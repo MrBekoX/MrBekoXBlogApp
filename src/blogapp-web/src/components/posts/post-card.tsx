@@ -29,7 +29,7 @@ export function PostCard({ post }: PostCardProps) {
         <Link href={`/posts/${post.slug}`} className="block overflow-hidden">
           <div className="relative aspect-video overflow-hidden bg-muted">
             <Image
-              src={getImageUrl(post.featuredImageUrl)}
+              src={getImageUrl(post.featuredImageUrl) ?? ''}
               alt={post.title}
               fill
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"

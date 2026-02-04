@@ -138,13 +138,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   addAssistantMessage: (content, isWebSearchResult = false, sources) => {
-    console.log('📝 Store: addAssistantMessage called', {
-      contentLength: content?.length || 0,
-      contentPreview: content?.substring(0, 50),
-      isWebSearchResult,
-      sourcesCount: sources?.length || 0
-    });
-
     const assistantMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -154,11 +147,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timestamp: new Date(),
     };
 
-    const newMessages = [...get().messages, assistantMessage];
-    console.log('📝 Store: New message added. Total messages:', newMessages.length);
-
     set((state) => ({
-      messages: newMessages,
+      messages: [...state.messages, assistantMessage],
       isLoading: false,
       loadingState: 'idle',
     }));

@@ -1,8 +1,8 @@
-version: '3.8'
-
 # IMPORTANT: Copy .env.example to .env and set your passwords before running!
 # Never commit .env file to git.
 # Usage: cd docker && docker-compose up -d
+
+name: MrBekoXBlogApp
 
 services:
   postgres:
@@ -53,6 +53,8 @@ services:
     build:
       context: ..
       dockerfile: docker/backend/Dockerfile
+    image: blogapp-backend:latest
+    pull_policy: never
     container_name: blogapp-backend
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
@@ -70,7 +72,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - uploads_data:/app/uploads
+      - ../src/BlogApp.Server/BlogApp.Server.Api/uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,12 +90,18 @@ services:
 
   frontend:
     build:
-      context: ..
-      dockerfile: docker/frontend/Dockerfile
+      context: ../src/blogapp-web
+      dockerfile: ../../docker/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8080/api/v1
+        API_URL: http://backend:8080/api/v1
+    image: blogapp-frontend:latest
+    pull_policy: never
     container_name: blogapp-frontend
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+      - API_URL=http://backend:8080/api/v1
     ports:
       - "3000:3000"
     depends_on:
@@ -109,8 +117,10 @@ services:
 
   ai-agent-service:
     build:
-      context: ..
-      dockerfile: docker/ai-agent-service/Dockerfile
+      context: ../src/services/ai-agent-service
+      dockerfile: ../../../docker/ai-agent-service/Dockerfile
+    image: blogapp-ai-agent:latest
+    pull_policy: never
     container_name: blogapp-ai-agent
     ports:
       - "8000:8000"
@@ -147,5 +157,4 @@ volumes:
   postgres_data:
   redis_data:
   rabbitmq_data:
-  uploads_data:
   chroma_data:

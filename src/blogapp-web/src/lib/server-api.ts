@@ -12,8 +12,8 @@ import type {
   Tag,
 } from '@/types';
 
-// API Base URL - use environment variable or fallback
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
+// API Base URL - server-side uses internal Docker network URL, client uses public URL
+const API_BASE_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
 
 /**
  * Build query string from params object

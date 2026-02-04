@@ -34,7 +34,7 @@ export function ArticleChatPanel({ postId, postTitle }: ArticleChatPanelProps) {
     sendMessage,
     toggleChat,
     clearChat,
-  } = useArticleChat(postId, { debug: true });
+  } = useArticleChat(postId, { debug: false });
 
   const handleSendMessage = async (content: string, agentType?: AgentType) => {
     // Normal chat or special commands

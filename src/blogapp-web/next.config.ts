@@ -3,9 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // SSR mode with standalone output for Docker deployment
   output: 'standalone',
-  
+
   // Enable image optimization with remote patterns
   images: {
+    // Use 'unoptimized' for Docker to avoid image fetch issues
+    // Next.js image optimizer can't fetch from localhost:8080 inside container
+    unoptimized: true,
+
     remotePatterns: [
       {
         protocol: 'https',
@@ -15,17 +19,21 @@ const nextConfig: NextConfig = {
       {
         protocol: 'http',
         hostname: 'localhost',
-        port: '5116',
+        port: '8080',
+        pathname: '/uploads/**',
+      },
+      {
+        protocol: 'http',
+        hostname: 'backend',
+        port: '8080',
         pathname: '/uploads/**',
       },
     ],
-    // Allow localhost images in development (Next.js blocks private IPs by default)
-    unoptimized: process.env.NODE_ENV === 'development',
   },
-  
+
   // Disable trailing slashes for cleaner URLs
   trailingSlash: false,
-  
+
   // Skip build-time type checking (optional, for faster builds)
   typescript: {
     ignoreBuildErrors: false,

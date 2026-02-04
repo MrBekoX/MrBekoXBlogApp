@@ -74,7 +74,7 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
             return delay;
           }
         })
-        .configureLogging(signalR.LogLevel.Debug) // Always enable debug for troubleshooting
+        .configureLogging(debug ? signalR.LogLevel.Debug : signalR.LogLevel.None)
         .build();
 
       // Handle cache invalidation events
@@ -254,7 +254,6 @@ export function useAutoCacheSync(invalidateCache: () => void, options: Omit<UseC
   return useCacheSync({
     ...options,
     onInvalidate: (event) => {
-      console.log('[CacheSync] Cache invalidated, refreshing local cache:', event.type, event.target);
       invalidateCache();
     },
   });

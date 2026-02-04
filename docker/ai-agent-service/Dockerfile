@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Stage 2: Install Python dependencies
 FROM base as dependencies
 
-COPY src/services/ai-agent-service/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 3: Production image
@@ -23,10 +23,10 @@ RUN groupadd -g 1001 appgroup && \
     useradd -u 1001 -g appgroup -s /bin/bash -m appuser
 
 # Copy application code
-COPY --chown=appuser:appgroup ./src/services/ai-agent-service/app ./app
+COPY --chown=appuser:appgroup ./app ./app
 
 # Copy .env file if it exists (optional for production)
-COPY --chown=appuser:appgroup ./src/services/ai-agent-service/.env.example ./.env
+COPY --chown=appuser:appgroup ./.env.example ./.env
 
 # Create data directories for persistence
 RUN mkdir -p /app/data /app/chroma_data && \

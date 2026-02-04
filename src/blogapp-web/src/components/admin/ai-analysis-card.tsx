@@ -49,6 +49,7 @@ export function AIAnalysisCard({ postId, onAnalysisSaved }: AIAnalysisCardProps)
     try {
       // Update post with AI summary
       await postsApi.update(postId, {
+        id: postId,
         title: '', // Will be ignored by backend if empty
         content: '',
         excerpt: '',

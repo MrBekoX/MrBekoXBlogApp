@@ -190,6 +190,7 @@ export function MarkdownRenderer({
             ),
             img: ({ src, alt }) => {
               // XSS Protection: Sanitize image URL
+              if (typeof src !== 'string') return null;
               const safeSrc = sanitizeUrl(src);
               if (!safeSrc) return null;
               

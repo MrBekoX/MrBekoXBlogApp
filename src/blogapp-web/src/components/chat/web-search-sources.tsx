@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 import type { WebSearchSource } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 interface WebSearchSourcesProps {
   sources: WebSearchSource[];

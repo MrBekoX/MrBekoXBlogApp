@@ -11,7 +11,10 @@ deploy/.env
 .claude
 
 #deploy files
-.deploy
+deploy/
+
+#docs files
+docs/
 
 # ASP.NET Core Sensitive Configuration
 # Development appsettings (contains secrets)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { useChatStore } from '@/stores/chat-store';
-import type { ChatMessageReceivedEvent, WebSearchSource, LoadingState } from '@/types';
+import type { ChatMessageReceivedEvent, WebSearchSource } from '@/types';
 
 // Extract base URL for SignalR hub
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
@@ -109,21 +109,12 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
           // Check if this message is for our session
           const currentSessionId = useChatStore.getState().sessionId;
 
-          console.log('🔍 [ArticleChat] Session Check:', {
-            eventSessionId,
-            currentSessionId,
-            match: eventSessionId === currentSessionId,
-            hasResponse: !!eventResponse,
-            responseLength: eventResponse?.length || 0
-          });
-
           // If currentSessionId is null (first message), we should accept if it matches the one we just got from API
           // But since we can't easily know that here without passing it, let's trust the event for now if we don't have a session yet
           // OR if it matches exactly
 
           if (eventSessionId && (eventSessionId === currentSessionId || !currentSessionId)) {
             log('✅ Event matches or new session, updating state');
-            console.log('✅ Calling addAssistantMessage with:', eventResponse?.substring(0, 50));
 
             // If we don't have a session ID yet, set it now
             if (!currentSessionId && eventSessionId) {
@@ -137,8 +128,6 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
             );
 
             onMessageReceivedRef.current?.(event as unknown as ChatMessageReceivedEvent);
-          } else {
-            console.warn('⚠️ Session ID mismatch - ignoring message');
           }
         };
 

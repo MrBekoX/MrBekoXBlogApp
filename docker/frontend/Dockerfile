@@ -2,17 +2,25 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
+# Accept build arguments for API URLs
+ARG NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+ARG API_URL=http://localhost:8080/api/v1
+
+# Set environment variables during build
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV API_URL=${API_URL}
+
 # Copy package files
-COPY src/blogapp-web/package*.json ./
+COPY package*.json ./
 
 # Install dependencies
 RUN npm ci
 
 # Copy source files
-COPY src/blogapp-web ./
+COPY . ./
 
 # Build application
-RUN pnpm build
+RUN npm run build
 
 # Production stage
 FROM node:20-alpine AS runtime

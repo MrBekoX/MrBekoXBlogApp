@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.rate_limits import RATE_LIMITS
 from app.core.cache import cache
 from app.core.auth import verify_api_key
+from app.security.m2m_auth import require_analyze_scope, require_chat_scope, require_admin_scope
 from app.agent.simple_blog_agent import simple_blog_agent
 
 # Cache TTL: 1 hour (results don't change for same content)
@@ -161,7 +162,7 @@ async def root():
 async def full_analysis(
     request: Request,
     analyze_request: AnalyzeRequest,
-    _api_key: str = Depends(verify_api_key)
+    claims: dict = Depends(require_analyze_scope)
 ):
     """
     Perform full article analysis.
@@ -169,6 +170,24 @@ async def full_analysis(
     Returns summary, keywords, SEO description, reading time,
     sentiment analysis, and GEO optimization.
     """
+    # Anomaly Detection
+    from app.monitoring.anomaly_detector import anomaly_detector
+    
+    # We use client_id or subject from claims as user_id
+    user_id = claims.get("client_id") or claims.get("sub", "unknown")
+    
+    anomaly = await anomaly_detector.record_request(
+        user_id=user_id,
+        success=True,
+        token_count=len(analyze_request.content.split()) # Estimate
+    )
+    
+    if anomaly and anomaly.severity == "critical":
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests (Anomaly Detected). Please try again later."
+        )
+
     # Check cache first
     cache_key = generate_cache_key(
         "analyze",
@@ -344,7 +363,7 @@ def calculate_reading_time(
 async def optimize_for_geo(
     request: Request,
     geo_request: GeoOptimizeRequest,
-    _api_key: str = Depends(verify_api_key)
+    claims: dict = Depends(require_analyze_scope)
 ):
     """Optimize content for specific region (GEO targeting)."""
     cache_key = generate_cache_key(

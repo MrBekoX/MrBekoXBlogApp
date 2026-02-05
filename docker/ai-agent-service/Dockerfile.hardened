@@ -1,0 +1,55 @@
+# Multi-stage build for minimal attack surface
+FROM python:3.11-slim as builder
+
+# Build stage
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt && \
+    python -m spacy download en_core_web_lg
+
+# Runtime stage with minimal base
+FROM python:3.11-slim
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
+
+# Set security-related environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Copy from builder
+COPY --from=builder /root/.local /root/.local
+# Copy app code
+COPY --chown=appuser:appuser . /app
+
+# Set working directory
+WORKDIR /app
+
+# Remove unnecessary packages to reduce attack surface
+# Note: python:slim is already quite minimal, but we clean apt lists
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* /var/tmp/*
+
+# Ensure PATH includes user local bin
+ENV PATH=/root/.local/bin:$PATH
+
+# Create directories for app data with correct permissions
+RUN mkdir -p /app/chroma_data /app/logs && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Run as non-root with read-only root filesystem (via compose)
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

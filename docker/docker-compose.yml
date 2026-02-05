@@ -118,10 +118,34 @@ services:
   ai-agent-service:
     build:
       context: ../src/services/ai-agent-service
-      dockerfile: ../../../docker/ai-agent-service/Dockerfile
-    image: blogapp-ai-agent:latest
+      dockerfile: ../../../docker/ai-agent-service/Dockerfile.hardened
+    image: blogapp-ai-agent:hardened
     pull_policy: never
     container_name: blogapp-ai-agent
+
+    # Security Hardening
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:seccomp-profile.json
+
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /var/run:noexec,nosuid,size=50m
+
+    user: "1000:1000"
+
     ports:
       - "8000:8000"
     environment:
@@ -139,7 +163,8 @@ services:
       - DEBUG=false
       - CHROMA_PERSIST_DIR=/app/chroma_data
     volumes:
-      - chroma_data:/app/chroma_data
+      - chroma_data:/app/chroma_data:rw
+      - ./logs:/app/logs:rw
     depends_on:
       rabbitmq:
         condition: service_healthy

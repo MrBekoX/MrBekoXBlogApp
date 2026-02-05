@@ -91,6 +91,26 @@ class Settings(BaseSettings):
         description="Ollama model for embeddings"
     )
 
+    # OAuth 2.0 Configuration for M2M Auth
+    oauth_introspection_url: str | None = Field(
+        default=None,
+        description="OAuth 2.0 Token Introspection URL (optional)"
+    )
+    oauth_client_id: str | None = Field(
+        default=None,
+        description="OAuth 2.0 Client ID"
+    )
+    oauth_client_secret: str | None = Field(
+        default=None,
+        description="OAuth 2.0 Client Secret"
+    )
+
+    # Jailbreak / Security Configuration
+    enable_semantic_detection: bool = True
+    jailbreak_confidence_threshold: float = 0.6
+    jailbreak_log_only: bool = False
+    enable_red_team_mode: bool = False
+
     @property
     def rabbitmq_url(self) -> str:
         """Generate RabbitMQ connection URL."""

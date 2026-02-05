@@ -48,6 +48,26 @@ def main() -> None:
         log_level="debug" if settings.debug else "info",
     )
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from app.api import app as fastapi_app # assuming app is exposed in app.api
+from app.security.log_sanitizer import LogSanitizer
+from app.security.middleware import rate_limit_middleware
+
+sanitizer = LogSanitizer()
+
+@fastapi_app.middleware("http")
+async def add_rate_limit_middleware(request: Request, call_next):
+    return await rate_limit_middleware(request, call_next)
+
+@fastapi_app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.error(f"Global Error: {sanitizer.sanitize(str(exc))}")
+    return JSONResponse(
+        {"detail": "An internal error occurred"},
+        status_code=500
+    )
+
 
 if __name__ == "__main__":
     main()

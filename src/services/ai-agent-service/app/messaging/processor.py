@@ -19,8 +19,14 @@ from app.agent.indexer import article_indexer
 from app.agent.rag_chat_handler import rag_chat_handler, ChatMessage
 from app.rag.retriever import retriever
 from app.tools.web_search import web_search_tool
+from app.security.log_sanitizer import LogSanitizer
+from app.security.audit_logger import AuditLogger
 
 logger = logging.getLogger(__name__)
+
+# Initialize security tools
+sanitizer = LogSanitizer(max_content_length=200)
+audit_logger = AuditLogger()
 
 # RabbitMQ Constants
 EXCHANGE_NAME = "blog.events"
@@ -503,7 +509,8 @@ class MessageProcessor:
             # For AI generation requests, use messageId as the lock key
             entity_id = message_id
 
-        logger.info(f"Processing {message_type} message {message_id} for entity {entity_id}")
+        # Log with sanitization (masking IDs in standard logs too if needed, but here we just ensure content safety if logged later)
+        logger.info(f"Processing {message_type} message {sanitizer.sanitize(message_id)} for entity {sanitizer.sanitize(entity_id)}")
 
         # Step 1: Check if already processed
         if await cache.is_processed(message_id):
@@ -552,6 +559,16 @@ class MessageProcessor:
             await cache.mark_processed(message_id)
 
             logger.info(f"Successfully processed {message_type} for entity {entity_id}")
+            
+            # Log audit success
+            audit_logger.log_event(
+                event_type="ai_event_processed",
+                user_id=getattr(message.payload, 'userId', getattr(message.payload, 'authorId', 'system')),
+                resource_id=entity_id,
+                action=f"process_{message_type}",
+                success=True,
+                details={"message_id": message_id}
+            )
             return True, "success"
 
         except httpx.HTTPStatusError as e:
@@ -563,7 +580,17 @@ class MessageProcessor:
             logger.exception(f"HTTP error processing {message_type} {entity_id}: {e}")
             return False, f"error: {e}"
         except Exception as e:
-            logger.exception(f"Error processing {message_type} {entity_id}: {e}")
+            logger.exception(f"Error processing {message_type} {entity_id}: {sanitizer.sanitize(str(e))}")
+            
+            # Log audit failure
+            audit_logger.log_event(
+                event_type="ai_event_processed",
+                user_id=getattr(message.payload, 'userId', getattr(message.payload, 'authorId', 'system')),
+                resource_id=entity_id,
+                action=f"process_{message_type}",
+                success=False,
+                details={"error": sanitizer.sanitize(str(e))}
+            )
             return False, f"error: {e}"
 
         finally:

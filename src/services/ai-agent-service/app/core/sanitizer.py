@@ -74,6 +74,34 @@ def detect_injection(content: str) -> Tuple[bool, list[str]]:
     return bool(matched), matched
 
 
+# Initialize detector (singleton-ish)
+from app.security.jailbreak_detector import SemanticJailbreakDetector
+# We initialize it inside function or lazily to avoid import cycles if any, 
+# but best is globally if possible. To be safe against circular imports (since detector imports sanitizer):
+# We will do local import in a new async function.
+
+async def enhanced_detect_injection(content: str) -> Tuple[bool, list[str]]:
+    """Enhanced injection detection with semantic analysis."""
+    from app.security.jailbreak_detector import SemanticJailbreakDetector
+    detector = SemanticJailbreakDetector(use_llm=True)
+    
+    # Original pattern-based detection is called internally by detector.detect 
+    # OR we call detector.detect which internally calls detect_injection.
+    # We should let detector handle aggregation.
+    
+    result = await detector.detect(content)
+
+    if result.is_jailbreak:
+        logger.warning(
+            f"Jailbreak detected: type={result.jailbreak_type}, "
+            f"confidence={result.confidence:.2f}, "
+            f"patterns={result.patterns}"
+        )
+        return True, result.patterns + [f"semantic:{result.jailbreak_type}"]
+
+    return False, []
+
+
 def sanitize_content(content: str) -> str:
     """
     Sanitize content to reduce prompt injection risk.

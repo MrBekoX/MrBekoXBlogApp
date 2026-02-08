@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using System.Collections.Concurrent;
 
 namespace BlogApp.Server.Infrastructure.Services;
 
@@ -19,11 +20,14 @@ namespace BlogApp.Server.Infrastructure.Services;
 /// Extends HybridCacheServiceBase with:
 /// - Frontend cache invalidation notifications via ICacheInvalidationNotifier
 /// - MediatR-scoped SWR for proper DI handling in background refreshes
+/// - Deduplication of concurrent refresh tasks to prevent task accumulation
 /// </summary>
 public class CacheService : HybridCacheServiceBase, ICacheService
 {
     private readonly ICacheInvalidationNotifier? _notifier;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
+    // BUG-004: Track ongoing refresh tasks to prevent accumulation
+    private readonly ConcurrentDictionary<string, Task> _ongoingRefreshes = new();
 
     public CacheService(
         IMemoryCache l1Cache,
@@ -105,7 +109,17 @@ public class CacheService : HybridCacheServiceBase, ICacheService
                 Logger.LogDebug("SWR (scoped): Returning stale value for {Key}, triggering background refresh", key);
                 Metrics.RecordSwrBackgroundRefresh(keyPrefix);
 
-                // Background refresh with proper DI scope
+                // BUG-004: Check if refresh is already in progress for this key
+                var refreshKey = $"swr_refresh:{key}";
+                var existingTask = _ongoingRefreshes.TryGetValue(refreshKey, out var ongoingTask);
+
+                if (existingTask && ongoingTask is not null && !ongoingTask.IsCompleted)
+                {
+                    Logger.LogDebug("SWR: Background refresh already in progress for {Key}, skipping duplicate", key);
+                    return result.Value!;
+                }
+
+                // Background refresh with proper DI scope and deduplication
                 var backgroundTask = Task.Run(async () =>
                 {
                     try
@@ -131,7 +145,15 @@ public class CacheService : HybridCacheServiceBase, ICacheService
                         Logger.LogWarning(ex, "SWR: Background refresh failed for {Key}", key);
                         Metrics.RecordSwrBackgroundRefreshError(keyPrefix);
                     }
+                    finally
+                    {
+                        // BUG-004: Remove from tracking when complete
+                        _ongoingRefreshes.TryRemove(refreshKey, out _);
+                    }
                 }, CancellationToken.None);
+
+                // BUG-004: Track this refresh task
+                _ongoingRefreshes.TryAdd(refreshKey, backgroundTask);
 
                 // Configure continuation to handle unobserved exceptions
                 _ = backgroundTask.ContinueWith(t =>

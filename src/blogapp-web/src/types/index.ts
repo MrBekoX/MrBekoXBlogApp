@@ -82,7 +82,12 @@ export interface CreatePostRequest {
 
 export interface UpdatePostRequest extends CreatePostRequest {
   id: string;
+  // AI-generated fields
   aiSummary?: string;
+  aiKeywords?: string;
+  aiEstimatedReadingTime?: number;
+  aiSeoDescription?: string;
+  aiGeoOptimization?: string;
 }
 
 // Category types

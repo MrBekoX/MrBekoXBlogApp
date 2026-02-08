@@ -4,8 +4,14 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from app.rag.embeddings import EmbeddingService, embedding_service
-from app.rag.vector_store import VectorStore, StoredChunk, vector_store
+from app.rag.embeddings import EmbeddingService
+from app.infrastructure.vector_store.chroma_adapter import ChromaAdapter
+from app.domain.interfaces.i_vector_store import VectorChunk, IVectorStore
+
+# Backward-compatible aliases
+VectorStore = IVectorStore
+StoredChunk = VectorChunk
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +51,11 @@ class Retriever:
 
     def __init__(
         self,
-        embedding_svc: Optional[EmbeddingService] = None,
-        store: Optional[VectorStore] = None
+        embedding_svc: EmbeddingService,
+        store: VectorStore
     ):
-        self._embedding_service = embedding_svc or embedding_service
-        self._vector_store = store or vector_store
+        self._embedding_service = embedding_svc
+        self._vector_store = store
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -167,5 +173,4 @@ class Retriever:
         )
 
 
-# Global singleton instance
-retriever = Retriever()
+

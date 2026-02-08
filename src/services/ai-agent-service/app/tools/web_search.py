@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass
 from typing import Optional
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class WebSearchTool:
             WebSearchResponse with search results
         """
         logger.info(f"Searching for: {query} (Region: {region})")
-        from ddgs import DDGS
+        from duckduckgo_search import DDGS
         import asyncio
 
         # Helper function for searching (parameterized)
@@ -295,5 +295,4 @@ class WebSearchTool:
         return await self.search(search_query, max_results=max_results)
 
 
-# Global singleton instance
-web_search_tool = WebSearchTool()
+

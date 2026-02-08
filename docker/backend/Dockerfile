@@ -1,4 +1,5 @@
 # Build stage
+# Pin to specific patch version in production (e.g., 10.0.1)
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
@@ -8,6 +9,8 @@ COPY ["src/BlogApp.Server/BlogApp.Server.Domain/BlogApp.Server.Domain.csproj", "
 COPY ["src/BlogApp.Server/BlogApp.Server.Application/BlogApp.Server.Application.csproj", "src/BlogApp.Server/BlogApp.Server.Application/"]
 COPY ["src/BlogApp.Server/BlogApp.Server.Infrastructure/BlogApp.Server.Infrastructure.csproj", "src/BlogApp.Server/BlogApp.Server.Infrastructure/"]
 COPY ["src/BlogApp.Server/BlogApp.Server.Api/BlogApp.Server.Api.csproj", "src/BlogApp.Server/BlogApp.Server.Api/"]
+COPY ["src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Caching/BlogApp.BuildingBlocks.Caching.csproj", "src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Caching/"]
+COPY ["src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Messaging/BlogApp.BuildingBlocks.Messaging.csproj", "src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Messaging/"]
 
 # Restore dependencies
 RUN dotnet restore "src/BlogApp.Server/BlogApp.Server.Api/BlogApp.Server.Api.csproj"
@@ -21,6 +24,7 @@ RUN dotnet build "BlogApp.Server.Api.csproj" -c Release -o /app/build
 RUN dotnet publish "BlogApp.Server.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage
+# Pin to specific patch version in production (e.g., 10.0.1)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 

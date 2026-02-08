@@ -70,15 +70,17 @@ class M2MAuthenticator:
     ) -> Dict:
         """Authenticate and validate token with scopes."""
         if not self.enabled:
-            # If auth disabled, we might allow all or require API Key fallback.
-            # For this implementation, if oauth is unconfigured, we warn and allow (dev mode)
-            # OR we could enforce strict fail. 
-            # Given user needs validation, let's treat as "Unauthenticated" but if the specific 
-            # environment implies dev, maybe pass a mock user.
-            # SAFEST: If not enabled, return a mock "admin/system" claim if debug=True, else 403.
             if settings.debug:
-                 return {"active": True, "sub": "dev-user", "scope": "ai:analyze ai:chat ai:admin", "client_id": "dev-client"}
-            return {"active": True, "sub": "anonymous-fallback", "scope": "", "client_id": "anon"}
+                logger.warning("OAuth not configured - using limited debug credentials")
+                return {
+                    "active": True,
+                    "sub": "debug-user",
+                    "scope": "ai:analyze",  # Minimal scope only
+                    "client_id": "debug-client",
+                    "iss": "debug",
+                    "debug_mode": True,
+                }
+            raise HTTPException(status_code=503, detail="Authentication service not configured")
 
         if not authorization:
              raise HTTPException(401, "Missing Authorization header")

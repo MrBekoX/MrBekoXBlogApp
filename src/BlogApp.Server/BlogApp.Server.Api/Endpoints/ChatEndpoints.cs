@@ -2,6 +2,7 @@ using BlogApp.BuildingBlocks.Messaging;
 using BlogApp.BuildingBlocks.Messaging.Abstractions;
 using BlogApp.Server.Application.Common.Events;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace BlogApp.Server.Api.Endpoints;
@@ -13,7 +14,8 @@ public static class ChatEndpoints
         var versionedGroup = app.NewVersionedApi("Chat");
         var group = versionedGroup.MapGroup("/api/v{version:apiVersion}/chat")
             .HasApiVersion(1.0)
-            .WithTags("Chat");
+            .WithTags("Chat")
+            .RequireAuthorization();
 
         // POST /api/v1/chat/message
         group.MapPost("/message", async (

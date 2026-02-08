@@ -3,7 +3,7 @@
 import asyncio
 import logging
 
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 
 from app.domain.interfaces.i_web_search import (
     IWebSearchProvider,

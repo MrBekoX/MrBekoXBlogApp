@@ -72,8 +72,8 @@ public class AiAnalysisCompletedHandler : IEventHandler<AiAnalysisCompletedEvent
                 "Successfully updated AI analysis for post {PostId}",
                 postId);
 
-            // Notify connected clients via SignalR
-            await _hubContext.Clients.All.SendAsync(
+            // Notify only clients subscribed to this post's analysis
+            await _hubContext.Clients.Group($"post_{postId}").SendAsync(
                 "AiAnalysisCompleted",
                 new
                 {

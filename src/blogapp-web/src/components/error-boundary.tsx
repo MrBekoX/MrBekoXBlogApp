@@ -26,9 +26,8 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log error for debugging and monitoring
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  componentDidCatch(_error: Error, _errorInfo: React.ErrorInfo) {
+    // error boundary caught - no console logging in production
   }
 
   handleReload = () => {
@@ -90,4 +89,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return this.props.children;
   }
+}
+
+export function SectionErrorBoundary({ children, fallback }: { children: ReactNode; fallback?: ReactNode }) {
+  return (
+    <ErrorBoundary fallback={fallback || <div className="p-4 text-center text-muted-foreground">{"Bu b\u00F6l\u00FCm y\u00FCklenirken bir hata olu\u015Ftu."}</div>}>
+      {children}
+    </ErrorBoundary>
+  );
 }

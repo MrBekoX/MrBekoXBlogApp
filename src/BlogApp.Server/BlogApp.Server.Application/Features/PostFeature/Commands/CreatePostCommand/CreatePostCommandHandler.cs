@@ -13,7 +13,8 @@ public class CreatePostCommandHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     ITagService tagService,
-    ICacheService cacheService) : IRequestHandler<CreatePostCommandRequest, CreatePostCommandResponse>
+    ICacheService cacheService,
+    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<CreatePostCommandRequest, CreatePostCommandResponse>
 {
     public async Task<CreatePostCommandResponse> Handle(CreatePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -62,18 +63,18 @@ public class CreatePostCommandHandler(
         var post = new BlogPost
         {
             Id = Guid.NewGuid(),
-            Title = dto.Title,
+            Title = htmlSanitizer.Sanitize(dto.Title),
             Slug = slug.Value,
-            Content = dto.Content,
-            Excerpt = dto.Excerpt,
+            Content = htmlSanitizer.Sanitize(dto.Content),
+            Excerpt = htmlSanitizer.Sanitize(dto.Excerpt),
             FeaturedImageUrl = dto.FeaturedImageUrl,
             CategoryId = categoryId,
             AuthorId = currentUserService.UserId.Value,
             MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
-                ? dto.MetaTitle 
-                : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]),
-            MetaDescription = dto.MetaDescription,
-            MetaKeywords = dto.MetaKeywords,
+                ? htmlSanitizer.Sanitize(dto.MetaTitle) 
+                : (dto.Title.Length <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)[..70]),
+            MetaDescription = htmlSanitizer.Sanitize(dto.MetaDescription),
+            MetaKeywords = htmlSanitizer.Sanitize(dto.MetaKeywords),
             Status = status,
             PublishedAt = status == PostStatus.Published ? DateTime.UtcNow : null,
             Tags = tags,

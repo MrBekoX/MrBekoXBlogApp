@@ -34,8 +34,7 @@ export function AIAnalysisCard({ postId, onAnalysisSaved }: AIAnalysisCardProps)
       } else {
         toast.error(response.message || 'AI analizi oluşturulamadı');
       }
-    } catch (error) {
-      console.error('AI analysis error:', error);
+    } catch {
       toast.error('AI analizi oluşturulurken bir hata oluştu');
     } finally {
       setLoading(false);
@@ -64,8 +63,7 @@ export function AIAnalysisCard({ postId, onAnalysisSaved }: AIAnalysisCardProps)
       if (onAnalysisSaved) {
         onAnalysisSaved();
       }
-    } catch (error) {
-      console.error('Save analysis error:', error);
+    } catch {
       toast.error('AI analizi kaydedilirken bir hata oluştu');
     } finally {
       setSaving(false);

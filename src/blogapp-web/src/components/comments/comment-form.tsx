@@ -87,9 +87,8 @@ export function CommentForm({
       } else {
         toast.error(response.message || 'Failed to post comment');
       }
-    } catch (error) {
+    } catch {
       toast.error('Failed to post comment');
-      console.error('Comment error:', error);
     } finally {
       setIsSubmitting(false);
     }

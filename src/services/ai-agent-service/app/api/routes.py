@@ -162,7 +162,7 @@ def create_app() -> FastAPI:
         ],
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Api-Key", "Accept"],
+        allow_headers=["Content-Type", "Accept"],
         expose_headers=[],
         max_age=300,
     )

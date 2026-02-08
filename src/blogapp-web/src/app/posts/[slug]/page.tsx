@@ -16,6 +16,13 @@ import { BreadcrumbSchema } from '@/components/seo/breadcrumb-schema';
 
 import { ArticleChatPanel } from '@/components/chat';
 
+function sanitizeText(text: string): string {
+  return text.replace(/<[^>]*>/g, '').replace(/[<>"'&]/g, (char) => {
+    const entities: Record<string, string> = { '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '&': '&amp;' };
+    return entities[char] || char;
+  });
+}
+
 interface PostPageProps {
   params: Promise<{ slug: string }>;
 }
@@ -167,7 +174,7 @@ export default async function PostPage({ params }: PostPageProps) {
             <span className="font-semibold text-primary">AI Tarafindan Olusturulan Ozet</span>
           </div>
           <p className="text-muted-foreground leading-relaxed">
-            {post.aiSummary}
+            {sanitizeText(post.aiSummary)}
           </p>
         </div>
       )}

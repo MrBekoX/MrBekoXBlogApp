@@ -1,7 +1,7 @@
 """LLM Provider interface - Contract for text generation services."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, AsyncGenerator
 
 
 class ILLMProvider(ABC):
@@ -55,4 +55,22 @@ class ILLMProvider(ABC):
     @abstractmethod
     def is_initialized(self) -> bool:
         """Check if the provider is initialized and ready."""
+        pass
+
+    @abstractmethod
+    async def generate_stream(
+        self,
+        prompt: str,
+        **kwargs
+    ) -> AsyncGenerator[str, None]:
+        """
+        Generate text streaming token by token.
+
+        Args:
+            prompt: The input prompt (already formatted)
+            **kwargs: Provider-specific options (temperature, max_tokens, etc.)
+
+        Yields:
+            Text chunks as they are generated
+        """
         pass

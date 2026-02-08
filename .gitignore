@@ -31,6 +31,11 @@ ci-cd.yml
 # PowerShell scripts (utility/ops scripts)
 run-search-migration.ps1
 
+# Documentation files (project metadata)
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md
+
 # ASP.NET Core Sensitive Configuration
 # Development appsettings (contains secrets)
 **/appsettings.Development.json

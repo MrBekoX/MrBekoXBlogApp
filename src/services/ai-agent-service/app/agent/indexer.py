@@ -3,10 +3,14 @@
 import logging
 from typing import Optional
 
-from app.rag.embeddings import EmbeddingService, embedding_service
-from app.rag.chunker import TextChunker, text_chunker
-from app.rag.vector_store import VectorStore, vector_store
+from app.rag.embeddings import EmbeddingService
+from app.rag.chunker import TextChunker
+from app.infrastructure.vector_store.chroma_adapter import ChromaAdapter
+from app.domain.interfaces.i_vector_store import IVectorStore
 from app.agent.simple_blog_agent import strip_html_and_images
+
+# Backward-compatible alias
+VectorStore = ChromaAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +70,13 @@ class ArticleIndexer:
 
     def __init__(
         self,
-        embedding_svc: Optional[EmbeddingService] = None,
-        chunker: Optional[TextChunker] = None,
-        store: Optional[VectorStore] = None
+        embedding_svc: EmbeddingService,
+        chunker: TextChunker,
+        store: VectorStore
     ):
-        self._embedding_service = embedding_svc or embedding_service
-        self._chunker = chunker or text_chunker
-        self._vector_store = store or vector_store
+        self._embedding_service = embedding_svc
+        self._chunker = chunker
+        self._vector_store = store
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -218,5 +222,4 @@ class ArticleIndexer:
         }
 
 
-# Global singleton instance
-article_indexer = ArticleIndexer()
+

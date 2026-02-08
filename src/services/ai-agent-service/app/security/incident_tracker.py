@@ -163,5 +163,4 @@ class IncidentTracker:
                 
         self._local_storage[incident.id] = incident
 
-# Singleton
-incident_tracker = IncidentTracker()
+

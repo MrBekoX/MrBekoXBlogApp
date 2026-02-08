@@ -14,5 +14,31 @@ public record UpdatePostCommandDto
     public string? MetaKeywords { get; init; }
     public bool IsFeatured { get; init; }
     public string Status { get; init; } = "Draft";
+
+    // AI-Generated Fields
+    /// <summary>
+    /// AI tarafından oluşturulan makale özeti
+    /// </summary>
+    public string? AiSummary { get; init; }
+
+    /// <summary>
+    /// AI tarafından çıkarılan anahtar kelimeler
+    /// </summary>
+    public string? AiKeywords { get; init; }
+
+    /// <summary>
+    /// AI tarafından hesaplanan tahmini okuma süresi
+    /// </summary>
+    public int? AiEstimatedReadingTime { get; init; }
+
+    /// <summary>
+    /// AI tarafından oluşturulan SEO meta description
+    /// </summary>
+    public string? AiSeoDescription { get; init; }
+
+    /// <summary>
+    /// AI tarafından oluşturulan GEO optimizasyon verileri
+    /// </summary>
+    public string? AiGeoOptimization { get; init; }
 }
 

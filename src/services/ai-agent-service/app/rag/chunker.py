@@ -313,5 +313,4 @@ class TextChunker:
         return '\n\n'.join(overlap_parts) if overlap_parts else ""
 
 
-# Global singleton instance
-text_chunker = TextChunker()
+

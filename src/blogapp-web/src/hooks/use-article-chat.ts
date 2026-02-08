@@ -2,11 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessageReceivedEvent, WebSearchSource } from '@/types';
-
-// Extract base URL for SignalR hub
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
-const BASE_URL = API_URL.replace(/\/api(\/v\d+)?\/?$/, '');
-const HUB_URL = `${BASE_URL}/hubs/cache`;
+import { HUB_URL } from '@/lib/env';
 
 interface UseArticleChatOptions {
   /** Enable debug logging */
@@ -62,12 +58,10 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
   }, [addAssistantMessage]);
 
   const log = useCallback(
-    (...args: unknown[]) => {
-      if (debug) {
-        console.log('[ArticleChat]', ...args);
-      }
+    (..._args: unknown[]) => {
+      // logging disabled
     },
-    [debug]
+    []
   );
 
   // Set post ID when component mounts
@@ -157,6 +151,17 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
 
         if (isMounted) {
           log('Connected to SignalR hub');
+
+          // Join chat session group for targeted notifications
+          const currentSessionId = useChatStore.getState().sessionId;
+          if (currentSessionId) {
+            try {
+              await connection.invoke('JoinChatSessionGroup', currentSessionId);
+              log(`Joined chat session group: ${currentSessionId}`);
+            } catch (err) {
+              log('Failed to join chat session group:', err);
+            }
+          }
         }
       } catch (error) {
         if (!isMounted) return;
@@ -173,11 +178,8 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
           errorMessage.includes('Failed to complete negotiation');
 
         if (isBenignError) {
-          if (debug) console.debug('[ArticleChat] Backend not available, chat disabled');
           return;
         }
-
-        console.error('[ArticleChat] Failed to connect to SignalR hub:', error);
       }
     };
 
@@ -186,7 +188,7 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
     return () => {
       isMounted = false;
       if (connection) {
-        connection.stop().catch(() => {});
+        connection.stop().catch((err) => { if (process.env.NODE_ENV === 'development') console.error(err); });
       }
       connectionRef.current = null;
     };
@@ -198,7 +200,6 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
   const sendMessage = useCallback(
     async (content: string, enableWebSearch = false) => {
       if (!postId) {
-        console.error('[ArticleChat] Post ID is required');
         return;
       }
 

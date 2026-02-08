@@ -38,6 +38,10 @@ class AnomalyEvent:
 class AnomalyDetector:
     """Behavioral anomaly detection."""
 
+    MAX_TRACKED_USERS = 10000
+    STALE_THRESHOLD_SECONDS = 3600  # 1 hour
+    CLEANUP_INTERVAL = 100  # run cleanup every N requests
+
     def __init__(
         self,
         window_seconds: int = 60,
@@ -62,6 +66,9 @@ class AnomalyDetector:
         # Lock for thread safety
         self.lock = asyncio.Lock()
 
+        # Counter for periodic cleanup
+        self._request_count = 0
+
     async def record_request(
         self,
         user_id: str,
@@ -73,6 +80,11 @@ class AnomalyDetector:
         now = time.time()
 
         async with self.lock:
+            # Periodic cleanup of stale user data
+            self._request_count += 1
+            if self._request_count % self.CLEANUP_INTERVAL == 0:
+                self._cleanup_stale_users(now)
+
             # Record request
             self.user_requests[user_id].append({
                 "timestamp": now,
@@ -92,6 +104,35 @@ class AnomalyDetector:
                 return anomaly
 
         return None
+
+    def _cleanup_stale_users(self, now: float) -> None:
+        """Remove users with no recent activity to prevent unbounded memory growth."""
+        stale_users = []
+        for user_id, requests in self.user_requests.items():
+            if requests and (now - requests[-1]["timestamp"]) > self.STALE_THRESHOLD_SECONDS:
+                stale_users.append(user_id)
+            elif not requests:
+                stale_users.append(user_id)
+
+        for user_id in stale_users:
+            del self.user_requests[user_id]
+            self.user_failures.pop(user_id, None)
+            self.baselines.pop(user_id, None)
+
+        # Hard cap: if still over limit, evict oldest entries
+        if len(self.user_requests) > self.MAX_TRACKED_USERS:
+            sorted_users = sorted(
+                self.user_requests.items(),
+                key=lambda kv: kv[1][-1]["timestamp"] if kv[1] else 0
+            )
+            excess = len(self.user_requests) - self.MAX_TRACKED_USERS
+            for user_id, _ in sorted_users[:excess]:
+                del self.user_requests[user_id]
+                self.user_failures.pop(user_id, None)
+                self.baselines.pop(user_id, None)
+
+        if stale_users:
+            logger.info(f"Cleaned up {len(stale_users)} stale user records")
 
     async def _check_anomalies(self, user_id: str) -> Optional[AnomalyEvent]:
         """Check for various anomaly types."""

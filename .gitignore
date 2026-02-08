@@ -6,9 +6,13 @@
 .env.*.local
 deploy/.env
 
-#ai gent skills files
+# AI agent skills files
 .agent
 .claude
+.windsurf
+
+# AGENTS.md development files (optional - comment out if you want to track them)
+# AGENTS.md
 
 #deploy files
 deploy/
@@ -19,6 +23,10 @@ docs/
 # Chroma vector database
 chroma_data/
 **/chroma.sqlite3
+
+#CI/CD Pipeline
+.github
+ci-cd.yml
 
 # ASP.NET Core Sensitive Configuration
 # Development appsettings (contains secrets)
@@ -119,4 +127,44 @@ docker-compose.override.yml
 # IDE sensitive settings
 .vscode/settings.json
 .idea/dataSources.xml
+
+# Python
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+.venv
+.pytest_cache/
+
+# Python specific files
+*.egg-info/
+dist/
+*.egg
+
+# Visual Studio user settings
+*.csproj.user
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+build_output.txt
+test_results.txt
+sbom.json
+
+# TypeScript/JavaScript build
+*.tsbuildinfo
+.next/cache/
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+.coverage.*
 

@@ -24,33 +24,17 @@ export function CacheSyncProvider({ children, debug = false }: CacheSyncProvider
   const invalidateTagsCache = useTagsStore((state) => state.invalidateCache);
 
   const handleCacheInvalidation = (event: CacheInvalidationEvent) => {
-    if (debug) {
-      console.log('[CacheSyncProvider] Received invalidation:', event);
-      console.log('[CacheSyncProvider] Event target:', event.target);
-      console.log('[CacheSyncProvider] Event type:', event.type);
-    }
-
-    // Determine which store to invalidate based on the event target
     const target = event.target.toLowerCase();
 
     if (target.includes('posts') || target.includes('post')) {
-      if (debug) {
-        console.log('[CacheSyncProvider] Invalidating posts cache');
-      }
       invalidatePostsCache();
     }
 
     if (target.includes('categories') || target.includes('category')) {
-      if (debug) {
-        console.log('[CacheSyncProvider] Invalidating categories cache');
-      }
       invalidateCategoriesCache();
     }
 
     if (target.includes('tags') || target.includes('tag')) {
-      if (debug) {
-        console.log('[CacheSyncProvider] Invalidating tags cache');
-      }
       invalidateTagsCache();
     }
   };

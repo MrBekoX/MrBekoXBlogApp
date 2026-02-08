@@ -14,7 +14,7 @@ public static class CookieHelper
             HttpOnly = true,
             Secure = isProduction,
             SameSite = SameSiteMode.Strict,
-            Path = "/api",
+            Path = "/",
             Expires = accessTokenExpiry,
             IsEssential = true
         };
@@ -24,31 +24,32 @@ public static class CookieHelper
             HttpOnly = true,
             Secure = isProduction,
             SameSite = SameSiteMode.Strict,
-            Path = "/api/auth",
+            Path = "/",
             Expires = DateTime.UtcNow.AddDays(7),
             IsEssential = true
         };
 
-        response.Cookies.Append("BlogApp.AccessToken", accessToken, accessCookieOptions);
-        response.Cookies.Append("BlogApp.RefreshToken", refreshToken, refreshCookieOptions);
+        // Use simple cookie name for frontend compatibility
+        response.Cookies.Append("accessToken", accessToken, accessCookieOptions);
+        response.Cookies.Append("refreshToken", refreshToken, refreshCookieOptions);
     }
 
     public static void ClearAuthCookies(HttpResponse response, bool isProduction)
     {
-        response.Cookies.Delete("BlogApp.AccessToken", new CookieOptions
+        response.Cookies.Delete("accessToken", new CookieOptions
         {
             HttpOnly = true,
             Secure = isProduction,
             SameSite = SameSiteMode.Strict,
-            Path = "/api"
+            Path = "/"
         });
 
-        response.Cookies.Delete("BlogApp.RefreshToken", new CookieOptions
+        response.Cookies.Delete("refreshToken", new CookieOptions
         {
             HttpOnly = true,
             Secure = isProduction,
             SameSite = SameSiteMode.Strict,
-            Path = "/api/auth"
+            Path = "/"
         });
     }
 

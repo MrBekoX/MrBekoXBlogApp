@@ -46,8 +46,12 @@ const postSchema = z.object({
 function sanitizeTagName(tag: string): string {
   return tag
     .trim()
-    .replace(/[<>"'&]/g, '') // Tehlikeli karakterleri kaldır
-    .slice(0, 50); // Max 50 karakter
+    .replace(/[\x00-\x1F\x7F]/g, '')           // Kontrol karakterlerini kaldır
+    .replace(/[<>"'&`\\;(){}[\]]/g, '')          // HTML/JS tehlikeli karakterleri kaldır
+    .replace(/javascript\s*:/gi, '')             // javascript: protocol
+    .replace(/on\w+\s*=/gi, '')                  // onerror=, onclick= vb.
+    .replace(/\s+/g, ' ')                        // Çoklu boşlukları normalize et
+    .slice(0, 50);                               // Max 50 karakter
 }
 
 type PostFormData = z.infer<typeof postSchema>;

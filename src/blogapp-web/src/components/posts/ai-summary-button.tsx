@@ -42,8 +42,7 @@ export function AISummaryButton({
       } else {
         toast.error(response.message || 'AI özeti oluşturulamadı');
       }
-    } catch (error) {
-      console.error('AI summary generation error:', error);
+    } catch {
       toast.error('AI özeti oluşturulurken bir hata oluştu');
     } finally {
       setLoading(false);

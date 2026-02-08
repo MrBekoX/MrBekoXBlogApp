@@ -3,6 +3,7 @@ API Endpoints - BlogApp AI Agent Service
 
 REST API endpoint handlers for health checks and AI analysis tools.
 Protected endpoints require X-Api-Key header.
+Refactored to use UnifiedRateLimiter.
 """
 
 import hashlib
@@ -11,20 +12,22 @@ from asyncio import TimeoutError as TimeoutException
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field, ValidationError
 from typing import Optional
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+
+# Removed slowapi imports
 from app.core.config import settings
-from app.core.rate_limits import RATE_LIMITS
+from app.core.rate_limits import RATE_LIMITS, parse_rate_limit
 from app.core.cache import cache
-from app.core.auth import verify_api_key
 from app.security.m2m_auth import require_analyze_scope, require_chat_scope, require_admin_scope
-from app.agent.simple_blog_agent import simple_blog_agent
+from app.agent.simple_blog_agent import SimpleBlogAgent
+from app.agent.rag_chat_handler import RagChatHandler
+from app.security.token_rate_limiter import UnifiedRateLimiter
+from app.api.deps import get_rate_limiter, get_simple_blog_agent, get_rag_chat_handler
 
 # Cache TTL: 1 hour (results don't change for same content)
 CACHE_TTL_SECONDS = 3600
 
 router = APIRouter()
-limiter = Limiter(key_func=get_remote_address)
+# slowapi initialization removed
 logger = logging.getLogger(__name__)
 
 
@@ -93,7 +96,7 @@ class CollectSourcesRequest(BaseModel):
 def generate_cache_key(prefix: str, content: str, **kwargs) -> str:
     """Generate a cache key based on content hash and parameters."""
     # Create a hash of the content to avoid long keys
-    content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
+    content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
     # Include additional parameters in the key
     params = "_".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
     return f"ai:{prefix}:{content_hash}:{params}" if params else f"ai:{prefix}:{content_hash}"
@@ -106,27 +109,42 @@ def handle_llm_exception(e: Exception, operation: str) -> None:
     if isinstance(e, TimeoutException):
         raise HTTPException(
             status_code=504,
-            detail=f"{operation} timed out. Please try again."
+            detail="Request timed out. Please try again."
         )
     elif isinstance(e, ValidationError):
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid response from LLM: {str(e)}"
+            detail="Invalid response received. Please try again."
         )
     elif isinstance(e, ConnectionError):
         raise HTTPException(
             status_code=503,
-            detail=f"Service unavailable: {str(e)}"
+            detail="Service temporarily unavailable. Please try again later."
         )
     elif isinstance(e, ValueError):
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid input: {str(e)}"
+            detail="Invalid input provided."
         )
     else:
         raise HTTPException(
             status_code=500,
-            detail=f"{operation} failed: {str(e)}"
+            detail="An internal error occurred. Please try again later."
+        )
+
+# Helper for Rate Limiting
+async def check_rate_limit(request: Request, limiter: UnifiedRateLimiter, endpoint: str):
+    client_ip = request.client.host if request.client else "unknown"
+    limit_str = RATE_LIMITS.get(endpoint, RATE_LIMITS["default"])
+    limit, period = parse_rate_limit(limit_str)
+    
+    # Use endpoint specific key
+    key = f"{endpoint}:{client_ip}"
+    
+    if not await limiter.check_limit(key, limit, period):
+        raise HTTPException(
+            status_code=429, 
+            detail=f"Rate limit exceeded for {endpoint}. Limit: {limit}/{period}s"
         )
 
 
@@ -158,10 +176,11 @@ async def root():
 
 
 @router.post("/api/analyze")
-@limiter.limit(RATE_LIMITS["/api/analyze"])
 async def full_analysis(
     request: Request,
     analyze_request: AnalyzeRequest,
+    limiter: UnifiedRateLimiter = Depends(get_rate_limiter),
+    agent: SimpleBlogAgent = Depends(get_simple_blog_agent),
     claims: dict = Depends(require_analyze_scope)
 ):
     """
@@ -170,6 +189,8 @@ async def full_analysis(
     Returns summary, keywords, SEO description, reading time,
     sentiment analysis, and GEO optimization.
     """
+    await check_rate_limit(request, limiter, "/api/analyze")
+
     # Anomaly Detection
     from app.monitoring.anomaly_detector import anomaly_detector
     
@@ -202,7 +223,7 @@ async def full_analysis(
         return cached
 
     try:
-        result = await simple_blog_agent.full_analysis(
+        result = await agent.full_analysis(
             content=analyze_request.content,
             target_region=analyze_request.target_region,
             language=analyze_request.language,
@@ -215,13 +236,15 @@ async def full_analysis(
 
 
 @router.post("/api/summarize")
-@limiter.limit(RATE_LIMITS["/api/summarize"])
 async def summarize_article(
     request: Request,
     summarize_request: SummarizeRequest,
-    _api_key: str = Depends(verify_api_key)
+    limiter: UnifiedRateLimiter = Depends(get_rate_limiter),
+    agent: SimpleBlogAgent = Depends(get_simple_blog_agent)
 ):
     """Generate article summary."""
+    await check_rate_limit(request, limiter, "/api/summarize")
+
     cache_key = generate_cache_key(
         "summarize",
         summarize_request.content,
@@ -235,7 +258,7 @@ async def summarize_article(
         return cached
 
     try:
-        summary = await simple_blog_agent.summarize_article(
+        summary = await agent.summarize_article(
             content=summarize_request.content,
             max_sentences=summarize_request.max_sentences,
             language=summarize_request.language,
@@ -248,13 +271,15 @@ async def summarize_article(
 
 
 @router.post("/api/keywords")
-@limiter.limit(RATE_LIMITS["/api/keywords"])
 async def extract_keywords(
     request: Request,
     keywords_request: KeywordsRequest,
-    _api_key: str = Depends(verify_api_key)
+    limiter: UnifiedRateLimiter = Depends(get_rate_limiter),
+    agent: SimpleBlogAgent = Depends(get_simple_blog_agent)
 ):
     """Extract keywords from content."""
+    await check_rate_limit(request, limiter, "/api/keywords")
+
     cache_key = generate_cache_key(
         "keywords",
         keywords_request.content,
@@ -268,7 +293,7 @@ async def extract_keywords(
         return cached
 
     try:
-        keywords = await simple_blog_agent.extract_keywords(
+        keywords = await agent.extract_keywords(
             content=keywords_request.content,
             count=keywords_request.count,
             language=keywords_request.language,
@@ -281,13 +306,15 @@ async def extract_keywords(
 
 
 @router.post("/api/seo-description")
-@limiter.limit(RATE_LIMITS["/api/seo-description"])
 async def generate_seo_description(
     request: Request,
     seo_request: SeoRequest,
-    _api_key: str = Depends(verify_api_key)
+    limiter: UnifiedRateLimiter = Depends(get_rate_limiter),
+    agent: SimpleBlogAgent = Depends(get_simple_blog_agent)
 ):
     """Generate SEO meta description."""
+    await check_rate_limit(request, limiter, "/api/seo-description")
+
     cache_key = generate_cache_key(
         "seo",
         seo_request.content,
@@ -301,7 +328,7 @@ async def generate_seo_description(
         return cached
 
     try:
-        description = await simple_blog_agent.generate_seo_description(
+        description = await agent.generate_seo_description(
             content=seo_request.content,
             max_length=seo_request.max_length,
             language=seo_request.language,
@@ -314,13 +341,15 @@ async def generate_seo_description(
 
 
 @router.post("/api/sentiment")
-@limiter.limit(RATE_LIMITS["/api/sentiment"])
 async def analyze_sentiment(
     request: Request,
     sentiment_request: SentimentRequest,
-    _api_key: str = Depends(verify_api_key)
+    limiter: UnifiedRateLimiter = Depends(get_rate_limiter),
+    agent: SimpleBlogAgent = Depends(get_simple_blog_agent)
 ):
     """Analyze content sentiment."""
+    await check_rate_limit(request, limiter, "/api/sentiment")
+
     cache_key = generate_cache_key(
         "sentiment",
         sentiment_request.content,
@@ -333,7 +362,7 @@ async def analyze_sentiment(
         return cached
 
     try:
-        result = await simple_blog_agent.analyze_sentiment(
+        result = await agent.analyze_sentiment(
             content=sentiment_request.content,
             language=sentiment_request.language,
         )
@@ -344,14 +373,16 @@ async def analyze_sentiment(
 
 
 @router.post("/api/reading-time")
-@limiter.limit(RATE_LIMITS["/api/reading-time"])
-def calculate_reading_time(
+async def calculate_reading_time(
     request: Request,
     reading_time_request: ReadingTimeRequest,
-    _api_key: str = Depends(verify_api_key)
+    limiter: UnifiedRateLimiter = Depends(get_rate_limiter),
+    agent: SimpleBlogAgent = Depends(get_simple_blog_agent)
 ):
     """Calculate estimated reading time."""
-    result = simple_blog_agent.calculate_reading_time(
+    await check_rate_limit(request, limiter, "/api/reading-time")
+
+    result = agent.calculate_reading_time(
         content=reading_time_request.content,
         words_per_minute=reading_time_request.words_per_minute,
     )
@@ -359,13 +390,16 @@ def calculate_reading_time(
 
 
 @router.post("/api/geo-optimize")
-@limiter.limit(RATE_LIMITS["/api/geo-optimize"])
 async def optimize_for_geo(
     request: Request,
     geo_request: GeoOptimizeRequest,
+    limiter: UnifiedRateLimiter = Depends(get_rate_limiter),
+    agent: SimpleBlogAgent = Depends(get_simple_blog_agent),
     claims: dict = Depends(require_analyze_scope)
 ):
     """Optimize content for specific region (GEO targeting)."""
+    await check_rate_limit(request, limiter, "/api/geo-optimize")
+
     cache_key = generate_cache_key(
         "geo",
         geo_request.content,
@@ -379,7 +413,7 @@ async def optimize_for_geo(
         return cached
 
     try:
-        result = await simple_blog_agent.optimize_for_geo(
+        result = await agent.optimize_for_geo(
             content=geo_request.content,
             target_region=geo_request.target_region,
             language=geo_request.language,
@@ -389,23 +423,21 @@ async def optimize_for_geo(
     except Exception as e:
         handle_llm_exception(e, "GEO optimization")
 
-        handle_llm_exception(e, "GEO optimization")
-
 
 @router.post("/api/collect-sources")
-@limiter.limit(RATE_LIMITS["/api/collect-sources"])
 async def collect_sources(
     request: Request,
     body: CollectSourcesRequest,
-    api_key: str = Depends(verify_api_key),
+    limiter: UnifiedRateLimiter = Depends(get_rate_limiter),
+    handler: RagChatHandler = Depends(get_rag_chat_handler)
 ):
     """
     Collect trusted web sources based on article content.
     """
-    try:
-        from app.agent.rag_chat_handler import rag_chat_handler
+    await check_rate_limit(request, limiter, "/api/collect-sources")
 
-        sources = await rag_chat_handler.collect_sources(
+    try:
+        sources = await handler.collect_sources(
             post_id=body.post_id,
             articletitle=body.title,
             articlecontent=body.content,

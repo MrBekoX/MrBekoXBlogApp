@@ -98,10 +98,10 @@ public class RabbitMqEventConsumer : BackgroundService
         {
             _logger.LogInformation("Starting RabbitMQ event consumer...");
 
-            _channel = await _connection.CreateChannelAsync(stoppingToken);
+            _channel = await _connection.CreateChannelAsync(publisherConfirms: false, cancellationToken: stoppingToken);
 
             // Set QoS prefetch to 1 for backpressure control
-            await _channel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false, stoppingToken);
+            await _channel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false, cancellationToken: stoppingToken);
 
             // Ensure exchange exists
             await _channel.ExchangeDeclareAsync(
@@ -316,7 +316,7 @@ public class RabbitMqEventConsumer : BackgroundService
     {
         if (_channel is not null)
         {
-            await _channel.BasicAckAsync(deliveryTag, multiple: false);
+            await _channel.BasicAckAsync(deliveryTag, multiple: false, cancellationToken: CancellationToken.None);
         }
     }
 
@@ -324,7 +324,7 @@ public class RabbitMqEventConsumer : BackgroundService
     {
         if (_channel is not null)
         {
-            await _channel.BasicNackAsync(deliveryTag, multiple: false, requeue: requeue);
+            await _channel.BasicNackAsync(deliveryTag, multiple: false, requeue: requeue, cancellationToken: CancellationToken.None);
         }
     }
 

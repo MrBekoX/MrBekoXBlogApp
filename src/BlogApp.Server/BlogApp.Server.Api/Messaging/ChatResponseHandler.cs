@@ -50,10 +50,8 @@ public class ChatResponseHandler : IEventHandler<ChatResponseEvent>
                 Timestamp = DateTime.UtcNow
             };
 
-            // Broadcast to all connected clients
-            // In a production scenario, you might want to use groups
-            // to send only to clients interested in this session
-            await _hubContext.Clients.All.SendAsync(
+            // Send only to clients subscribed to this chat session
+            await _hubContext.Clients.Group($"chat_{sessionId}").SendAsync(
                 "ChatMessageReceived",
                 responseData,
                 cancellationToken);

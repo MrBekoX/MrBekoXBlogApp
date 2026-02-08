@@ -122,8 +122,7 @@ export function SearchCommand() {
             }).slice(0, 3)
           );
         }
-      } catch (error) {
-        console.error('Search error:', error);
+      } catch {
         const errorMessage = 'Arama sırasında bir hata oluştu. Lütfen tekrar deneyin.';
         setSearchError(errorMessage);
         toast.error(errorMessage);

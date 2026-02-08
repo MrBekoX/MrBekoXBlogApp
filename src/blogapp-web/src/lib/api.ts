@@ -1,4 +1,5 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { API_BASE_URL } from '@/lib/env';
 import type {
   ApiResponse,
   AISummaryResponse,
@@ -20,10 +21,6 @@ import type {
   Tag,
   UpdatePostRequest,
 } from '@/types';
-
-// API Base URL - Production'da NEXT_PUBLIC_API_URL environment variable kullanılmalı
-// Örnek: NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api/v1
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
 
 // Auth storage key used by Zustand persist middleware
 const AUTH_STORAGE_KEY = 'auth-storage';
@@ -126,6 +123,7 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true, // Required for HttpOnly cookies
+  timeout: 15000, // 15 second timeout
 });
 
 // No request interceptor needed - cookies are sent automatically with withCredentials: true

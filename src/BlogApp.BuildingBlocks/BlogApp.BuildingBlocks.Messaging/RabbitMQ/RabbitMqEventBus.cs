@@ -52,8 +52,8 @@ public class RabbitMqEventBus : IEventBus
 
         try
         {
-            // Create channel for this publish (channels are cheap, connections are not)
-            await using var channel = await _connection.CreateChannelAsync(cancellationToken);
+            // Create channel with publisher confirms enabled for reliable delivery
+            await using var channel = await _connection.CreateChannelAsync(publisherConfirms: true, cancellationToken);
 
             // Ensure exchange exists (idempotent declaration)
             await channel.ExchangeDeclareAsync(

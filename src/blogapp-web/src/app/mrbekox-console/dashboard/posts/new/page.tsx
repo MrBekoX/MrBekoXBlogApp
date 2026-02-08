@@ -104,7 +104,6 @@ export default function NewPostPage() {
 
   const submitPost = async (data: PostFormData, statusOverride?: PostStatus) => {
     const finalStatus = statusOverride || data.status;
-    console.log('Form submitted with data:', { ...data, status: finalStatus });
 
     const post = await createPost({
       ...data,
@@ -120,7 +119,6 @@ export default function NewPostPage() {
       router.push('/mrbekox-console/dashboard/posts');
     } else {
       const errorMsg = usePostsStore.getState().error;
-      console.error('Post creation failed. Store error:', errorMsg);
       toast.error(`Yazı oluşturulamadı: ${errorMsg || 'Bilinmeyen hata'}`);
     }
   };

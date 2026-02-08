@@ -80,7 +80,7 @@ class PenetrationTester:
 
                 if response.status_code == 429:
                     blocked_count += 1
-            except:
+            except Exception:
                 pass
 
         elapsed = time.time() - start

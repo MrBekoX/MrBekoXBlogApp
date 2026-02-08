@@ -36,7 +36,7 @@ class OptimizedEmbeddingProvider(IEmbeddingProvider):
 
     def _get_cache_key(self, text: str) -> str:
         """Generate cache key from text hash."""
-        text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
+        text_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
         return f"emb:{self.provider.__class__.__name__}:{text_hash}"
 
     async def embed(self, text: str) -> List[float]:
@@ -86,7 +86,7 @@ class OptimizedEmbeddingProvider(IEmbeddingProvider):
                 orig_index = missing_indices[i]
                 cached_embeddings[orig_index] = emb
                 
-                text_hash = hashlib.md5(missing_texts[i].encode('utf-8')).hexdigest()
+                text_hash = hashlib.sha256(missing_texts[i].encode('utf-8')).hexdigest()
                 cache_key = f"emb:{self.provider.__class__.__name__}:{text_hash}"
                 await self.cache.set_json(cache_key, emb, ttl_seconds=604800)
 

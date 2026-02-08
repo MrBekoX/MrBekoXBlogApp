@@ -58,11 +58,9 @@ export function useCacheSyncedData<T>({
   const [refreshedData, setRefreshedData] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const log = useCallback((...args: unknown[]) => {
-    if (debug) {
-      console.log('[useCacheSyncedData]', ...args);
-    }
-  }, [debug]);
+  const log = useCallback((..._args: unknown[]) => {
+    // logging disabled
+  }, []);
 
   // Refresh function that can be called manually or on cache invalidation
   const refresh = useCallback(async () => {
@@ -75,8 +73,8 @@ export function useCacheSyncedData<T>({
         log('Fresh data received');
         setRefreshedData(freshData);
       }
-    } catch (error) {
-      console.error('[useCacheSyncedData] Fetch error:', error);
+    } catch {
+      // fetch error silenced
     } finally {
       setIsLoading(false);
     }

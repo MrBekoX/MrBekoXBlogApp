@@ -1,9 +1,10 @@
 """Ollama LLM adapter - Concrete implementation of ILLMProvider."""
 
 import logging
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
 
 from app.domain.interfaces.i_llm_provider import ILLMProvider
 from app.core.config import settings
@@ -131,3 +132,43 @@ class OllamaAdapter(ILLMProvider):
     def is_initialized(self) -> bool:
         """Check if the provider is initialized and ready."""
         return self._initialized and self._llm is not None
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        **kwargs
+    ) -> AsyncGenerator[str, None]:
+        """
+        Generate text streaming token by token.
+
+        Args:
+            prompt: The input prompt (already formatted)
+            **kwargs: Additional options (temperature override, etc.)
+
+        Yields:
+            Text chunks as they are generated
+        """
+        self._ensure_initialized()
+
+        if not self._llm:
+            raise RuntimeError("LLM not initialized")
+
+        # Allow temperature override per request
+        llm = self._llm
+        if 'temperature' in kwargs:
+            llm = ChatOllama(
+                model=self._model,
+                base_url=self._base_url,
+                temperature=kwargs['temperature'],
+                timeout=self._timeout,
+                num_ctx=self._num_ctx,
+            )
+
+        # Stream the response
+        from langchain_core.messages import HumanMessage
+
+        async for chunk in llm.astream([HumanMessage(content=prompt)]):
+            if isinstance(chunk, (AIMessage, AIMessageChunk)):
+                yield chunk.content
+            elif hasattr(chunk, 'content'):
+                yield str(chunk.content)

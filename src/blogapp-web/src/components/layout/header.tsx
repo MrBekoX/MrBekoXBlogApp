@@ -21,16 +21,18 @@ import { SearchCommand } from '@/components/search-command';
 export function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, authStatus, logout } = useAuthStore();
-  const { categories, fetchCategories, cacheVersion } = useCategoriesStore();
+  const user = useAuthStore((s) => s.user);
+  const authStatus = useAuthStore((s) => s.authStatus);
+  const logout = useAuthStore((s) => s.logout);
+  const categories = useCategoriesStore((s) => s.categories);
+  const fetchCategories = useCategoriesStore((s) => s.fetchCategories);
+  const cacheVersion = useCategoriesStore((s) => s.cacheVersion);
   const isAuthenticated = authStatus === 'authenticated';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Fetch categories on mount and when cache is invalidated
   useEffect(() => {
-    fetchCategories().catch((error) => {
-      console.error('Failed to fetch categories:', error);
-    });
+    fetchCategories().catch((err) => { if (process.env.NODE_ENV === 'development') console.error(err); });
   }, [fetchCategories, cacheVersion]);
 
   const handleLogout = async () => {

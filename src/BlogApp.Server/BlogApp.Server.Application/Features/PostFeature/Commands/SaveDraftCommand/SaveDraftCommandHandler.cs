@@ -5,6 +5,7 @@ using BlogApp.Server.Application.Features.PostFeature.Constants;
 using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.Enums;
 using BlogApp.Server.Domain.ValueObjects;
+using FluentValidation;
 using MediatR;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.SaveDraftCommand;
@@ -12,7 +13,8 @@ namespace BlogApp.Server.Application.Features.PostFeature.Commands.SaveDraftComm
 public class SaveDraftCommandHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
-    ITagService tagService) : IRequestHandler<SaveDraftCommandRequest, SaveDraftCommandResponse>
+    ITagService tagService,
+    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<SaveDraftCommandRequest, SaveDraftCommandResponse>
 {
     public async Task<SaveDraftCommandResponse> Handle(SaveDraftCommandRequest request, CancellationToken cancellationToken)
     {
@@ -25,7 +27,16 @@ public class SaveDraftCommandHandler(
             };
         }
 
-        var dto = request.SaveDraftCommandRequestDto!;
+        // BUG-001 FIX: Null guard for DTO
+        if (request.SaveDraftCommandRequestDto == null)
+        {
+            return new SaveDraftCommandResponse
+            {
+                Result = Result<Guid>.Failure(PostValidationMessages.DraftDataRequired)
+            };
+        }
+
+        var dto = request.SaveDraftCommandRequestDto;
 
         // İlk kategoriyi al
         Guid? categoryId = dto.CategoryIds.FirstOrDefault();
@@ -58,17 +69,18 @@ public class SaveDraftCommandHandler(
                 };
             }
 
-            post.Title = dto.Title;
-            post.Content = dto.Content;
-            post.Excerpt = dto.Excerpt;
+            // BUG-006 FIX: HTML sanitization for all user inputs
+            post.Title = htmlSanitizer.Sanitize(dto.Title);
+            post.Content = htmlSanitizer.Sanitize(dto.Content);
+            post.Excerpt = htmlSanitizer.Sanitize(dto.Excerpt);
             post.FeaturedImageUrl = dto.FeaturedImageUrl;
             post.CategoryId = categoryId;
             // MetaTitle max 70 karakter limiti
             post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
-                ? dto.MetaTitle
-                : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]);
-            post.MetaDescription = dto.MetaDescription;
-            post.MetaKeywords = dto.MetaKeywords;
+                ? htmlSanitizer.Sanitize(dto.MetaTitle)
+                : (dto.Title.Length <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)[..70]);
+            post.MetaDescription = htmlSanitizer.Sanitize(dto.MetaDescription);
+            post.MetaKeywords = htmlSanitizer.Sanitize(dto.MetaKeywords);
             post.UpdatedAt = DateTime.UtcNow;
 
             // Slug'ı güncelle (sadece draft ise)
@@ -102,24 +114,24 @@ public class SaveDraftCommandHandler(
                 fullSlug = $"{slugValue[..Math.Min(slugValue.Length, maxBaseLength)].TrimEnd('-')}-{timestamp}";
             }
 
-            // Yeni taslak oluştur
+            // Yeni taslak oluştur - BUG-006 FIX: HTML sanitization
             post = new BlogPost
             {
                 Id = Guid.NewGuid(),
-                Title = dto.Title,
+                Title = htmlSanitizer.Sanitize(dto.Title),
                 Slug = fullSlug,
-                Content = dto.Content,
-                Excerpt = dto.Excerpt,
+                Content = htmlSanitizer.Sanitize(dto.Content),
+                Excerpt = htmlSanitizer.Sanitize(dto.Excerpt),
                 FeaturedImageUrl = dto.FeaturedImageUrl,
                 Status = PostStatus.Draft,
                 AuthorId = userId.Value,
                 CategoryId = categoryId,
                 // MetaTitle max 70 karakter limiti
                 MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
-                    ? dto.MetaTitle
-                    : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]),
-                MetaDescription = dto.MetaDescription,
-                MetaKeywords = dto.MetaKeywords,
+                    ? htmlSanitizer.Sanitize(dto.MetaTitle)
+                    : (dto.Title.Length <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)[..70]),
+                MetaDescription = htmlSanitizer.Sanitize(dto.MetaDescription),
+                MetaKeywords = htmlSanitizer.Sanitize(dto.MetaKeywords),
                 CreatedAt = DateTime.UtcNow,
                 IsDeleted = false
             };

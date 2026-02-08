@@ -47,6 +47,22 @@ class DataClassifier:
             # Register custom recognizers
             self._add_custom_recognizers()
     
+    @staticmethod
+    def _validate_tckn(number_str: str) -> bool:
+        """Validate Turkish ID number using checksum algorithm."""
+        if len(number_str) != 11 or number_str[0] == '0':
+            return False
+        digits = [int(d) for d in number_str]
+        # 10th digit check
+        odd_sum = sum(digits[0:9:2])   # 1st, 3rd, 5th, 7th, 9th
+        even_sum = sum(digits[1:8:2])  # 2nd, 4th, 6th, 8th
+        check10 = (odd_sum * 7 - even_sum) % 10
+        if check10 != digits[9]:
+            return False
+        # 11th digit check
+        check11 = sum(digits[0:10]) % 10
+        return check11 == digits[10]
+
     def _add_custom_recognizers(self):
         """Add custom recognizers for TR context."""
         # 1. TCKN (Turkish ID)
@@ -98,6 +114,12 @@ class DataClassifier:
         except Exception as e:
             logger.error(f"Presidio analysis failed: {e}")
             return ClassificationResult(DataClassification.PUBLIC, [], 0.0, False, text)
+
+        # Post-filter: validate TCKN matches with checksum to reduce false positives
+        results = [
+            r for r in results
+            if r.entity_type != "TCKN" or self._validate_tckn(text[r.start:r.end])
+        ]
 
         # Classification
         classification = self._classify(results)

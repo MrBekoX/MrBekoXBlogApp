@@ -15,8 +15,7 @@ export async function revalidateCacheTag(tag: string): Promise<{ success: boolea
     
     revalidateTag(tag, profile);
     return { success: true };
-  } catch (error) {
-    console.error(`Failed to revalidate tag ${tag}:`, error);
+  } catch {
     return { success: false };
   }
 }
@@ -31,8 +30,7 @@ export async function revalidateAllContent(): Promise<{ success: boolean }> {
     revalidateTag('categories', 'categories');
     revalidateTag('tags', 'tags');
     return { success: true };
-  } catch (error) {
-    console.error('Failed to revalidate all content:', error);
+  } catch {
     return { success: false };
   }
 }

@@ -80,12 +80,16 @@ public sealed class RabbitMqConnection : IAsyncDisposable
     }
 
     /// <summary>
-    /// Create a new channel for publishing
+    /// Create a new channel for publishing with optional publisher confirms
     /// </summary>
-    public async Task<IChannel> CreateChannelAsync(CancellationToken cancellationToken = default)
+    public async Task<IChannel> CreateChannelAsync(bool publisherConfirms = false, CancellationToken cancellationToken = default)
     {
         var connection = await GetConnectionAsync(cancellationToken);
-        return await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        var options = new CreateChannelOptions(
+            publisherConfirmationsEnabled: publisherConfirms,
+            publisherConfirmationTrackingEnabled: publisherConfirms
+        );
+        return await connection.CreateChannelAsync(options, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

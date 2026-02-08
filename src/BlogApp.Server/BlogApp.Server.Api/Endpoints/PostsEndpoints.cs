@@ -460,6 +460,7 @@ public static class PostsEndpoints
         })
         .WithName("UpdateAiAnalysis")
         .WithDescription("Update AI analysis results for a post (called by AI Agent Service)")
+        .RequireAuthorization(policy => policy.RequireRole("Admin"))
         .Produces(204)
         .Produces(404);
 
@@ -492,6 +493,7 @@ public static class PostsEndpoints
         })
         .WithName("GenerateAiSummary")
         .WithDescription("Generate AI summary for a post (available for both users and admin)")
+        .RequireAuthorization(policy => policy.RequireRole("Admin", "Editor", "Author"))
         .Produces<ApiResponse<GenerateAiSummaryResponseDto>>(200)
         .Produces(400)
         .Produces(404);
@@ -554,6 +556,7 @@ public static class PostsEndpoints
         })
         .WithName("RequestAiAnalysis")
         .WithDescription("Request AI analysis for a post (event-driven, results via SignalR)")
+        .RequireAuthorization(policy => policy.RequireRole("Admin", "Editor", "Author"))
         .Produces<ApiResponse<RequestAiAnalysisResponseDto>>(202)
         .Produces(404);
 

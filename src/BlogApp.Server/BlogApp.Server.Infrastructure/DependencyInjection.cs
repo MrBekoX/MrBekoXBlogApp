@@ -142,6 +142,7 @@ public static class DependencyInjection
 
         // Services
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<ITagService, TagService>();
 
         // Cache Services - ICacheService extends IHybridCacheService extends IBasicCacheService
         // All interfaces resolve to the same CacheService instance
@@ -151,7 +152,7 @@ public static class DependencyInjection
         
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IFileStorageService, FileStorageService>();
-        services.AddScoped<ITagService, TagService>();
+        services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
 
         // Database Seeder
         services.AddScoped<DbSeeder>();

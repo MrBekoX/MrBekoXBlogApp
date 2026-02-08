@@ -43,32 +43,6 @@ const nextConfig: NextConfig = {
   experimental: {
     // Optimize CSS chunking to reduce preload warnings
     cssChunking: 'strict',
-    // Optimize CSS to reduce unused preload warnings
-    optimizeCss: true,
-  },
-
-  // Cache lifetime profiles for revalidateTag
-  cacheLife: {
-    default: {
-      stale: 60,
-      revalidate: 300,
-      expire: 86400,
-    },
-    posts: {
-      stale: 30,
-      revalidate: 60,
-      expire: 3600,
-    },
-    categories: {
-      stale: 300,
-      revalidate: 600,
-      expire: 86400,
-    },
-    tags: {
-      stale: 300,
-      revalidate: 600,
-      expire: 86400,
-    },
   },
 };
 

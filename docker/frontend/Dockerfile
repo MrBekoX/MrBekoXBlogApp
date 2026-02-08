@@ -1,4 +1,5 @@
 # Build stage
+# Consider pinning: node:20.11.0-alpine3.19
 FROM node:20-alpine AS build
 WORKDIR /app
 
@@ -19,24 +20,21 @@ RUN npm ci
 # Copy source files
 COPY . ./
 
-# Build application
+# Build application (standalone output)
 RUN npm run build
 
 # Production stage
+# Consider pinning: node:20.11.0-alpine3.19
 FROM node:20-alpine AS runtime
 WORKDIR /app
-
-# Install health check dependencies
-RUN apk add --no-cache curl
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nextjs -u 1001
 
-# Copy built application
-COPY --from=build --chown=nextjs:nodejs /app/.next ./.next
-COPY --from=build --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --from=build --chown=nextjs:nodejs /app/package.json ./package.json
+# Copy standalone build output
+COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 
 # Switch to non-root user
@@ -47,11 +45,11 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3000/api/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 # Set Node environment
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "node_modules/next/dist/bin/next", "start"]
+CMD ["node", "server.js"]

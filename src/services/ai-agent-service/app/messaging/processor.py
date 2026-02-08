@@ -14,11 +14,14 @@ import asyncio
 
 from app.core.config import settings
 from app.core.cache import cache
-from app.agent.simple_blog_agent import simple_blog_agent
-from app.agent.indexer import article_indexer
-from app.agent.rag_chat_handler import rag_chat_handler, ChatMessage
-from app.rag.retriever import retriever
-from app.tools.web_search import web_search_tool
+from app.agent.rag_chat_handler import ChatMessage
+from app.api.deps import (
+    get_simple_blog_agent,
+    get_article_indexer,
+    get_rag_chat_handler,
+    get_rag_retriever,
+    get_web_search_tool
+)
 from app.security.log_sanitizer import LogSanitizer
 from app.security.audit_logger import AuditLogger
 
@@ -415,9 +418,16 @@ class MessageProcessor:
         self._connection: Optional[aio_pika.RobustConnection] = None
         self._channel: Optional[aio_pika.Channel] = None
         self._exchange: Optional[aio_pika.Exchange] = None
+        
+        # Services
+        self._agent = None
+        self._indexer = None
+        self._rag_chat_handler = None
+        self._retriever = None
+        self._web_search = None
 
     async def initialize(self) -> None:
-        """Initialize RabbitMQ connection and Simple Blog Agent."""
+        """Initialize RabbitMQ connection and services."""
         # Initialize RabbitMQ connection for publishing results
         self._connection = await aio_pika.connect_robust(
             settings.rabbitmq_url,
@@ -432,9 +442,26 @@ class MessageProcessor:
             durable=True,
         )
 
-        # Initialize Simple Blog Agent
-        simple_blog_agent.initialize()
-        logger.info("Message processor initialized with RabbitMQ publisher")
+        # Initialize Services using factories from deps
+        self._agent = get_simple_blog_agent()
+        self._agent.initialize()
+        
+        self._indexer = get_article_indexer()
+        await self._indexer.initialize()
+        
+        self._retriever = get_rag_retriever()
+        await self._retriever.initialize()
+        
+        self._web_search = get_web_search_tool()
+        
+        self._rag_chat_handler = get_rag_chat_handler(
+            retriever=self._retriever,
+            web_search=self._web_search,
+            agent=self._agent
+        )
+        await self._rag_chat_handler.initialize()
+
+        logger.info("Message processor initialized with RabbitMQ publisher and services")
 
     async def shutdown(self) -> None:
         """Close RabbitMQ connection."""
@@ -619,7 +646,7 @@ class MessageProcessor:
         logger.info(f"Processing article {payload.articleId} (lang: {language}, region: {target_region})")
 
         # Run full analysis with Simple Blog Agent
-        analysis = await simple_blog_agent.full_analysis(
+        analysis = await self._agent.full_analysis(
             content=payload.content,
             target_region=target_region,
             language=language
@@ -657,19 +684,19 @@ class MessageProcessor:
 
         # Route to appropriate AI method based on message type
         if message_type == "title":
-            result = await simple_blog_agent.generate_title(content, language)
+            result = await self._agent.generate_title(content, language)
             return {"title": result["title"]}
         elif message_type == "excerpt":
-            result = await simple_blog_agent.summarize_article(content, 3, language)
+            result = await self._agent.summarize_article(content, 3, language)
             return {"excerpt": result["summary"]}
         elif message_type == "tags":
-            result = await simple_blog_agent.extract_keywords(content, 5, language)
+            result = await self._agent.extract_keywords(content, 5, language)
             return {"tags": result["keywords"]}
         elif message_type == "seo":
-            result = await simple_blog_agent.generate_seo_description(content, 160, language)
+            result = await self._agent.generate_seo_description(content, 160, language)
             return {"description": result["seo_description"]}
         elif message_type == "content_improvement":
-            result = await simple_blog_agent.improve_content(content, language)
+            result = await self._agent.improve_content(content, language)
             return {"content": result["improved_content"]}
         else:
             raise ValueError(f"Unknown AI message type: {message_type}")
@@ -827,7 +854,7 @@ class MessageProcessor:
             logger.info(f"Processing hybrid search for: {user_message[:50]}...")
 
             # 1. Generate smart search query using LLM with article content for keyword extraction
-            smart_query = await rag_chat_handler.generate_search_query(
+            smart_query = await self._rag_chat_handler.generate_search_query(
                 article_title=payload.articleTitle,
                 user_question=user_message,
                 article_content=payload.articleContent,
@@ -842,14 +869,14 @@ class MessageProcessor:
                 
             # 3. Parallel Execution: Web Search + RAG Retrieval
             # Retrieve RAG context to ground the answer
-            rag_task = retriever.retrieve_with_context(
+            rag_task = self._retriever.retrieve_with_context(
                 query=user_message,
                 post_id=post_id,
                 k=5
             )
             
             # Execute web search with smart query
-            web_task = web_search_tool.search(
+            web_task = self._web_search.search(
                 query=smart_query,
                 max_results=10,
                 region=region
@@ -863,7 +890,7 @@ class MessageProcessor:
 
             # 4. Generate Answer using Hybrid Context
             if search_results.has_results:
-                response = await rag_chat_handler.chat_with_web_search(
+                response = await self._rag_chat_handler.chat_with_web_search(
                     post_id=post_id,
                     user_message=user_message,
                     article_title=payload.articleTitle,
@@ -882,7 +909,7 @@ class MessageProcessor:
             logger.warning("Web search yielded no results, falling back to standard RAG")
 
         # Use RAG chat handler
-        response = await rag_chat_handler.chat(
+        response = await self._rag_chat_handler.chat(
             post_id=post_id,
             user_message=user_message,
             conversation_history=history,
@@ -912,7 +939,7 @@ class MessageProcessor:
         logger.info(f"Content length: {len(payload.content)} characters")
         logger.info(f"Content preview: {payload.content[:300]}...")
 
-        result = await article_indexer.index_article(
+        result = await self._indexer.index_article(
             post_id=payload.articleId,
             title=payload.title,
             content=payload.content,

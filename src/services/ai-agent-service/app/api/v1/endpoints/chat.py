@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.core.security import verify_api_key
 from app.api.dependencies import get_chat_service
 from app.services.chat_service import ChatService
 
@@ -32,7 +31,6 @@ async def chat_stream_endpoint(
     request: Request,
     body: ChatRequest,
     service: ChatService = Depends(get_chat_service),
-    _: str = Depends(verify_api_key)
 ):
     """
     Stream chat response (Server-Sent Events).
@@ -65,7 +63,6 @@ async def collect_sources(
     request: Request,
     body: CollectSourcesRequest,
     service: ChatService = Depends(get_chat_service),
-    _: str = Depends(verify_api_key)
 ):
     """
     Collect trusted web sources based on article content.
@@ -81,5 +78,5 @@ async def collect_sources(
         )
         return {"sources": sources}
     except Exception as e:
-        logger.error(f"Collect sources failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Collect sources failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred. Please try again later.")

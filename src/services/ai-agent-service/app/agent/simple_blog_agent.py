@@ -555,5 +555,4 @@ Optimization:"""
         return result
 
 
-# Global agent instance
-simple_blog_agent = SimpleBlogAgent()
+

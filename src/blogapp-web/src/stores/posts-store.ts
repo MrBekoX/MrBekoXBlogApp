@@ -220,12 +220,12 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
         try {
           const { revalidateCacheTag } = await import('@/app/actions/revalidate');
           await revalidateCacheTag('posts');
-          // Trigger router refresh for current page
+          // Trigger re-fetch instead of hard reload
           if (typeof window !== 'undefined') {
-            window.location.reload();
+            window.dispatchEvent(new CustomEvent('posts-updated'));
           }
-        } catch (error) {
-          console.error('Failed to revalidate server cache:', error);
+        } catch {
+          // revalidate error silenced
         }
         
         return true;

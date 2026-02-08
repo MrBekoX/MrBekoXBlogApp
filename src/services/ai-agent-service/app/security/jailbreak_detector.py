@@ -52,8 +52,23 @@ class SemanticJailbreakDetector:
                 "hypothetically",
                 "for educational purposes",
             ],
-            JailbreakType.OBSCURED: [],
-            JailbreakType.MULTILINGUAL: [],
+            JailbreakType.OBSCURED: [
+                "base64",
+                "rot13",
+                "decode this",
+                "hex encode",
+                "unicode escape",
+                "reverse the string",
+                "convert from binary",
+            ],
+            JailbreakType.MULTILINGUAL: [
+                "tüm talimatları unut",
+                "önceki talimatları yoksay",
+                "sistem komutlarını geçersiz kıl",
+                "ignorer les instructions",
+                "ignoriere die anweisungen",
+                "ignorar instrucciones",
+            ],
         }
 
     async def detect(self, content: str) -> JailbreakResult:
@@ -61,7 +76,11 @@ class SemanticJailbreakDetector:
         
         # Red team mode bypass
         if settings.enable_red_team_mode:
-            return JailbreakResult(False, 0.0, None, [], 0.0)
+            if not settings.debug:
+                logger.warning("Red team mode requested but blocked in production")
+            else:
+                logger.warning("Red team mode active - jailbreak detection disabled (development only)")
+                return JailbreakResult(False, 0.0, None, [], 0.0)
 
         results = []
         patterns = [] # We will populate this if we integrate with regex here or pass it in. 
@@ -193,6 +212,18 @@ class SemanticJailbreakDetector:
         # Check for indirect
         if any(p in content_lower for p in ["translate", "hypothetically", "educational"]):
             return JailbreakType.INDIRECT
+
+        # Check for obscured encoding attacks
+        if any(p in content_lower for p in ["base64", "rot13", "decode", "hex encode", "reverse the string"]):
+            return JailbreakType.OBSCURED
+
+        # Check for multilingual attacks
+        multilingual_markers = [
+            "talimatları unut", "talimatları yoksay", "komutlarını geçersiz",
+            "ignorer les", "ignoriere die", "ignorar instrucciones",
+        ]
+        if any(p in content_lower for p in multilingual_markers):
+            return JailbreakType.MULTILINGUAL
 
         if patterns:
              return JailbreakType.DIRECT # Default for regex matches usually

@@ -1,3 +1,5 @@
+import 'server-only';
+
 /**
  * Server-side API utilities for Next.js Server Components
  * Uses native fetch with Next.js caching for optimal performance
@@ -12,8 +14,9 @@ import type {
   Tag,
 } from '@/types';
 
-// API Base URL - server-side uses internal Docker network URL, client uses public URL
-const API_BASE_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
+import { SERVER_API_URL } from '@/lib/env.server';
+
+const API_BASE_URL = SERVER_API_URL;
 
 /**
  * Build query string from params object
@@ -52,14 +55,12 @@ async function serverFetch<T>(
     });
 
     if (!response.ok) {
-      console.error(`Server fetch error: ${response.status} ${response.statusText}`);
       return null;
     }
 
     const data: ApiResponse<T> = await response.json();
     return data.data ?? null;
-  } catch (error) {
-    console.error('Server fetch error:', error);
+  } catch {
     return null;
   }
 }

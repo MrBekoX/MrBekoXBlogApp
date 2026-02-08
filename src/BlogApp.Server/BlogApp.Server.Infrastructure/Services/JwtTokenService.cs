@@ -78,11 +78,19 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
 
             return true;
         }
+        catch (SecurityTokenExpiredException ex)
+        {
+            logger.LogWarning("Token expired: {Message}", ex.Message);
+            return false;
+        }
+        catch (SecurityTokenValidationException ex)
+        {
+            logger.LogWarning("Token validation failed: {ExceptionType} - {Message}", ex.GetType().Name, ex.Message);
+            return false;
+        }
         catch (Exception ex)
         {
-            // Log token validation failures for security audit trail
-            // Note: Don't log token content for security reasons
-            logger.LogWarning(ex, "Token validation failed: {ExceptionType}", ex.GetType().Name);
+            logger.LogWarning(ex, "Unexpected token error: {ExceptionType}", ex.GetType().Name);
             return false;
         }
     }
@@ -92,19 +100,44 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
         try
         {
             var tokenHandler = new JwtSecurityTokenHandler();
-            var jwtToken = tokenHandler.ReadJwtToken(token);
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.Secret));
 
-            var userIdClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "userId" || c.Type == JwtRegisteredClaimNames.Sub);
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = key,
+                ValidateIssuer = true,
+                ValidIssuer = _settings.Issuer,
+                ValidateAudience = true,
+                ValidAudience = _settings.Audience,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.Zero
+            };
 
-            if (userIdClaim is not null && Guid.TryParse(userIdClaim.Value, out var userId))
+            var principal = tokenHandler.ValidateToken(token, validationParameters, out _);
+            var userIdClaim = principal.FindFirst("userId")?.Value
+                           ?? principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+
+            if (userIdClaim is not null && Guid.TryParse(userIdClaim, out var userId))
             {
                 return userId;
             }
 
             return null;
         }
-        catch
+        catch (SecurityTokenExpiredException ex)
         {
+            logger.LogWarning("Token expired: {Message}", ex.Message);
+            return null;
+        }
+        catch (SecurityTokenValidationException ex)
+        {
+            logger.LogWarning("Token validation failed: {ExceptionType} - {Message}", ex.GetType().Name, ex.Message);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Unexpected token error: {ExceptionType}", ex.GetType().Name);
             return null;
         }
     }

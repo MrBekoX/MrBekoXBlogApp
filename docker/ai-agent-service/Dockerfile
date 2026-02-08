@@ -25,13 +25,10 @@ RUN groupadd -g 1001 appgroup && \
 # Copy application code
 COPY --chown=appuser:appgroup ./app ./app
 
-# Copy .env file if it exists (optional for production)
-COPY --chown=appuser:appgroup ./.env.example ./.env
-
 # Create data directories for persistence
 RUN mkdir -p /app/data /app/chroma_data && \
     chown -R appuser:appgroup /app/data /app/chroma_data && \
-    chmod 777 /app/chroma_data
+    chmod 750 /app/chroma_data
 
 # Switch to non-root user
 USER appuser

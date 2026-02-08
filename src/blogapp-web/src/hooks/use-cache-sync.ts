@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as signalR from '@microsoft/signalr';
+import { HUB_URL } from '@/lib/env';
 
 // Cache invalidation event types matching backend
 export type CacheInvalidationType = 'GroupRotated' | 'KeyRemoved' | 'PrefixRemoved';
@@ -20,12 +21,6 @@ interface UseCacheSyncOptions {
   /** Enable debug logging (default: false) */
   debug?: boolean;
 }
-
-// Extract base URL without /api or /api/v1 suffix for SignalR hub
-// SignalR hubs are not versioned, they live at /hubs/cache
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
-const BASE_URL = API_URL.replace(/\/api(\/v\d+)?\/?$/, '');
-const HUB_URL = `${BASE_URL}/hubs/cache`;
 
 /**
  * React hook for real-time cache synchronization with backend.
@@ -48,11 +43,9 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
     onInvalidateRef.current = onInvalidate;
   }, [onInvalidate]);
 
-  const log = useCallback((...args: unknown[]) => {
-    if (debug) {
-      console.log('[CacheSync]', ...args);
-    }
-  }, [debug]);
+  const log = useCallback((..._args: unknown[]) => {
+    // logging disabled
+  }, []);
 
   const connect = useCallback(async () => {
     if (connectionRef.current?.state === signalR.HubConnectionState.Connected) {
@@ -109,8 +102,8 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
           try {
             await connection.invoke('SubscribeToGroup', group);
             log(`Re-subscribed to group: ${group}`);
-          } catch (err) {
-            console.error(`Failed to re-subscribe to group ${group}:`, err);
+          } catch {
+            // re-subscribe error silenced
           }
         }
       });
@@ -131,8 +124,8 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
         try {
           await connection.invoke('SubscribeToGroup', group);
           log(`Subscribed to group: ${group}`);
-        } catch (err) {
-          console.error(`Failed to subscribe to group ${group}:`, err);
+        } catch {
+          // subscribe error silenced
         }
       }
     } catch (error) {
@@ -147,11 +140,8 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
         errorMessage.includes('abort');
 
       if (isBenignError) {
-        if (debug) console.debug('[CacheSync] Backend not available');
         return;
       }
-
-      console.error('Failed to connect to cache sync hub:', error);
 
       // Check if this is a rate limit error (429)
       const isRateLimitError = error instanceof Error && 
@@ -159,7 +149,6 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
       
       if (isRateLimitError) {
         isRateLimitedRef.current = true;
-        console.warn('[CacheSync] Rate limited - stopping reconnection attempts for 60 seconds');
 
         // Clear any existing timeout before setting new one
         if (rateLimitTimeoutRef.current) {
@@ -194,8 +183,6 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
           // void operator explicitly marks this as fire-and-forget
           void connect();
         }, delay);
-      } else if (retryCountRef.current > MAX_RETRIES) {
-        console.warn('[CacheSync] Max retries reached, stopping reconnection attempts');
       }
     }
   }, [groups, autoReconnect, debug, log]);
@@ -214,8 +201,8 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
 
         await connectionRef.current.stop();
         log('Disconnected from cache sync hub');
-      } catch (error) {
-        console.error('Error disconnecting:', error);
+      } catch {
+        // disconnect error silenced
       }
       connectionRef.current = null;
       isConnectedRef.current = false;

@@ -18,7 +18,7 @@ class SecureResponseHandler:
 
     # PII Patterns for Turkey and general sensitive data
     PII_PATTERNS = {
-        PIIType.TCKN: re.compile(r'\b\d{11}\b'),
+        PIIType.TCKN: re.compile(r'\b[1-9]\d{10}\b'),
         PIIType.CREDIT_CARD: re.compile(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'),
         PIIType.EMAIL: re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'),
         PIIType.PHONE: re.compile(r'\b(05\d{2})\s?\d{3}\s?\d{2}\s?\d{2}\b'),

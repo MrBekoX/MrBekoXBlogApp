@@ -1,5 +1,6 @@
 using System.Reflection;
 using BlogApp.Server.Application.Common.Interfaces.Data;
+using BlogApp.Server.Domain.Common;
 using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +45,20 @@ public class AppDbContext : DbContext, IApplicationDbContext
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        foreach (var entry in ChangeTracker.Entries<BaseAuditableEntity>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    entry.Entity.CreatedAt = DateTime.UtcNow;
+                    entry.Entity.UpdatedAt = DateTime.UtcNow;
+                    break;
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAt = DateTime.UtcNow;
+                    break;
+            }
+        }
+
         return await base.SaveChangesAsync(cancellationToken);
     }
 }

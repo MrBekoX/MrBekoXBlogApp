@@ -50,12 +50,13 @@ class KillSwitch:
 
         if self.redis:
             try:
-                await self.redis.set(
-                    self.state_key,
-                    new_state.value,
-                    ex=3600  # Auto-reset after 1 hour safety logic or maintain logic?
-                    # Skill says 3600.
-                )
+                # Emergency shutdown must persist until manually cleared (no TTL)
+                if new_state == KillSwitchState.EMERGENCY_SHUTDOWN:
+                    await self.redis.set(self.state_key, new_state.value)
+                elif new_state == KillSwitchState.NORMAL:
+                    await self.redis.delete(self.state_key)
+                else:
+                    await self.redis.set(self.state_key, new_state.value, ex=3600)
             except Exception as e:
                 logger.error(f"KillSwitch Redis Set Error: {e}")
         

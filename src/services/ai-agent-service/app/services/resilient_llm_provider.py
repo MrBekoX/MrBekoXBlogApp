@@ -64,11 +64,14 @@ class ResilientLLMProvider(ILLMProvider):
              return
 
         try:
-            # Note: Streaming sanitization is difficult without buffering.
-            # For now, we are bypassing full sanitization for streams to maintain low latency.
-            # Ideally, valid output should be checked post-generation or via chunks if possible.
+            buffer = ""
             async for chunk in self.provider.generate_stream(prompt, **kwargs):
-                yield chunk
+                buffer += chunk
+                if len(buffer) >= 100:  # Sanitize in chunks
+                    yield self.handler.sanitize_response(buffer)
+                    buffer = ""
+            if buffer:
+                yield self.handler.sanitize_response(buffer)
             self.circuit_breaker.record_success()
         except Exception as e:
             self.circuit_breaker.record_failure()

@@ -1,6 +1,7 @@
 using BlogApp.Server.Api.Hubs;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 
 namespace BlogApp.Server.Api.Services;
 
@@ -11,10 +12,14 @@ namespace BlogApp.Server.Api.Services;
 public class CacheInvalidationNotifier : ICacheInvalidationNotifier
 {
     private readonly IHubContext<CacheInvalidationHub> _hubContext;
+    private readonly ILogger<CacheInvalidationNotifier> _logger;
 
-    public CacheInvalidationNotifier(IHubContext<CacheInvalidationHub> hubContext)
+    public CacheInvalidationNotifier(
+        IHubContext<CacheInvalidationHub> hubContext,
+        ILogger<CacheInvalidationNotifier> logger)
     {
         _hubContext = hubContext;
+        _logger = logger;
     }
 
     public async Task NotifyGroupInvalidatedAsync(string groupName, CancellationToken cancellationToken = default)
@@ -29,9 +34,10 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         {
             await _hubContext.Clients.All.SendAsync("CacheInvalidated", evt, cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail - cache invalidation is not critical
+            // BUG-005: Add structured logging - cache invalidation is not critical but failures should be observable
+            _logger.LogWarning(ex, "Failed to broadcast group invalidation event for {GroupName}", groupName);
         }
     }
 
@@ -47,9 +53,10 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         {
             await _hubContext.Clients.All.SendAsync("CacheInvalidated", evt, cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail - cache invalidation is not critical
+            // BUG-005: Add structured logging - cache invalidation is not critical but failures should be observable
+            _logger.LogWarning(ex, "Failed to broadcast key removal event for {Key}", key);
         }
     }
 
@@ -65,9 +72,10 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         {
             await _hubContext.Clients.All.SendAsync("CacheInvalidated", evt, cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail - cache invalidation is not critical
+            // BUG-005: Add structured logging - cache invalidation is not critical but failures should be observable
+            _logger.LogWarning(ex, "Failed to broadcast prefix removal event for {Prefix}", prefix);
         }
     }
 
@@ -83,9 +91,10 @@ public class CacheInvalidationNotifier : ICacheInvalidationNotifier
         {
             await _hubContext.Clients.Group(groupName).SendAsync("CacheInvalidated", evt, cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail - cache invalidation is not critical
+            // BUG-005: Add structured logging - cache invalidation is not critical but failures should be observable
+            _logger.LogWarning(ex, "Failed to send group invalidation event to {GroupName} for {CacheGroup}", groupName, cacheGroup);
         }
     }
 }

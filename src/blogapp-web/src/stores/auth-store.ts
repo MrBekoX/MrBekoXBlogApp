@@ -134,14 +134,11 @@ export const useAuthStore = create<AuthState>()(
 
               // 429 rate limit - treat as unauthenticated to prevent infinite loop
               if (axiosError.response?.status === 429) {
-                console.warn('Auth check rate limited, treating as unauthenticated');
                 set({ user: null, authStatus: 'unauthenticated' });
                 return;
               }
             }
 
-            // Network errors or 5xx - treat as unauthenticated to prevent infinite loop
-            console.warn('Auth check failed:', error);
             set({ user: null, authStatus: 'unauthenticated' });
           } finally {
             authCheckPromise = null;
@@ -161,7 +158,14 @@ export const useAuthStore = create<AuthState>()(
       // On page load, if unauthenticated, don't call checkAuth
       // If authenticated, verify with backend once
       partialize: (state) => ({
-        user: state.user,
+        user: state.user ? {
+          id: state.user.id,
+          userName: state.user.userName,
+          fullName: state.user.fullName,
+          role: state.user.role,
+          avatarUrl: state.user.avatarUrl,
+          // Exclude: email
+        } as typeof state.user : null,
         authStatus: state.authStatus === 'checking' ? 'idle' : state.authStatus,
       }),
     }

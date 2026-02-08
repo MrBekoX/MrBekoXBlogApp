@@ -1,8 +1,9 @@
 """Application configuration using Pydantic Settings."""
 
 from functools import lru_cache
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pydantic import Field, validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -67,12 +68,6 @@ class Settings(BaseSettings):
 
     # NOTE: backend_api_url removed - AI Agent now uses RabbitMQ for event-driven communication
     # Results are published to "ai.analysis.completed" routing key
-
-    # API Key for HTTP endpoint protection (optional, for future plugins)
-    api_key: str = Field(
-        default="",
-        description="API Key for HTTP endpoint authentication (min 32 chars if set)"
-    )
 
     # Server Settings
     host: str = "0.0.0.0"

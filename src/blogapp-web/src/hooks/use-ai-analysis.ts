@@ -1,11 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { useAuthStore } from '@/stores/auth-store';
-
-// Extract base URL for SignalR hub
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5116/api/v1';
-const BASE_URL = API_URL.replace(/\/api(\/v\d+)?\/?$/, '');
-const HUB_URL = `${BASE_URL}/hubs/cache`;
+import { API_BASE_URL, HUB_URL } from '@/lib/env';
 
 /**
  * AI Analysis result from SignalR notification
@@ -74,11 +70,9 @@ export function useAiAnalysis(postId: string, options: UseAiAnalysisOptions = {}
     onErrorRef.current = onError;
   }, [onComplete, onError]);
 
-  const log = useCallback((...args: unknown[]) => {
-    if (debug) {
-      console.log('[AiAnalysis]', ...args);
-    }
-  }, [debug]);
+  const log = useCallback((..._args: unknown[]) => {
+    // logging disabled
+  }, []);
 
   // Connect to SignalR hub
   useEffect(() => {
@@ -124,11 +118,19 @@ export function useAiAnalysis(postId: string, options: UseAiAnalysisOptions = {}
         connection.onclose((error) => log('SignalR connection closed', error));
 
         connectionRef.current = connection;
-        
+
         await connection.start();
-        
+
         if (isMounted) {
           log('Connected to SignalR hub');
+
+          // Join post group for targeted notifications
+          try {
+            await connection.invoke('JoinPostGroup', postId);
+            log(`Joined post group: ${postId}`);
+          } catch (err) {
+            log('Failed to join post group:', err);
+          }
         }
 
       } catch (error) {
@@ -141,11 +143,8 @@ export function useAiAnalysis(postId: string, options: UseAiAnalysisOptions = {}
            errorMessage.includes('abort');
 
         if (isBenignError) {
-           if (debug) console.debug('[AiAnalysis] Connection suppressed benign error:', errorMessage);
            return;
         }
-
-        console.error('[AiAnalysis] Failed to connect to SignalR hub:', error);
       }
     };
 
@@ -154,7 +153,7 @@ export function useAiAnalysis(postId: string, options: UseAiAnalysisOptions = {}
     return () => {
       isMounted = false;
       if (connection) {
-        connection.stop().catch(() => {});
+        connection.stop().catch((err) => { if (process.env.NODE_ENV === 'development') console.error(err); });
       }
       connectionRef.current = null;
     };
@@ -182,7 +181,7 @@ export function useAiAnalysis(postId: string, options: UseAiAnalysisOptions = {}
     try {
       log(`Requesting AI analysis for post ${postId}...`);
 
-      const response = await fetch(`${API_URL}/posts/${postId}/request-ai-analysis`, {
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/request-ai-analysis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -213,8 +212,6 @@ export function useAiAnalysis(postId: string, options: UseAiAnalysisOptions = {}
 
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to request AI analysis';
-      console.error('[AiAnalysis] Request failed:', errorMsg);
-
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -264,7 +261,7 @@ export function useRequestAiAnalysis() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_URL}/posts/${postId}/request-ai-analysis`, {
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/request-ai-analysis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

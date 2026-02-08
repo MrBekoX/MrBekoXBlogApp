@@ -8,10 +8,13 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from app.core.config import settings
-from app.rag.retriever import Retriever, retriever
-from app.tools.web_search import web_search_tool
+from app.rag.retriever import Retriever
+from app.tools.web_search import WebSearchTool
+from app.agent.simple_blog_agent import SimpleBlogAgent
 
 logger = logging.getLogger(__name__)
+
+# Chat prompts
 
 # Chat prompts
 RAG_SYSTEM_PROMPT_TR = """Sen bir blog makalesini cevaplamaya yardimsever bir asistansin.
@@ -70,8 +73,15 @@ class RagChatHandler:
     then generates a response using the LLM with the retrieved context.
     """
 
-    def __init__(self, retriever_instance: Optional[Retriever] = None):
-        self._retriever = retriever_instance or retriever
+    def __init__(
+        self,
+        retriever_instance: Retriever,
+        web_search: WebSearchTool,
+        agent: SimpleBlogAgent
+    ):
+        self._retriever = retriever_instance
+        self._web_search = web_search
+        self._agent = agent
         self._llm: Optional[ChatOllama] = None
         self._initialized = False
 
@@ -206,14 +216,13 @@ class RagChatHandler:
         Returns:
             Optimized search query string
         """
-        from app.agent.simple_blog_agent import simple_blog_agent
         import re
 
         # Extract keywords from article content using LLM with tech context
         keywords_list = []
         if article_content:
             try:
-                keywords_list = await simple_blog_agent.extract_keywords(
+                keywords_list = await self._agent.extract_keywords(
                     content=article_content,
                     count=5,
                     language=language
@@ -454,7 +463,7 @@ CLEAN ANSWER:"""
 
         # Perform search using WebSearchTool
         # filter_results is already applied inside search()
-        response = await web_search_tool.search(
+        response = await self._web_search.search(
             query=query,
             max_results=max_results,
             region=region
@@ -476,5 +485,4 @@ CLEAN ANSWER:"""
         )
 
 
-# Global singleton instance
-rag_chat_handler = RagChatHandler()
+

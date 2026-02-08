@@ -32,14 +32,18 @@ public static class AiEndpoints
             var userIdClaim = user.FindFirst(NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
                 return Results.Unauthorized();
-                
+
             var response = await mediator.Send(new GenerateTitleCommandRequest
             {
                 Content = request.Content,
                 UserId = userId
             }, cancellationToken);
 
-            return Results.Ok(response.Data);
+            // Handle Result pattern
+            if (!response.Data.IsSuccess)
+                return Results.BadRequest(new { error = response.Data.Error ?? "Title generation failed" });
+
+            return Results.Ok(new GenerateTitleResponse(response.Data.Value!));
         })
         .WithName("GenerateTitle")
         .Produces<string>(StatusCodes.Status200OK)
@@ -57,14 +61,18 @@ public static class AiEndpoints
             var userIdClaim = user.FindFirst(NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
                 return Results.Unauthorized();
-                
+
             var response = await mediator.Send(new GenerateExcerptCommandRequest
             {
                 Content = request.Content,
                 UserId = userId
             }, cancellationToken);
 
-            return Results.Ok(response.Data);
+            // Handle Result pattern
+            if (!response.Data.IsSuccess)
+                return Results.BadRequest(new { error = response.Data.Error ?? "Excerpt generation failed" });
+
+            return Results.Ok(new GenerateExcerptResponse(response.Data.Value!));
         })
         .WithName("GenerateExcerpt")
         .Produces<string>(StatusCodes.Status200OK)
@@ -82,14 +90,18 @@ public static class AiEndpoints
             var userIdClaim = user.FindFirst(NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
                 return Results.Unauthorized();
-                
+
             var response = await mediator.Send(new GenerateTagsCommandRequest
             {
                 Content = request.Content,
                 UserId = userId
             }, cancellationToken);
 
-            return Results.Ok(response.Data);
+            // Handle Result pattern
+            if (!response.Data.IsSuccess)
+                return Results.BadRequest(new { error = response.Data.Error ?? "Tags generation failed" });
+
+            return Results.Ok(new GenerateTagsResponse(response.Data.Value!));
         })
         .WithName("GenerateTags")
         .Produces<string[]>(StatusCodes.Status200OK)
@@ -107,14 +119,18 @@ public static class AiEndpoints
             var userIdClaim = user.FindFirst(NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
                 return Results.Unauthorized();
-                
+
             var response = await mediator.Send(new GenerateSeoDescriptionCommandRequest
             {
                 Content = request.Content,
                 UserId = userId
             }, cancellationToken);
 
-            return Results.Ok(response.Data);
+            // Handle Result pattern
+            if (!response.Data.IsSuccess)
+                return Results.BadRequest(new { error = response.Data.Error ?? "SEO description generation failed" });
+
+            return Results.Ok(new GenerateSeoResponse(response.Data.Value!));
         })
         .WithName("GenerateSeoDescription")
         .Produces<string>(StatusCodes.Status200OK)
@@ -132,14 +148,18 @@ public static class AiEndpoints
             var userIdClaim = user.FindFirst(NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
                 return Results.Unauthorized();
-                
+
             var response = await mediator.Send(new ImproveContentCommandRequest
             {
                 Content = request.Content,
                 UserId = userId
             }, cancellationToken);
 
-            return Results.Ok(response.Data);
+            // Handle Result pattern
+            if (!response.Data.IsSuccess)
+                return Results.BadRequest(new { error = response.Data.Error ?? "Content improvement failed" });
+
+            return Results.Ok(new ImproveContentResponse(response.Data.Value!));
         })
         .WithName("ImproveContent")
         .Produces<string>(StatusCodes.Status200OK)

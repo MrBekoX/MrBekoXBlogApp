@@ -18,7 +18,8 @@ public class UpdatePostCommandHandler(
     IPostBusinessRules postBusinessRules,
     ITagService tagService,
     ICacheService cacheService,
-    ILogger<UpdatePostCommandHandler> logger) : IRequestHandler<UpdatePostCommandRequest, UpdatePostCommandResponse>
+    ILogger<UpdatePostCommandHandler> logger,
+    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<UpdatePostCommandRequest, UpdatePostCommandResponse>
 {
     public async Task<UpdatePostCommandResponse> Handle(UpdatePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -47,6 +48,17 @@ public class UpdatePostCommandHandler(
             return new UpdatePostCommandResponse
             {
                 Result = Result.Failure(PostBusinessRuleMessages.PostNotFoundGeneric)
+            };
+        }
+
+        // BOLA check: Authors can only edit their own posts
+        var currentUserId = currentUserService.UserId;
+        if (!currentUserService.IsInRole("Admin") && !currentUserService.IsInRole("Editor")
+            && post.AuthorId != currentUserId)
+        {
+            return new UpdatePostCommandResponse
+            {
+                Result = Result.Failure("You can only edit your own posts")
             };
         }
 
@@ -86,21 +98,33 @@ public class UpdatePostCommandHandler(
         };
 
         // Diğer alanları güncelle
-        post.Title = dto.Title;
-        post.Content = dto.Content;
-        post.Excerpt = dto.Excerpt;
+        post.Title = htmlSanitizer.Sanitize(dto.Title);
+        post.Content = htmlSanitizer.Sanitize(dto.Content);
+        post.Excerpt = htmlSanitizer.Sanitize(dto.Excerpt);
         post.FeaturedImageUrl = dto.FeaturedImageUrl;
         post.CategoryId = categoryId;
         // MetaTitle max 70 karakter limiti
         post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
-            ? dto.MetaTitle
-            : (dto.Title.Length <= 70 ? dto.Title : dto.Title[..70]);
-        post.MetaDescription = dto.MetaDescription;
-        post.MetaKeywords = dto.MetaKeywords;
+            ? htmlSanitizer.Sanitize(dto.MetaTitle)
+            : (dto.Title.Length <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)[..70]);
+        post.MetaDescription = htmlSanitizer.Sanitize(dto.MetaDescription);
+        post.MetaKeywords = htmlSanitizer.Sanitize(dto.MetaKeywords);
         post.IsFeatured = dto.IsFeatured;
         post.Status = status;
         post.UpdatedAt = DateTime.UtcNow;
         post.UpdatedBy = currentUserService.UserName;
+
+        // AI-generated fields (only update if provided)
+        if (dto.AiSummary != null)
+            post.AiSummary = htmlSanitizer.Sanitize(dto.AiSummary);
+        if (dto.AiKeywords != null)
+            post.AiKeywords = htmlSanitizer.Sanitize(dto.AiKeywords);
+        if (dto.AiEstimatedReadingTime.HasValue)
+            post.AiEstimatedReadingTime = dto.AiEstimatedReadingTime.Value;
+        if (dto.AiSeoDescription != null)
+            post.AiSeoDescription = htmlSanitizer.Sanitize(dto.AiSeoDescription);
+        if (dto.AiGeoOptimization != null)
+            post.AiGeoOptimization = htmlSanitizer.Sanitize(dto.AiGeoOptimization);
 
         // Yayınlanma tarihi kontrolü
         if (status == PostStatus.Published && post.PublishedAt == null)

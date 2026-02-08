@@ -1,7 +1,7 @@
 from typing import Optional, List
 import logging
 from app.rag.retriever import Retriever, RetrievalResult, retriever as default_retriever
-from app.rag.vector_store import VectorStore
+from app.infrastructure.vector_store.chroma_adapter import ChromaAdapter as VectorStore
 # from app.security.audit_logger import audit_logger # If exists
 # Mock audit logger import if missing or circular dep risk
 

@@ -1,5 +1,6 @@
 """Chroma vector store adapter - Concrete implementation of IVectorStore."""
 
+import asyncio
 import logging
 
 import chromadb
@@ -46,7 +47,7 @@ class ChromaAdapter(IVectorStore):
             path=self._persist_dir,
             settings=ChromaSettings(
                 anonymized_telemetry=False,
-                allow_reset=True
+                allow_reset=settings.debug
             )
         )
 
@@ -343,7 +344,7 @@ class ChromaAdapter(IVectorStore):
 
             # Create unique ID for this query
             import hashlib
-            query_hash = hashlib.md5(query_text.encode()).hexdigest()
+            query_hash = hashlib.sha256(query_text.encode()).hexdigest()
             query_id = f"cached_query_{query_hash}"
 
             # Prepare metadata with response and timestamp
@@ -368,3 +369,54 @@ class ChromaAdapter(IVectorStore):
 
         except Exception as e:
             logger.error(f"Error caching query: {e}")
+
+    # ==================== Async Wrappers ====================
+
+    async def add_chunks_async(
+        self,
+        post_id: str,
+        chunks: list[TextChunk],
+        embeddings: list[list[float]]
+    ) -> int:
+        """Async wrapper for add_chunks — runs in a thread to avoid blocking the event loop."""
+        return await asyncio.to_thread(self.add_chunks, post_id, chunks, embeddings)
+
+    async def delete_post_chunks_async(self, post_id: str) -> int:
+        """Async wrapper for delete_post_chunks."""
+        return await asyncio.to_thread(self.delete_post_chunks, post_id)
+
+    async def search_async(
+        self,
+        query_embedding: list[float],
+        post_id: str | None = None,
+        k: int = 5
+    ) -> list[VectorChunk]:
+        """Async wrapper for search."""
+        return await asyncio.to_thread(self.search, query_embedding, post_id, k)
+
+    async def get_post_chunks_async(self, post_id: str) -> list[VectorChunk]:
+        """Async wrapper for get_post_chunks."""
+        return await asyncio.to_thread(self.get_post_chunks, post_id)
+
+    async def get_total_count_async(self) -> int:
+        """Async wrapper for get_total_count."""
+        return await asyncio.to_thread(self.get_total_count)
+
+    async def search_queries_async(
+        self,
+        query_embedding: list[float],
+        k: int = 1,
+        threshold: float = 0.95
+    ) -> list[dict]:
+        """Async wrapper for search_queries."""
+        return await asyncio.to_thread(self.search_queries, query_embedding, k, threshold)
+
+    async def cache_query_async(
+        self,
+        query_text: str,
+        query_embedding: list[float],
+        response: any,
+        metadata: dict | None = None
+    ) -> None:
+        """Async wrapper for cache_query."""
+        await asyncio.to_thread(self.cache_query, query_text, query_embedding, response, metadata)

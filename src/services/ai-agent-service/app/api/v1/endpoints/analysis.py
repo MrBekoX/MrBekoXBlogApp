@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.core.security import verify_api_key
 from app.api.dependencies import (
     get_analysis_service,
     get_seo_service,
@@ -36,7 +35,7 @@ CACHE_TTL = 3600
 
 def _cache_key(prefix: str, content: str, **kwargs) -> str:
     """Generate cache key from content hash and parameters."""
-    content_hash = hashlib.md5(content.encode()).hexdigest()[:16]
+    content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
     params = "_".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
     return f"ai:{prefix}:{content_hash}:{params}" if params else f"ai:{prefix}:{content_hash}"
 
@@ -48,7 +47,6 @@ async def full_analysis(
     body: AnalyzeRequest,
     service: AnalysisService = Depends(get_analysis_service),
     cache: ICache = Depends(get_cache),
-    _: str = Depends(verify_api_key)
 ):
     """
     Perform full article analysis.
@@ -73,8 +71,8 @@ async def full_analysis(
         await cache.set_json(cache_key, response, CACHE_TTL)
         return response
     except Exception as e:
-        logger.error(f"Full analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Full analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred. Please try again later.")
 
 
 @router.post("/summarize")
@@ -84,7 +82,6 @@ async def summarize_article(
     body: SummarizeRequest,
     service: AnalysisService = Depends(get_analysis_service),
     cache: ICache = Depends(get_cache),
-    _: str = Depends(verify_api_key)
 ):
     """Generate article summary."""
     cache_key = _cache_key("summarize", body.content, lang=body.language, max=body.max_sentences)
@@ -103,8 +100,8 @@ async def summarize_article(
         await cache.set_json(cache_key, result, CACHE_TTL)
         return result
     except Exception as e:
-        logger.error(f"Summarization failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Summarization failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred. Please try again later.")
 
 
 @router.post("/keywords")
@@ -114,7 +111,6 @@ async def extract_keywords(
     body: KeywordsRequest,
     service: AnalysisService = Depends(get_analysis_service),
     cache: ICache = Depends(get_cache),
-    _: str = Depends(verify_api_key)
 ):
     """Extract keywords from content."""
     cache_key = _cache_key("keywords", body.content, lang=body.language, count=body.count)
@@ -133,8 +129,8 @@ async def extract_keywords(
         await cache.set_json(cache_key, result, CACHE_TTL)
         return result
     except Exception as e:
-        logger.error(f"Keyword extraction failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Keyword extraction failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred. Please try again later.")
 
 
 @router.post("/seo-description")
@@ -144,7 +140,6 @@ async def generate_seo_description(
     body: SeoRequest,
     service: SeoService = Depends(get_seo_service),
     cache: ICache = Depends(get_cache),
-    _: str = Depends(verify_api_key)
 ):
     """Generate SEO meta description."""
     cache_key = _cache_key("seo", body.content, lang=body.language, max=body.max_length)
@@ -163,8 +158,8 @@ async def generate_seo_description(
         await cache.set_json(cache_key, result, CACHE_TTL)
         return result
     except Exception as e:
-        logger.error(f"SEO description failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"SEO description failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred. Please try again later.")
 
 
 @router.post("/sentiment")
@@ -174,7 +169,6 @@ async def analyze_sentiment(
     body: SentimentRequest,
     service: AnalysisService = Depends(get_analysis_service),
     cache: ICache = Depends(get_cache),
-    _: str = Depends(verify_api_key)
 ):
     """Analyze content sentiment."""
     cache_key = _cache_key("sentiment", body.content, lang=body.language)
@@ -192,8 +186,8 @@ async def analyze_sentiment(
         await cache.set_json(cache_key, response, CACHE_TTL)
         return response
     except Exception as e:
-        logger.error(f"Sentiment analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Sentiment analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred. Please try again later.")
 
 
 @router.post("/reading-time")
@@ -202,7 +196,6 @@ def calculate_reading_time(
     request: Request,
     body: ReadingTimeRequest,
     service: AnalysisService = Depends(get_analysis_service),
-    _: str = Depends(verify_api_key)
 ):
     """Calculate estimated reading time."""
     result = service.calculate_reading_time(
@@ -219,7 +212,6 @@ async def optimize_for_geo(
     body: GeoOptimizeRequest,
     service: SeoService = Depends(get_seo_service),
     cache: ICache = Depends(get_cache),
-    _: str = Depends(verify_api_key)
 ):
     """Optimize content for specific region (GEO targeting)."""
     cache_key = _cache_key("geo", body.content, lang=body.language, region=body.target_region)
@@ -238,5 +230,5 @@ async def optimize_for_geo(
         await cache.set_json(cache_key, response, CACHE_TTL)
         return response
     except Exception as e:
-        logger.error(f"GEO optimization failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"GEO optimization failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred. Please try again later.")

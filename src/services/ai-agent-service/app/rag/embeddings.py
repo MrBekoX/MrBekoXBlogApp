@@ -129,5 +129,4 @@ class EmbeddingService:
         return EMBEDDING_DIMENSIONS
 
 
-# Global singleton instance
-embedding_service = EmbeddingService()
+

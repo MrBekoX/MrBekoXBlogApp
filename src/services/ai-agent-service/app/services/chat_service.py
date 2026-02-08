@@ -626,10 +626,36 @@ Answer ONLY "YES" or "NO"."""
             return is_relevant
 
         except Exception as e:
-            # Fail-open: if check fails, allow query to proceed
-            # This ensures availability even when LLM check fails
-            logger.error(f"[RELEVANCE_CHECK] LLM check failed: {e}, defaulting to True (fail-open)")
-            return True
+            # BUG-014: Fail-safe - if LLM check fails, use deterministic rules instead of blindly allowing
+            # This prevents unrelated queries from being processed when the LLM is unavailable
+            logger.error(f"[RELEVANCE_CHECK] LLM check failed: {e}, applying fail-safe deterministic rules")
+
+            # Fail-safe deterministic rules:
+            # 1. Very low similarity -> reject
+            if similarity_score < 0.25:
+                logger.warning(f"[RELEVANCE_FAILSAFE] Rejected due to low similarity {similarity_score:.3f}")
+                return False
+
+            # 2. High similarity (>0.50) -> likely relevant
+            if similarity_score >= 0.50:
+                logger.info(f"[RELEVANCE_FAILSAFE] Accepted due to high similarity {similarity_score:.3f}")
+                return True
+
+            # 3. Medium similarity (0.25-0.50) -> conservative: check for keyword overlap
+            query_lower = query.lower()
+            context_lower = context[:1000].lower()  # Check first 1000 chars for keywords
+
+            # Extract meaningful words from query (remove short words and common stopwords)
+            query_words = [w for w in query_lower.split() if len(w) > 3]
+            meaningful_matches = sum(1 for word in query_words if word in context_lower)
+
+            # Require at least 2 meaningful word matches for medium similarity
+            is_relevant = meaningful_matches >= 2
+            logger.info(
+                f"[RELEVANCE_FAILSAFE] Keyword overlap check: "
+                f"similarity={similarity_score:.3f}, matches={meaningful_matches}, result={is_relevant}"
+            )
+            return is_relevant
 
     def _get_no_context_response(self, language: str) -> str:
         """Get response when no context found."""

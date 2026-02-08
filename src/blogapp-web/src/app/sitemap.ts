@@ -25,14 +25,12 @@ async function getPosts(): Promise<Post[]> {
     });
     
     if (!response.ok) {
-      console.error('Failed to fetch posts for sitemap');
       return [];
     }
-    
+
     const data: ApiResponse<Post[]> = await response.json();
     return data.items || [];
-  } catch (error) {
-    console.error('Error fetching posts for sitemap:', error);
+  } catch {
     return [];
   }
 }

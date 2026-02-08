@@ -28,6 +28,9 @@ chroma_data/
 .github
 ci-cd.yml
 
+# PowerShell scripts (utility/ops scripts)
+run-search-migration.ps1
+
 # ASP.NET Core Sensitive Configuration
 # Development appsettings (contains secrets)
 **/appsettings.Development.json

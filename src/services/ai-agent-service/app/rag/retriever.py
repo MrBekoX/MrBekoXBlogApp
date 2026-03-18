@@ -106,6 +106,27 @@ class Retriever:
             if chunk.similarity_score >= min_similarity
         ]
 
+        # PII filtering hook — redact sensitive data from retrieved content
+        try:
+            from app.security.data_classifier import DataClassifier
+            _classifier = DataClassifier()
+            safe_chunks = []
+            for chunk in filtered_chunks:
+                result = _classifier.classify_and_redact(chunk.content)
+                if result.pii_entities:
+                    safe_chunks.append(StoredChunk(
+                        content=result.anonymized_text,
+                        post_id=chunk.post_id,
+                        chunk_index=chunk.chunk_index,
+                        similarity_score=chunk.similarity_score,
+                        metadata=chunk.metadata,
+                    ))
+                else:
+                    safe_chunks.append(chunk)
+            filtered_chunks = safe_chunks
+        except Exception:
+            pass  # Fail-open: don't break retrieval if classifier has an issue
+
         logger.debug(
             f"Retrieved {len(filtered_chunks)}/{len(chunks)} chunks for query: "
             f"{query[:50]}... (post_id={post_id})"

@@ -21,178 +21,401 @@ public static class AuthEndpoints
             .HasApiVersion(1.0)
             .WithTags("Auth");
 
-        // POST /api/auth/login
+        // POST /api/v1/auth/login
         group.MapPost("/login", async (
             LoginCommandDto dto,
             IMediator mediator,
             HttpContext context,
+            IUnitOfWork unitOfWork,
+            IIdempotencyService idempotencyService,
+            ICurrentUserService currentUserService,
             IWebHostEnvironment environment,
             CancellationToken cancellationToken) =>
         {
-            var response = await mediator.Send(new LoginCommandRequest
+            var ipAddress = CookieHelper.GetIpAddress(context);
+            var requestPayload = new
             {
-                LoginCommandRequestDto = new LoginCommandDto
-                {
-                    Email = dto.Email,
-                    Password = dto.Password,
-                    IpAddress = CookieHelper.GetIpAddress(context)
-                }
-            }, cancellationToken);
-
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
-
-            var isProduction = !environment.IsDevelopment();
-            CookieHelper.SetAuthCookies(
-                context.Response,
-                response.Result.Value!.AccessToken,
-                response.Result.Value.RefreshToken,
-                response.Result.Value.ExpiresAt,
-                isProduction);
-
-            var result = new AuthResponseWithCookiesDto
-            {
-                ExpiresAt = response.Result.Value.ExpiresAt,
-                User = response.Result.Value.User
+                dto.Email,
+                dto.Password,
+                IpAddress = ipAddress
             };
 
-            return Results.Ok(ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(result, "Login successful"));
+            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
+                context,
+                "AuthLogin",
+                requestPayload,
+                unitOfWork,
+                idempotencyService,
+                currentUserService,
+                cancellationToken,
+                requireIdempotencyKey: true);
+            if (!proceed) return earlyReturn!;
+            await using var scope = idempotencyScope;
+
+            try
+            {
+                var response = await mediator.Send(new LoginCommandRequest
+                {
+                    LoginCommandRequestDto = new LoginCommandDto
+                    {
+                        Email = dto.Email,
+                        Password = dto.Password,
+                        IpAddress = ipAddress
+                    }
+                }, cancellationToken);
+
+                if (!response.Result.IsSuccess)
+                {
+                    var badRequest = ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!);
+                    await scope.CompleteAndCommitAsync(
+                        StatusCodes.Status400BadRequest,
+                        badRequest,
+                        idempotencyService,
+                        cancellationToken,
+                        context.Response);
+                    return Results.BadRequest(badRequest);
+                }
+
+                if (response.Result.Value is null)
+                {
+                    var badRequest = ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Login failed: No response data");
+                    await scope.CompleteAndCommitAsync(
+                        StatusCodes.Status400BadRequest,
+                        badRequest,
+                        idempotencyService,
+                        cancellationToken,
+                        context.Response);
+                    return Results.BadRequest(badRequest);
+                }
+
+                var isProduction = !environment.IsDevelopment();
+                CookieHelper.SetAuthCookies(
+                    context.Response,
+                    response.Result.Value.AccessToken,
+                    response.Result.Value.RefreshToken,
+                    response.Result.Value.ExpiresAt,
+                    isProduction);
+
+                var result = ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(new AuthResponseWithCookiesDto
+                {
+                    ExpiresAt = response.Result.Value.ExpiresAt,
+                    User = response.Result.Value.User
+                }, "Login successful");
+
+                await scope.CompleteAndCommitAsync(
+                    StatusCodes.Status200OK,
+                    result,
+                    idempotencyService,
+                    cancellationToken,
+                    context.Response);
+
+                return Results.Ok(result);
+            }
+            catch
+            {
+                throw;
+            }
         })
         .WithName("Login")
         .WithDescription("User login")
         .Produces<ApiResponse<AuthResponseWithCookiesDto>>(200)
         .Produces(400);
 
-        // POST /api/auth/register
+        // POST /api/v1/auth/register
         group.MapPost("/register", async (
             RegisterCommandDto dto,
             IMediator mediator,
             HttpContext context,
+            IUnitOfWork unitOfWork,
+            IIdempotencyService idempotencyService,
+            ICurrentUserService currentUserService,
             IWebHostEnvironment environment,
             CancellationToken cancellationToken) =>
         {
-            var response = await mediator.Send(new RegisterCommandRequest
+            var ipAddress = CookieHelper.GetIpAddress(context);
+            var requestPayload = new
             {
-                RegisterCommandRequestDto = new RegisterCommandDto
-                {
-                    UserName = dto.UserName,
-                    Email = dto.Email,
-                    Password = dto.Password,
-                    ConfirmPassword = dto.ConfirmPassword,
-                    FirstName = dto.FirstName,
-                    LastName = dto.LastName,
-                    IpAddress = CookieHelper.GetIpAddress(context)
-                }
-            }, cancellationToken);
-
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
-
-            var isProduction = !environment.IsDevelopment();
-            CookieHelper.SetAuthCookies(
-                context.Response,
-                response.Result.Value!.AccessToken,
-                response.Result.Value.RefreshToken,
-                response.Result.Value.ExpiresAt,
-                isProduction);
-
-            var result = new AuthResponseWithCookiesDto
-            {
-                ExpiresAt = response.Result.Value.ExpiresAt,
-                User = response.Result.Value.User
+                dto.UserName,
+                dto.Email,
+                dto.Password,
+                dto.ConfirmPassword,
+                dto.FirstName,
+                dto.LastName,
+                IpAddress = ipAddress
             };
 
-            return Results.Created("/api/auth/login", ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(result, "Registration successful"));
+            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
+                context,
+                "AuthRegister",
+                requestPayload,
+                unitOfWork,
+                idempotencyService,
+                currentUserService,
+                cancellationToken,
+                requireIdempotencyKey: true);
+            if (!proceed) return earlyReturn!;
+            await using var scope = idempotencyScope;
+
+            try
+            {
+                var response = await mediator.Send(new RegisterCommandRequest
+                {
+                    RegisterCommandRequestDto = new RegisterCommandDto
+                    {
+                        UserName = dto.UserName,
+                        Email = dto.Email,
+                        Password = dto.Password,
+                        ConfirmPassword = dto.ConfirmPassword,
+                        FirstName = dto.FirstName,
+                        LastName = dto.LastName,
+                        IpAddress = ipAddress
+                    }
+                }, cancellationToken);
+
+                if (!response.Result.IsSuccess)
+                {
+                    var badRequest = ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!);
+                    await scope.CompleteAndCommitAsync(
+                        StatusCodes.Status400BadRequest,
+                        badRequest,
+                        idempotencyService,
+                        cancellationToken,
+                        context.Response);
+                    return Results.BadRequest(badRequest);
+                }
+
+                if (response.Result.Value is null)
+                {
+                    var badRequest = ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Registration failed: No response data");
+                    await scope.CompleteAndCommitAsync(
+                        StatusCodes.Status400BadRequest,
+                        badRequest,
+                        idempotencyService,
+                        cancellationToken,
+                        context.Response);
+                    return Results.BadRequest(badRequest);
+                }
+
+                var isProduction = !environment.IsDevelopment();
+                CookieHelper.SetAuthCookies(
+                    context.Response,
+                    response.Result.Value.AccessToken,
+                    response.Result.Value.RefreshToken,
+                    response.Result.Value.ExpiresAt,
+                    isProduction);
+
+                context.Response.Headers.Location = "/api/v1/auth/login";
+                var result = ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(new AuthResponseWithCookiesDto
+                {
+                    ExpiresAt = response.Result.Value.ExpiresAt,
+                    User = response.Result.Value.User
+                }, "Registration successful");
+
+                await scope.CompleteAndCommitAsync(
+                    StatusCodes.Status201Created,
+                    result,
+                    idempotencyService,
+                    cancellationToken,
+                    context.Response);
+
+                return Results.Created("/api/v1/auth/login", result);
+            }
+            catch
+            {
+                throw;
+            }
         })
         .WithName("Register")
         .WithDescription("User registration")
         .Produces<ApiResponse<AuthResponseWithCookiesDto>>(201)
         .Produces(400);
 
-        // POST /api/auth/refresh-token
+        // POST /api/v1/auth/refresh-token
         group.MapPost("/refresh-token", async (
             IMediator mediator,
             HttpContext context,
+            IUnitOfWork unitOfWork,
+            IIdempotencyService idempotencyService,
+            ICurrentUserService currentUserService,
             IWebHostEnvironment environment,
             CancellationToken cancellationToken) =>
         {
-            var refreshToken = context.Request.Cookies["BlogApp.RefreshToken"];
+            var refreshToken = context.Request.Cookies["refreshToken"];
+            var ipAddress = CookieHelper.GetIpAddress(context);
             var isProduction = !environment.IsDevelopment();
+            var requestHash = IdempotencyEndpointHelper.CreateHeaderOnlyRequestHash(
+                "AuthRefreshToken",
+                refreshToken,
+                ipAddress);
 
-            if (string.IsNullOrEmpty(refreshToken))
-            {
-                CookieHelper.ClearAuthCookies(context.Response, isProduction);
-                return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Refresh token not found"));
-            }
-
-            var response = await mediator.Send(new RefreshTokenCommandRequest
-            {
-                RefreshTokenCommandRequestDto = new RefreshTokenCommandDto
+            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
+                context,
+                "AuthRefreshToken",
+                new
                 {
-                    RefreshToken = refreshToken,
-                    IpAddress = CookieHelper.GetIpAddress(context)
+                    HasRefreshToken = !string.IsNullOrWhiteSpace(refreshToken)
+                },
+                unitOfWork,
+                idempotencyService,
+                currentUserService,
+                cancellationToken,
+                requireIdempotencyKey: true,
+                requestHash: requestHash);
+            if (!proceed) return earlyReturn!;
+            await using var scope = idempotencyScope;
+
+            try
+            {
+                if (string.IsNullOrEmpty(refreshToken))
+                {
+                    CookieHelper.ClearAuthCookies(context.Response, isProduction);
+                    var badRequest = ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Refresh token not found");
+                    await scope.CompleteAndCommitAsync(
+                        StatusCodes.Status400BadRequest,
+                        badRequest,
+                        idempotencyService,
+                        cancellationToken,
+                        context.Response);
+                    return Results.BadRequest(badRequest);
                 }
-            }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-            {
-                CookieHelper.ClearAuthCookies(context.Response, isProduction);
-                return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
+                var response = await mediator.Send(new RefreshTokenCommandRequest
+                {
+                    RefreshTokenCommandRequestDto = new RefreshTokenCommandDto
+                    {
+                        RefreshToken = refreshToken,
+                        IpAddress = ipAddress
+                    }
+                }, cancellationToken);
+
+                if (!response.Result.IsSuccess)
+                {
+                    CookieHelper.ClearAuthCookies(context.Response, isProduction);
+                    var badRequest = ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!);
+                    await scope.CompleteAndCommitAsync(
+                        StatusCodes.Status400BadRequest,
+                        badRequest,
+                        idempotencyService,
+                        cancellationToken,
+                        context.Response);
+                    return Results.BadRequest(badRequest);
+                }
+
+                if (response.Result.Value is null)
+                {
+                    CookieHelper.ClearAuthCookies(context.Response, isProduction);
+                    var badRequest = ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Token refresh failed: No response data");
+                    await scope.CompleteAndCommitAsync(
+                        StatusCodes.Status400BadRequest,
+                        badRequest,
+                        idempotencyService,
+                        cancellationToken,
+                        context.Response);
+                    return Results.BadRequest(badRequest);
+                }
+
+                CookieHelper.SetAuthCookies(
+                    context.Response,
+                    response.Result.Value.AccessToken,
+                    response.Result.Value.RefreshToken,
+                    response.Result.Value.ExpiresAt,
+                    isProduction);
+
+                var result = ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(new AuthResponseWithCookiesDto
+                {
+                    ExpiresAt = response.Result.Value.ExpiresAt,
+                    User = response.Result.Value.User
+                }, "Token refreshed");
+
+                await scope.CompleteAndCommitAsync(
+                    StatusCodes.Status200OK,
+                    result,
+                    idempotencyService,
+                    cancellationToken,
+                    context.Response);
+
+                return Results.Ok(result);
             }
-
-            CookieHelper.SetAuthCookies(
-                context.Response,
-                response.Result.Value!.AccessToken,
-                response.Result.Value.RefreshToken,
-                response.Result.Value.ExpiresAt,
-                isProduction);
-
-            var result = new AuthResponseWithCookiesDto
+            catch
             {
-                ExpiresAt = response.Result.Value.ExpiresAt,
-                User = response.Result.Value.User
-            };
-
-            return Results.Ok(ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(result, "Token refreshed"));
+                throw;
+            }
         })
         .WithName("RefreshToken")
         .WithDescription("Refresh access token")
         .Produces<ApiResponse<AuthResponseWithCookiesDto>>(200)
         .Produces(400);
 
-        // POST /api/auth/logout
+        // POST /api/v1/auth/logout
         group.MapPost("/logout", async (
             IUnitOfWork unitOfWork,
             HttpContext context,
+            IIdempotencyService idempotencyService,
+            ICurrentUserService currentUserService,
             IWebHostEnvironment environment,
             CancellationToken cancellationToken) =>
         {
-            var refreshToken = context.Request.Cookies["BlogApp.RefreshToken"];
+            var refreshToken = context.Request.Cookies["refreshToken"];
             var isProduction = !environment.IsDevelopment();
+            var requestHash = IdempotencyEndpointHelper.CreateHeaderOnlyRequestHash(
+                "AuthLogout",
+                refreshToken,
+                CookieHelper.GetIpAddress(context));
 
-            if (!string.IsNullOrEmpty(refreshToken))
-            {
-                var storedToken = await unitOfWork.RefreshTokensRead.GetSingleAsync(t => t.Token == refreshToken);
-
-                if (storedToken != null)
+            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
+                context,
+                "AuthLogout",
+                new
                 {
-                    storedToken.RevokedAt = DateTime.UtcNow;
-                    storedToken.RevokedByIp = CookieHelper.GetIpAddress(context);
-                    storedToken.ReasonRevoked = "Logged out";
-                    await unitOfWork.RefreshTokensWrite.UpdateAsync(storedToken);
-                    await unitOfWork.SaveChangesAsync(cancellationToken);
+                    HasRefreshToken = !string.IsNullOrWhiteSpace(refreshToken)
+                },
+                unitOfWork,
+                idempotencyService,
+                currentUserService,
+                cancellationToken,
+                requireIdempotencyKey: true,
+                requestHash: requestHash);
+            if (!proceed) return earlyReturn!;
+            await using var scope = idempotencyScope;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(refreshToken))
+                {
+                    var storedToken = await unitOfWork.RefreshTokensRead.GetSingleAsync(t => t.Token == refreshToken);
+
+                    if (storedToken != null)
+                    {
+                        storedToken.RevokedAt = DateTime.UtcNow;
+                        storedToken.RevokedByIp = CookieHelper.GetIpAddress(context);
+                        storedToken.ReasonRevoked = "Logged out";
+                        await unitOfWork.RefreshTokensWrite.UpdateAsync(storedToken);
+                        await unitOfWork.SaveChangesAsync(cancellationToken);
+                    }
                 }
+
+                CookieHelper.ClearAuthCookies(context.Response, isProduction);
+
+                var result = ApiResponse<object>.SuccessResult(new { }, "Logged out successfully");
+                await scope.CompleteAndCommitAsync(
+                    StatusCodes.Status200OK,
+                    result,
+                    idempotencyService,
+                    cancellationToken,
+                    context.Response);
+
+                return Results.Ok(result);
             }
-
-            CookieHelper.ClearAuthCookies(context.Response, isProduction);
-
-            return Results.Ok(ApiResponse<object>.SuccessResult(new { }, "Logged out successfully"));
+            catch
+            {
+                throw;
+            }
         })
         .WithName("Logout")
         .WithDescription("Logout and clear auth cookies")
         .Produces<ApiResponse<object>>(200);
 
-        // GET /api/auth/me
+        // GET /api/v1/auth/me
         group.MapGet("/me", async (
             IUnitOfWork unitOfWork,
             HttpContext context,
@@ -200,7 +423,9 @@ public static class AuthEndpoints
         {
             var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
-                return Results.Unauthorized();
+                return Results.Json(
+                    ApiResponse<UserInfoDto>.FailureResult("User not authenticated or invalid user ID"),
+                    statusCode: StatusCodes.Status401Unauthorized);
 
             var user = await unitOfWork.UsersRead.GetByIdAsync(userId);
             if (user is null)

@@ -1,141 +1,199 @@
-"""AI Generation-related domain entities."""
+"""AI generation-related domain entities."""
 
 import logging
 import re
+
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
 GUID_PATTERN = re.compile(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 MAX_CONTENT_LENGTH = 100_000
 VALID_LANGUAGES = {"tr", "en", "de", "fr", "es", "it", "nl", "ja", "ko", "zh", "pt"}
 
 
-def _validate_user_id(v: str) -> str:
-    """Validate userId is a valid GUID format."""
-    if not GUID_PATTERN.match(v):
-        raise ValueError(f'Invalid GUID format: {v}')
-    return v
+def _validate_user_id(value: str) -> str:
+    if not GUID_PATTERN.match(value):
+        raise ValueError(f"Invalid GUID format: {value}")
+    return value
 
 
-def _validate_language(v: str | None) -> str:
-    """Validate and normalize language code."""
-    if v is None:
+def _validate_language(value: str | None) -> str:
+    if value is None:
         return "tr"
-    v_lower = v.lower()
-    if v_lower not in VALID_LANGUAGES:
-        logger.warning(f"Unknown language '{v}', defaulting to 'tr'")
+    normalized = value.lower()
+    if normalized not in VALID_LANGUAGES:
+        logger.warning("Unknown language '%s', defaulting to 'tr'", value)
         return "tr"
-    return v_lower
+    return normalized
+
+
+class MessageEnvelope(BaseModel):
+    """Common envelope for broker messages."""
+
+    messageId: str
+    operationId: str | None = None
+    correlationId: str | None = None
+    causationId: str | None = None
+    timestamp: str
+    eventType: str
 
 
 class AiTitleGenerationPayload(BaseModel):
-    """Payload for AI title generation requests."""
-
     content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
     userId: str = Field(..., description="User GUID")
     requestedAt: str
     language: str | None = Field(default="tr", description="Content language")
 
-    _validate_user_id = field_validator('userId')(_validate_user_id)
-    _validate_language = field_validator('language')(_validate_language)
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
 
 
 class AiExcerptGenerationPayload(BaseModel):
-    """Payload for AI excerpt generation requests."""
-
     content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
     userId: str = Field(..., description="User GUID")
     requestedAt: str
     language: str | None = Field(default="tr", description="Content language")
 
-    _validate_user_id = field_validator('userId')(_validate_user_id)
-    _validate_language = field_validator('language')(_validate_language)
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
 
 
 class AiTagsGenerationPayload(BaseModel):
-    """Payload for AI tags generation requests."""
-
     content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
     userId: str = Field(..., description="User GUID")
     requestedAt: str
     language: str | None = Field(default="tr", description="Content language")
 
-    _validate_user_id = field_validator('userId')(_validate_user_id)
-    _validate_language = field_validator('language')(_validate_language)
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
 
 
 class AiSeoDescriptionGenerationPayload(BaseModel):
-    """Payload for AI SEO description generation requests."""
-
     content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
     userId: str = Field(..., description="User GUID")
     requestedAt: str
     language: str | None = Field(default="tr", description="Content language")
 
-    _validate_user_id = field_validator('userId')(_validate_user_id)
-    _validate_language = field_validator('language')(_validate_language)
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
 
 
 class AiContentImprovementPayload(BaseModel):
-    """Payload for AI content improvement requests."""
-
     content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
     userId: str = Field(..., description="User GUID")
     requestedAt: str
     language: str | None = Field(default="tr", description="Content language")
 
-    _validate_user_id = field_validator('userId')(_validate_user_id)
-    _validate_language = field_validator('language')(_validate_language)
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
 
 
-class AiTitleGenerationMessage(BaseModel):
-    """Message structure for AI title generation events."""
+class AiSummarizePayload(BaseModel):
+    content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
+    userId: str = Field(..., description="User GUID")
+    maxSentences: int = Field(default=5, ge=1, le=20)
+    requestedAt: str
+    language: str | None = Field(default="tr", description="Content language")
 
-    messageId: str
-    correlationId: str | None = None
-    timestamp: str
-    eventType: str
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
+
+
+class AiKeywordsPayload(BaseModel):
+    content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
+    userId: str = Field(..., description="User GUID")
+    maxKeywords: int = Field(default=10, ge=1, le=30)
+    requestedAt: str
+    language: str | None = Field(default="tr", description="Content language")
+
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
+
+
+class AiSentimentPayload(BaseModel):
+    content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
+    userId: str = Field(..., description="User GUID")
+    requestedAt: str
+    language: str | None = Field(default="tr", description="Content language")
+
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
+
+
+class AiReadingTimePayload(BaseModel):
+    content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
+    userId: str = Field(..., description="User GUID")
+    requestedAt: str
+    language: str | None = Field(default="tr", description="Content language")
+
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
+
+
+class AiGeoOptimizePayload(BaseModel):
+    content: str = Field(..., min_length=10, max_length=MAX_CONTENT_LENGTH)
+    userId: str = Field(..., description="User GUID")
+    targetRegion: str = Field(default="TR", max_length=10)
+    requestedAt: str
+    language: str | None = Field(default="tr", description="Content language")
+
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
+
+
+class AiCollectSourcesPayload(BaseModel):
+    query: str = Field(..., min_length=3, max_length=500)
+    userId: str = Field(..., description="User GUID")
+    maxSources: int = Field(default=5, ge=1, le=20)
+    requestedAt: str
+    language: str | None = Field(default="tr", description="Content language")
+
+    _validate_user_id = field_validator("userId")(_validate_user_id)
+    _validate_language = field_validator("language")(_validate_language)
+
+
+class AiTitleGenerationMessage(MessageEnvelope):
     payload: AiTitleGenerationPayload
 
 
-class AiExcerptGenerationMessage(BaseModel):
-    """Message structure for AI excerpt generation events."""
-
-    messageId: str
-    correlationId: str | None = None
-    timestamp: str
-    eventType: str
+class AiExcerptGenerationMessage(MessageEnvelope):
     payload: AiExcerptGenerationPayload
 
 
-class AiTagsGenerationMessage(BaseModel):
-    """Message structure for AI tags generation events."""
-
-    messageId: str
-    correlationId: str | None = None
-    timestamp: str
-    eventType: str
+class AiTagsGenerationMessage(MessageEnvelope):
     payload: AiTagsGenerationPayload
 
 
-class AiSeoDescriptionGenerationMessage(BaseModel):
-    """Message structure for AI SEO description generation events."""
-
-    messageId: str
-    correlationId: str | None = None
-    timestamp: str
-    eventType: str
+class AiSeoDescriptionGenerationMessage(MessageEnvelope):
     payload: AiSeoDescriptionGenerationPayload
 
 
-class AiContentImprovementMessage(BaseModel):
-    """Message structure for AI content improvement events."""
-
-    messageId: str
-    correlationId: str | None = None
-    timestamp: str
-    eventType: str
+class AiContentImprovementMessage(MessageEnvelope):
     payload: AiContentImprovementPayload
+
+
+class AiSummarizeMessage(MessageEnvelope):
+    payload: AiSummarizePayload
+
+
+class AiKeywordsMessage(MessageEnvelope):
+    payload: AiKeywordsPayload
+
+
+class AiSentimentMessage(MessageEnvelope):
+    payload: AiSentimentPayload
+
+
+class AiReadingTimeMessage(MessageEnvelope):
+    payload: AiReadingTimePayload
+
+
+class AiGeoOptimizeMessage(MessageEnvelope):
+    payload: AiGeoOptimizePayload
+
+
+class AiCollectSourcesMessage(MessageEnvelope):
+    payload: AiCollectSourcesPayload

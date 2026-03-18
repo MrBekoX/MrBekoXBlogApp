@@ -32,7 +32,7 @@ export function Header() {
 
   // Fetch categories on mount and when cache is invalidated
   useEffect(() => {
-    fetchCategories().catch((err) => { if (process.env.NODE_ENV === 'development') console.error(err); });
+    fetchCategories().catch(() => { /* ignore */ });
   }, [fetchCategories, cacheVersion]);
 
   const handleLogout = async () => {

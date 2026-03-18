@@ -1,195 +1,221 @@
-from typing import List, Dict, Optional
-from dataclasses import dataclass
-from enum import Enum
-import logging
-import re
+"""
+Data Classification & PII Detection
 
-# Presidio imports
-# We use try-except to allow loading even if dependencies are missing (for dev environments without heavy libs)
-try:
-    from presidio_analyzer import AnalyzerEngine, PatternRecognizer
-    from presidio_anonymizer import AnonymizerEngine
-    from presidio_anonymizer.entities import RecognizerResult
-    PRESIDIO_AVAILABLE = True
-except ImportError:
-    PRESIDIO_AVAILABLE = False
-    logging.warning("Presidio not found. Data classification will be limited.")
+Regex-based data classification and PII detection with Turkey-specific patterns.
+Provides risk scoring and GDPR relevancy checks without external dependencies.
+"""
+
+import re
+import logging
+from typing import List, Dict, Optional
+from dataclasses import dataclass, field
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+
 class DataClassification(str, Enum):
     """Data classification levels."""
-    PUBLIC = "public"           # No sensitive data
-    INTERNAL = "internal"       # Internal business data
-    CONFIDENTIAL = "confidential"  # Contains PII
-    RESTRICTED = "restricted"   # Highly sensitive
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    CONFIDENTIAL = "confidential"
+    RESTRICTED = "restricted"
+
+
+class PIIType(str, Enum):
+    """PII entity types."""
+    TCKN = "TCKN"
+    CREDIT_CARD = "CREDIT_CARD"
+    EMAIL = "EMAIL"
+    PHONE = "PHONE"
+    IBAN = "IBAN"
+    IP_ADDRESS = "IP_ADDRESS"
+    API_KEY = "API_KEY"
+    PERSON = "PERSON"
+    URL = "URL"
+
+
+@dataclass
+class PIIEntity:
+    """Detected PII entity."""
+    pii_type: PIIType
+    start: int
+    end: int
+    confidence: float
+    text: str = ""
+
 
 @dataclass
 class ClassificationResult:
-    """Classification result."""
+    """Data classification result."""
     classification: DataClassification
-    pii_entities: List[Dict]
+    pii_entities: List[PIIEntity]
     risk_score: float
     gdpr_relevant: bool
     anonymized_text: str
+    entity_count: int = 0
+
 
 class DataClassifier:
-    """Data classification and PII detection."""
+    """
+    Data classification and PII detection engine.
 
-    def __init__(self):
-        self.enabled = PRESIDIO_AVAILABLE
-        if self.enabled:
-            # Initialize engines
-            # Note: This might take time to load models
-            self.analyzer = AnalyzerEngine() 
-            self.anonymizer = AnonymizerEngine()
-            
-            # Register custom recognizers
-            self._add_custom_recognizers()
-    
-    @staticmethod
-    def _validate_tckn(number_str: str) -> bool:
-        """Validate Turkish ID number using checksum algorithm."""
-        if len(number_str) != 11 or number_str[0] == '0':
-            return False
-        digits = [int(d) for d in number_str]
-        # 10th digit check
-        odd_sum = sum(digits[0:9:2])   # 1st, 3rd, 5th, 7th, 9th
-        even_sum = sum(digits[1:8:2])  # 2nd, 4th, 6th, 8th
-        check10 = (odd_sum * 7 - even_sum) % 10
-        if check10 != digits[9]:
-            return False
-        # 11th digit check
-        check11 = sum(digits[0:10]) % 10
-        return check11 == digits[10]
+    Supports Turkish-specific patterns (TCKN, TR phone, IBAN)
+    and general PII patterns (email, credit card, IP, API keys).
+    """
 
-    def _add_custom_recognizers(self):
-        """Add custom recognizers for TR context."""
-        # 1. TCKN (Turkish ID)
-        tckn_pattern = r"\b[1-9]\d{10}\b"
-        tckn_recognizer = PatternRecognizer(
-            supported_entity="TCKN",
-            name="Turkish ID Number",
-            patterns=[{"name": "TCKN", "regex": tckn_pattern, "score": 0.9}],
-            context=["TCKN", "Kimlik No", "TC No", "T.C."]
-        )
-        self.analyzer.registry.add_recognizer(tckn_recognizer)
+    # PII detection patterns with confidence scores
+    PII_PATTERNS: Dict[PIIType, tuple] = {
+        # Turkish ID number: 11 digits starting with non-zero
+        PIIType.TCKN: (
+            re.compile(r'\b[1-9]\d{10}\b'),
+            0.85,
+        ),
+        # Credit card: 4 groups of 4 digits
+        PIIType.CREDIT_CARD: (
+            re.compile(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'),
+            0.95,
+        ),
+        # Email addresses
+        PIIType.EMAIL: (
+            re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'),
+            0.95,
+        ),
+        # Turkish phone numbers (05XX XXX XX XX)
+        PIIType.PHONE: (
+            re.compile(r'\b(05\d{2})[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}\b'),
+            0.90,
+        ),
+        # Turkish IBAN (TR followed by 24 digits)
+        PIIType.IBAN: (
+            re.compile(r'\bTR\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{2}\b', re.IGNORECASE),
+            0.95,
+        ),
+        # IP addresses
+        PIIType.IP_ADDRESS: (
+            re.compile(r'\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b'),
+            0.70,
+        ),
+        # API keys (long alphanumeric strings)
+        PIIType.API_KEY: (
+            re.compile(r'\b(?:sk|pk|api|key|token)[-_]?[A-Za-z0-9]{32,}\b', re.IGNORECASE),
+            0.80,
+        ),
+    }
 
-        # 2. TR Phone
-        tr_phone_pattern = r"\b(05\d{2})[-\s]?(\d{3})[-\s]?(\d{2})[-\s]?(\d{2})\b"
-        tr_phone_recognizer = PatternRecognizer(
-            supported_entity="TR_PHONE",
-            name="Turkish Phone Number",
-            patterns=[{"name": "TR Phone", "regex": tr_phone_pattern, "score": 0.85}],
-            context=["telefon", "GSM", "Cep", "tel"]
-        )
-        self.analyzer.registry.add_recognizer(tr_phone_recognizer)
+    # Risk weights per PII type
+    RISK_WEIGHTS: Dict[PIIType, float] = {
+        PIIType.CREDIT_CARD: 1.0,
+        PIIType.IBAN: 1.0,
+        PIIType.TCKN: 1.0,
+        PIIType.PERSON: 0.8,
+        PIIType.EMAIL: 0.6,
+        PIIType.PHONE: 0.6,
+        PIIType.API_KEY: 0.7,
+        PIIType.IP_ADDRESS: 0.4,
+        PIIType.URL: 0.2,
+    }
 
-    def classify_and_redact(
-        self,
-        text: str,
-        language: str = "en" # Default to EN model as presidio usually uses en_core_web_lg for detection even if content is mixed
-    ) -> ClassificationResult:
-        """Classify data and redact PII."""
-        if not self.enabled or not text:
-             return ClassificationResult(
-                 DataClassification.PUBLIC, [], 0.0, False, text or ""
-             )
+    # GDPR-relevant entity types
+    GDPR_ENTITY_TYPES = {
+        PIIType.TCKN, PIIType.EMAIL, PIIType.PHONE,
+        PIIType.PERSON, PIIType.IP_ADDRESS, PIIType.IBAN,
+    }
 
-        # map language 'tr' to 'en' for presidio if explicit TR model not loaded, 
-        # or rely on regex mostly for TR specific entities.
-        # Presidio's NLP engine usually needs correct code. 'en' works for general entities.
-        analyze_lang = "en" 
-        
-        try:
-            results = self.analyzer.analyze(
-                text=text,
-                entities=[
-                    "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "IBAN_CODE", 
-                    "CREDIT_CARD", "IP_ADDRESS", "LOCATION", "DATE_TIME", "URL",
-                    "TCKN", "TR_PHONE"
-                ],
-                language=analyze_lang
-            )
-        except Exception as e:
-            logger.error(f"Presidio analysis failed: {e}")
-            return ClassificationResult(DataClassification.PUBLIC, [], 0.0, False, text)
+    def __init__(self) -> None:
+        logger.info("DataClassifier initialized")
 
-        # Post-filter: validate TCKN matches with checksum to reduce false positives
-        results = [
-            r for r in results
-            if r.entity_type != "TCKN" or self._validate_tckn(text[r.start:r.end])
-        ]
+    def detect_pii(self, text: str) -> List[PIIEntity]:
+        """Detect all PII entities in text."""
+        entities: List[PIIEntity] = []
 
-        # Classification
-        classification = self._classify(results)
-        risk_score = self._calculate_risk_score(results)
-        gdpr_relevant = self._is_gdpr_relevant(results)
+        for pii_type, (pattern, base_confidence) in self.PII_PATTERNS.items():
+            for match in pattern.finditer(text):
+                entities.append(PIIEntity(
+                    pii_type=pii_type,
+                    start=match.start(),
+                    end=match.end(),
+                    confidence=base_confidence,
+                    text=match.group(),
+                ))
 
-        # Anonymize
-        anonymized_result = self.anonymizer.anonymize(
-            text=text,
-            analyzer_results=results
-        )
-        
-        # Extract entities for reporting
-        pii_entities = [
-            {
-                "type": r.entity_type,
-                "start": r.start,
-                "end": r.end,
-                "confidence": r.score,
-                "text": text[r.start:r.end]
-            }
-            for r in results
-        ]
+        # Sort by start position
+        entities.sort(key=lambda e: e.start)
+        return entities
 
-        return ClassificationResult(
+    def classify(self, text: str) -> DataClassification:
+        """Classify text based on PII content."""
+        entities = self.detect_pii(text)
+        return self._determine_classification(entities)
+
+    def classify_and_redact(self, text: str) -> ClassificationResult:
+        """Classify text and redact all PII entities."""
+        entities = self.detect_pii(text)
+        classification = self._determine_classification(entities)
+        risk_score = self._calculate_risk_score(entities)
+        gdpr_relevant = self._is_gdpr_relevant(entities)
+        anonymized = self._redact_text(text, entities)
+
+        result = ClassificationResult(
             classification=classification,
-            pii_entities=pii_entities,
+            pii_entities=entities,
             risk_score=risk_score,
             gdpr_relevant=gdpr_relevant,
-            anonymized_text=anonymized_result.text
+            anonymized_text=anonymized,
+            entity_count=len(entities),
         )
 
-    def _classify(self, results: List) -> DataClassification:
-        if not results:
+        if entities:
+            logger.info(
+                f"DataClassifier: classification={classification.value}, "
+                f"pii_count={len(entities)}, risk={risk_score:.2f}, "
+                f"gdpr={gdpr_relevant}"
+            )
+
+        return result
+
+    def _determine_classification(self, entities: List[PIIEntity]) -> DataClassification:
+        """Determine classification level based on detected entities."""
+        if not entities:
             return DataClassification.PUBLIC
-        
-        entity_types = {r.entity_type for r in results}
-        
-        if "CREDIT_CARD" in entity_types or "IBAN_CODE" in entity_types:
+
+        entity_types = {e.pii_type for e in entities}
+
+        # Restricted: financial data
+        if entity_types & {PIIType.CREDIT_CARD, PIIType.IBAN}:
             return DataClassification.RESTRICTED
-            
-        if any(t in entity_types for t in ["PERSON", "TCKN", "EMAIL_ADDRESS", "PHONE_NUMBER", "TR_PHONE"]):
+
+        # Confidential: personal identifiers
+        if entity_types & {PIIType.TCKN, PIIType.EMAIL, PIIType.PHONE, PIIType.PERSON}:
             return DataClassification.CONFIDENTIAL
-            
-        if "LOCATION" in entity_types or "IP_ADDRESS" in entity_types:
+
+        # Internal: technical data
+        if entity_types & {PIIType.IP_ADDRESS, PIIType.API_KEY}:
             return DataClassification.INTERNAL
-            
+
         return DataClassification.PUBLIC
 
-    def _calculate_risk_score(self, results: List) -> float:
-        if not results:
+    def _calculate_risk_score(self, entities: List[PIIEntity]) -> float:
+        """Calculate risk score from 0.0 to 1.0."""
+        if not entities:
             return 0.0
-            
-        weights = {
-            "CREDIT_CARD": 1.0, "IBAN_CODE": 1.0, "TCKN": 1.0,
-            "PERSON": 0.8, "EMAIL_ADDRESS": 0.7, "PHONE_NUMBER": 0.7, "TR_PHONE": 0.7,
-            "IP_ADDRESS": 0.5, "LOCATION": 0.4
-        }
-        
+
         max_score = 0.0
-        for r in results:
-            w = weights.get(r.entity_type, 0.1)
-            # Use presidio score * weight
-            max_score = max(max_score, w * r.score)
-            
+        for entity in entities:
+            weight = self.RISK_WEIGHTS.get(entity.pii_type, 0.2)
+            score = weight * entity.confidence
+            max_score = max(max_score, score)
+
         return min(max_score, 1.0)
 
-    def _is_gdpr_relevant(self, results: List) -> bool:
-        gdpr_entities = {"PERSON", "EMAIL_ADDRESS", "TCKN", "TR_PHONE", "PHONE_NUMBER", "IP_ADDRESS"}
-        return any(r.entity_type in gdpr_entities for r in results)
+    def _is_gdpr_relevant(self, entities: List[PIIEntity]) -> bool:
+        """Check if data contains GDPR-relevant PII."""
+        return any(e.pii_type in self.GDPR_ENTITY_TYPES for e in entities)
 
-# Singleton
-data_classifier = DataClassifier()
+    def _redact_text(self, text: str, entities: List[PIIEntity]) -> str:
+        """Redact PII entities from text (reverse order to preserve positions)."""
+        result = text
+        for entity in reversed(entities):
+            placeholder = f"[{entity.pii_type.value}_REDACTED]"
+            result = result[:entity.start] + placeholder + result[entity.end:]
+        return result

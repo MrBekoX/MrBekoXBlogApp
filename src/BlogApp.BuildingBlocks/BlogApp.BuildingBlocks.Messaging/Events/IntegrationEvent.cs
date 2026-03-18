@@ -1,4 +1,4 @@
-using BlogApp.BuildingBlocks.Messaging.Abstractions;
+﻿using BlogApp.BuildingBlocks.Messaging.Abstractions;
 
 namespace BlogApp.BuildingBlocks.Messaging.Events;
 
@@ -13,7 +13,13 @@ public record IntegrationEvent : IIntegrationEvent
     public Guid MessageId { get; init; } = Guid.NewGuid();
 
     /// <inheritdoc />
+    public string? OperationId { get; init; }
+
+    /// <inheritdoc />
     public string? CorrelationId { get; init; }
+
+    /// <inheritdoc />
+    public string? CausationId { get; init; }
 
     /// <inheritdoc />
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;

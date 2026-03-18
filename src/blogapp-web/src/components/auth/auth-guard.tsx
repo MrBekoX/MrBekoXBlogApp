@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import type { User } from '@/types';
@@ -25,10 +25,10 @@ interface AuthGuardProps {
  * AuthGuard component that protects routes requiring authentication.
  *
  * Features:
- * - Verifies auth status with backend on mount
+ * - Uses persisted auth state from sessionStorage
  * - Handles hydration correctly (no flash of wrong content)
  * - Supports role-based access control
- * - Prevents redirect loops
+ * - Prevents redirect loops with circuit breaker pattern
  *
  * Usage:
  * ```tsx
@@ -50,28 +50,51 @@ export function AuthGuard({
   const authStatus = useAuthStore((state) => state.authStatus);
   const checkAuth = useAuthStore((state) => state.checkAuth);
   const [hasMounted, setHasMounted] = useState(false);
+  const hasCheckedAuth = useRef(false);
+  const hasRedirected = useRef(false);
 
   // Mark as mounted after hydration
   useEffect(() => {
     setHasMounted(true);
   }, []);
 
-  // Check auth status ONLY if 'idle' (first visit ever)
-  // If 'authenticated' or 'unauthenticated', trust the persisted state
-  // Cookie validity will be checked when actual API calls are made
+  // Check auth status only once per mount
+  // Trust persisted state from sessionStorage
   useEffect(() => {
-    if (hasMounted && authStatus === 'idle') {
+    if (!hasMounted || hasCheckedAuth.current) return;
+
+    // If we have a persisted authenticated state, trust it
+    if (authStatus === 'authenticated' && user) {
+      hasCheckedAuth.current = true;
+      return;
+    }
+
+    // If we have a persisted unauthenticated state, trust it
+    if (authStatus === 'unauthenticated') {
+      hasCheckedAuth.current = true;
+      return;
+    }
+
+    // Only check auth if we're in 'idle' state (no persisted state)
+    if (authStatus === 'idle') {
+      hasCheckedAuth.current = true;
       checkAuth();
     }
-  }, [hasMounted, authStatus, checkAuth]);
+  }, [hasMounted, authStatus, user, checkAuth]);
 
-  // Handle redirects
+  // Handle redirects with circuit breaker
   useEffect(() => {
     if (!hasMounted) return;
     if (authStatus === 'idle' || authStatus === 'checking') return;
+    if (hasRedirected.current) return;
 
     if (authStatus === 'unauthenticated') {
-      router.replace(loginUrl);
+      hasRedirected.current = true;
+      // Use setTimeout to prevent immediate redirect loop
+      const timer = setTimeout(() => {
+        router.replace(loginUrl);
+      }, 100);
+      return () => clearTimeout(timer);
     }
   }, [hasMounted, authStatus, router, loginUrl]);
 
@@ -80,7 +103,7 @@ export function AuthGuard({
     return loadingComponent ?? <DefaultLoadingComponent />;
   }
 
-  // Not authenticated - show nothing (redirect is happening)
+  // Not authenticated - show loading (redirect is happening)
   if (authStatus === 'unauthenticated') {
     return loadingComponent ?? <DefaultLoadingComponent />;
   }
@@ -136,7 +159,8 @@ function DefaultUnauthorizedComponent({ redirectUrl }: { redirectUrl: string }) 
  * Hook to check if current user has required role
  */
 export function useHasRole(allowedRoles: AllowedRole[]): boolean {
-  const { user, authStatus } = useAuthStore();
+  const user = useAuthStore((state) => state.user);
+  const authStatus = useAuthStore((state) => state.authStatus);
 
   if (authStatus !== 'authenticated' || !user) {
     return false;

@@ -11,16 +11,18 @@ import { toast } from 'sonner';
 import { Plus, Trash2, Tag } from 'lucide-react';
 
 export default function TagsPage() {
-  const { 
-    tags, 
-    isLoading, 
-    fetchTags, 
-    createTag, 
+  const {
+    tags,
+    isLoading,
+    fetchTags,
+    createTag,
     deleteTag,
-    cacheVersion 
+    cacheVersion,
   } = useTagsStore();
-  
+
   const [isCreating, setIsCreating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingTagId, setPendingTagId] = useState<string | null>(null);
   const [newTagName, setNewTagName] = useState('');
 
   useEffect(() => {
@@ -29,29 +31,43 @@ export default function TagsPage() {
   }, [fetchTags, cacheVersion]);
 
   const handleCreate = async () => {
-    if (!newTagName.trim()) {
-      toast.error('Etiket adı gerekli');
+    if (!newTagName.trim() || isSubmitting) {
+      if (!newTagName.trim()) {
+        toast.error('Etiket adı gerekli');
+      }
       return;
     }
 
-    const result = await createTag({ name: newTagName });
-    if (result) {
-      toast.success('Etiket oluşturuldu');
-      setNewTagName('');
-      setIsCreating(false);
-    } else {
-      toast.error('Etiket oluşturulamadı');
+    setIsSubmitting(true);
+    try {
+      const result = await createTag({ name: newTagName });
+      if (result) {
+        toast.success('Etiket oluşturuldu');
+        setNewTagName('');
+        setIsCreating(false);
+      } else {
+        toast.error('Etiket oluşturulamadı');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Bu etiketi silmek istediğinize emin misiniz?')) return;
+    if (!confirm('Bu etiketi silmek istediğinize emin misiniz?') || isSubmitting || pendingTagId === id) {
+      return;
+    }
 
-    const success = await deleteTag(id);
-    if (success) {
-      toast.success('Etiket silindi');
-    } else {
-      toast.error('Etiket silinemedi');
+    setPendingTagId(id);
+    try {
+      const success = await deleteTag(id);
+      if (success) {
+        toast.success('Etiket silindi');
+      } else {
+        toast.error('Etiket silinemedi');
+      }
+    } finally {
+      setPendingTagId(null);
     }
   };
 
@@ -63,7 +79,7 @@ export default function TagsPage() {
           <p className="text-muted-foreground">Blog yazılarınız için etiketleri yönetin</p>
         </div>
         {!isCreating && (
-          <Button onClick={() => setIsCreating(true)}>
+          <Button disabled={isSubmitting || Boolean(pendingTagId)} onClick={() => setIsCreating(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Yeni Etiket
           </Button>
@@ -83,12 +99,13 @@ export default function TagsPage() {
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
                 placeholder="Etiket adı"
+                disabled={isSubmitting}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               />
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleCreate}>Oluştur</Button>
-              <Button variant="outline" onClick={() => { setIsCreating(false); setNewTagName(''); }}>
+              <Button disabled={isSubmitting} onClick={handleCreate}>Oluştur</Button>
+              <Button variant="outline" disabled={isSubmitting} onClick={() => { setIsCreating(false); setNewTagName(''); }}>
                 İptal
               </Button>
             </div>
@@ -112,27 +129,32 @@ export default function TagsPage() {
             </div>
           ) : tags.length > 0 ? (
             <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <div
-                  key={tag.id}
-                  className="group flex items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted"
-                >
-                  <Tag className="h-3 w-3 text-primary" />
-                  <span>{tag.name}</span>
-                  <button
-                    onClick={() => handleDelete(tag.id)}
-                    className="ml-1 opacity-0 transition-opacity group-hover:opacity-100"
+              {tags.map((tag) => {
+                const isPending = pendingTagId === tag.id;
+
+                return (
+                  <div
+                    key={tag.id}
+                    className="group flex items-center gap-1 rounded-full border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted"
                   >
-                    <Trash2 className="h-3 w-3 text-destructive hover:text-destructive/80" />
-                  </button>
-                </div>
-              ))}
+                    <Tag className="h-3 w-3 text-primary" />
+                    <span>{tag.name}</span>
+                    <button
+                      disabled={isSubmitting || isPending}
+                      onClick={() => handleDelete(tag.id)}
+                      className="ml-1 opacity-0 transition-opacity group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive hover:text-destructive/80" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="py-8 text-center">
               <Tag className="mx-auto h-12 w-12 text-muted-foreground" />
               <p className="mt-4 text-muted-foreground">Henüz etiket yok</p>
-              <Button className="mt-4" onClick={() => setIsCreating(true)}>
+              <Button className="mt-4" disabled={isSubmitting || Boolean(pendingTagId)} onClick={() => setIsCreating(true)}>
                 İlk etiketi oluşturun
               </Button>
             </div>

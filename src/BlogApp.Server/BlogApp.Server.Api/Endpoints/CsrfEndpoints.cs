@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Models;
 using Microsoft.AspNetCore.Antiforgery;
 
 namespace BlogApp.Server.Api.Endpoints;
@@ -23,16 +24,14 @@ public static class CsrfEndpoints
             // Also expose token in response header for SPA to read
             context.Response.Headers.Append("X-CSRF-TOKEN", tokens.RequestToken!);
             
-            return Results.Ok(new 
-            { 
-                message = "CSRF token generated",
-                // Token is also available in X-CSRF-TOKEN response header
-                // and BlogApp.CSRF cookie (HttpOnly)
-            });
+            return Results.Ok(ApiResponse<object>.SuccessResult(new
+            {
+                token = tokens.RequestToken
+            }, "CSRF token generated"));
         })
         .WithName("GetCsrfToken")
         .WithDescription("Get CSRF token for subsequent state-changing requests")
-        .Produces(200);
+        .Produces<ApiResponse<object>>(200);
 
         return app;
     }

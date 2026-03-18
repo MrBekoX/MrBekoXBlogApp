@@ -29,6 +29,11 @@ public record ArticlePayload
     public Guid? AuthorId { get; init; }
 
     /// <summary>
+    /// Normalized visibility for RAG isolation.
+    /// </summary>
+    public string Visibility { get; init; } = "published";
+
+    /// <summary>
     /// Content language (tr, en, etc.)
     /// </summary>
     public string Language { get; init; } = "tr";
@@ -54,9 +59,9 @@ public record ArticleEvent : IntegrationEvent
     /// </summary>
     public string GetRoutingKey() => EventType switch
     {
-        nameof(ArticleCreatedEvent) => MessagingConstants.RoutingKeys.ArticleCreated,
-        nameof(ArticlePublishedEvent) => MessagingConstants.RoutingKeys.ArticlePublished,
-        nameof(ArticleUpdatedEvent) => MessagingConstants.RoutingKeys.ArticleUpdated,
+        MessagingConstants.RoutingKeys.ArticleCreated => MessagingConstants.RoutingKeys.ArticleCreated,
+        MessagingConstants.RoutingKeys.ArticlePublished => MessagingConstants.RoutingKeys.ArticlePublished,
+        MessagingConstants.RoutingKeys.ArticleUpdated => MessagingConstants.RoutingKeys.ArticleUpdated,
         _ => MessagingConstants.RoutingKeys.ArticleCreated
     };
 }
@@ -64,14 +69,23 @@ public record ArticleEvent : IntegrationEvent
 /// <summary>
 /// Event fired when an article is created
 /// </summary>
-public record ArticleCreatedEvent : ArticleEvent;
+public record ArticleCreatedEvent : ArticleEvent
+{
+    public override string EventType => MessagingConstants.RoutingKeys.ArticleCreated;
+}
 
 /// <summary>
 /// Event fired when an article is published
 /// </summary>
-public record ArticlePublishedEvent : ArticleEvent;
+public record ArticlePublishedEvent : ArticleEvent
+{
+    public override string EventType => MessagingConstants.RoutingKeys.ArticlePublished;
+}
 
 /// <summary>
 /// Event fired when an article is updated
 /// </summary>
-public record ArticleUpdatedEvent : ArticleEvent;
+public record ArticleUpdatedEvent : ArticleEvent
+{
+    public override string EventType => MessagingConstants.RoutingKeys.ArticleUpdated;
+}

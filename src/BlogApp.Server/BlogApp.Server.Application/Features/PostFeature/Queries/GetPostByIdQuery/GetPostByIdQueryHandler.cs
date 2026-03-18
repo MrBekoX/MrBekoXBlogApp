@@ -4,6 +4,7 @@ using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Constants;
 using BlogApp.Server.Application.Features.PostFeature.DTOs;
+using BlogApp.Server.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,15 +16,19 @@ public class GetPostByIdQueryHandler(
 {
     public async Task<GetPostByIdQueryResponse> Handle(GetPostByIdQueryRequest request, CancellationToken cancellationToken)
     {
-        var post = await unitOfWork.PostsRead.Query()
+        var query = unitOfWork.PostsRead.Query()
             .AsNoTracking()
             .Include(p => p.Author)
             .Include(p => p.Category)
             .Include(p => p.Tags)
             .Include(p => p.Comments)
-            .AsSplitQuery() // Prevents Cartesian explosion with multiple collection includes (Tags, Comments)
-            .Where(p => p.Id == request.Id && !p.IsDeleted)
-            .FirstOrDefaultAsync(cancellationToken);
+            .AsSplitQuery()
+            .Where(p => p.Id == request.Id && !p.IsDeleted);
+
+        if (request.RequirePublishedStatus)
+            query = query.Where(p => p.Status == PostStatus.Published);
+
+        var post = await query.FirstOrDefaultAsync(cancellationToken);
 
         if (post is null)
         {

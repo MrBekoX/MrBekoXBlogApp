@@ -2,7 +2,8 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { API_BASE_URL } from '@/lib/env';
 import type {
   ApiResponse,
-  AISummaryResponse,
+  AIAnalysisRequestResponse,
+  AiOperationAcceptedResponse,
   AuthResponse,
   BlogPost,
   Category,
@@ -21,22 +22,26 @@ import type {
   Tag,
   UpdatePostRequest,
 } from '@/types';
+import { createOperationId, withIdempotencyHeader } from '@/lib/idempotency';
+import { broadcastAuthMessage } from '@/lib/auth-events';
 
-// Auth storage key used by Zustand persist middleware
-const AUTH_STORAGE_KEY = 'auth-storage';
+// CSRF token cache
+let csrfToken: string | null = null;
+let csrfTokenPromise: Promise<string> | null = null;
+type CsrfTokenResponse = ApiResponse<{ token?: string }>;
 
 /**
- * Axios hatasından kullanıcı dostu mesaj çıkarır.
+ * Axios hatasÄ±ndan kullanÄ±cÄ± dostu mesaj Ã§Ä±karÄ±r.
  * Hassas bilgileri (stack trace, internal error details) gizler.
  */
-export function getErrorMessage(error: unknown, fallbackMessage = 'Bir hata oluştu'): string {
+export function getErrorMessage(error: unknown, fallbackMessage = 'Bir hata oluÅŸtu'): string {
   if (!error) return fallbackMessage;
 
   // Axios error
   if (axios.isAxiosError(error)) {
     const axiosError = error as AxiosError<ApiResponse<unknown>>;
     
-    // Backend'den gelen hata mesajı
+    // Backend'den gelen hata mesajÄ±
     if (axiosError.response?.data?.message) {
       return axiosError.response.data.message;
     }
@@ -46,48 +51,48 @@ export function getErrorMessage(error: unknown, fallbackMessage = 'Bir hata olu�
       return axiosError.response.data.errors[0];
     }
 
-    // HTTP status bazlı generic mesajlar
+    // HTTP status bazlÄ± generic mesajlar
     switch (axiosError.response?.status) {
       case 400:
-        return 'Geçersiz istek';
+        return 'GeÃ§ersiz istek';
       case 401:
-        return 'Oturum süresi dolmuş, lütfen tekrar giriş yapın';
+        return 'Oturum sÃ¼resi dolmuÅŸ, lÃ¼tfen tekrar giriÅŸ yapÄ±n';
       case 403:
-        return 'Bu işlem için yetkiniz yok';
+        return 'Bu iÅŸlem iÃ§in yetkiniz yok';
       case 404:
-        return 'İstenen kaynak bulunamadı';
+        return 'Ä°stenen kaynak bulunamadÄ±';
       case 429:
-        return 'Çok fazla istek gönderdiniz, lütfen bekleyin';
+        return 'Ã‡ok fazla istek gÃ¶nderdiniz, lÃ¼tfen bekleyin';
       case 500:
       case 502:
       case 503:
-        return 'Sunucu hatası, lütfen daha sonra tekrar deneyin';
+        return 'Sunucu hatasÄ±, lÃ¼tfen daha sonra tekrar deneyin';
       default:
         break;
     }
 
     // Network error
     if (axiosError.code === 'ERR_NETWORK') {
-      return 'Bağlantı hatası, internet bağlantınızı kontrol edin';
+      return 'BaÄŸlantÄ± hatasÄ±, internet baÄŸlantÄ±nÄ±zÄ± kontrol edin';
     }
 
     // Timeout
     if (axiosError.code === 'ECONNABORTED') {
-      return 'İstek zaman aşımına uğradı';
+      return 'Ä°stek zaman aÅŸÄ±mÄ±na uÄŸradÄ±';
     }
   }
 
   // Standard Error
   if (error instanceof Error) {
-    // Hassas bilgileri içerebilecek mesajları filtrele
+    // Hassas bilgileri iÃ§erebilecek mesajlarÄ± filtrele
     const message = error.message.toLowerCase();
     if (message.includes('network') || message.includes('fetch')) {
-      return 'Bağlantı hatası';
+      return 'BaÄŸlantÄ± hatasÄ±';
     }
     if (message.includes('timeout') || message.includes('aborted')) {
-      return 'İstek zaman aşımına uğradı';
+      return 'Ä°stek zaman aÅŸÄ±mÄ±na uÄŸradÄ±';
     }
-    // Generic hata mesajı - detay sızdırma
+    // Generic hata mesajÄ± - detay sÄ±zdÄ±rma
     return fallbackMessage;
   }
 
@@ -95,26 +100,132 @@ export function getErrorMessage(error: unknown, fallbackMessage = 'Bir hata olu�
 }
 
 /**
- * Clear auth state from localStorage to prevent infinite redirect loops.
- * This directly updates the persisted Zustand state without importing the store
+ * Clear auth state from sessionStorage to prevent infinite redirect loops.
+ * This directly clears the persisted Zustand state without importing the store
  * to avoid circular dependencies (auth-store -> api -> auth-store).
  */
 function clearAuthState(): void {
   try {
-    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      parsed.state = {
-        ...parsed.state,
-        user: null,
-        authStatus: 'unauthenticated',
-      };
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(parsed));
-    }
+    // Clear Zustand persisted auth state from sessionStorage
+    sessionStorage.removeItem('blogapp-auth');
   } catch {
-    // If parsing fails, just remove the entire storage
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+    // Ignore storage errors
   }
+  broadcastAuthMessage({ type: 'logout' });
+}
+
+/**
+ * Fetches CSRF token from the server.
+ * Uses caching to avoid unnecessary requests.
+ */
+async function fetchCsrfToken(): Promise<string> {
+  // Return cached token if available
+  if (csrfToken) {
+    return csrfToken;
+  }
+
+  // If already fetching, wait for the existing promise
+  if (csrfTokenPromise) {
+    return csrfTokenPromise;
+  }
+
+  // Fetch new token
+  csrfTokenPromise = (async () => {
+    try {
+      // Use bare axios to avoid circular interceptor calls
+      const response = await axios.get<CsrfTokenResponse>(`${API_BASE_URL}/csrf-token`, {
+        withCredentials: true,
+      });
+
+      // Cross-origin clients need either an exposed header or a body fallback.
+      const token = response.headers['x-csrf-token'] ?? response.data?.data?.token;
+      if (token) {
+        csrfToken = token;
+        return token;
+      }
+
+      throw new Error('CSRF token not found in response');
+    } catch (error) {
+      csrfTokenPromise = null;
+      throw error;
+    }
+  })();
+
+  return csrfTokenPromise;
+}
+
+/**
+ * Invalidates the cached CSRF token (e.g., on 400 bad request from CSRF validation)
+ */
+function invalidateCsrfToken(): void {
+  csrfToken = null;
+  csrfTokenPromise = null;
+}
+
+function resolveOperationId(operationId?: string): string {
+  return operationId ?? createOperationId();
+}
+
+const IDEMPOTENT_NETWORK_RETRY_LIMIT = 2;
+
+function isRetryableNetworkError(error: unknown): boolean {
+  if (axios.isAxiosError(error)) {
+    if (error.code === 'ERR_CANCELED') {
+      return false;
+    }
+
+    return error.code === 'ERR_NETWORK'
+      || error.code === 'ECONNABORTED'
+      || !error.response;
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return message.includes('network')
+      || message.includes('fetch')
+      || message.includes('timeout')
+      || message.includes('aborted');
+  }
+
+  return false;
+}
+
+async function executeWithOperationRetry<T>(
+  request: (operationId: string) => Promise<T>,
+  operationId?: string,
+  maxRetries = IDEMPOTENT_NETWORK_RETRY_LIMIT,
+): Promise<T> {
+  const resolvedOperationId = resolveOperationId(operationId);
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await request(resolvedOperationId);
+    } catch (error) {
+      if (attempt >= maxRetries || !isRetryableNetworkError(error)) {
+        throw error;
+      }
+    }
+  }
+}
+
+export function createAuthMutationConfig(operationId?: string) {
+  const resolvedOperationId = resolveOperationId(operationId);
+  return {
+    operationId: resolvedOperationId,
+    config: withIdempotencyHeader(resolvedOperationId),
+  };
+}
+
+async function executeAuthMutation<TResponse, TBody = null>(
+  url: string,
+  body: TBody,
+  operationId?: string,
+): Promise<ApiResponse<TResponse>> {
+  return executeWithOperationRetry(async (resolvedOperationId) => {
+    const { config } = createAuthMutationConfig(resolvedOperationId);
+    const response = await apiClient.post<ApiResponse<TResponse>>(url, body, config);
+    return response.data;
+  }, operationId);
 }
 
 export const apiClient = axios.create({
@@ -126,7 +237,23 @@ export const apiClient = axios.create({
   timeout: 15000, // 15 second timeout
 });
 
-// No request interceptor needed - cookies are sent automatically with withCredentials: true
+// Request interceptor to add CSRF token for state-changing requests
+apiClient.interceptors.request.use(
+  async (config) => {
+    // Only add CSRF token for non-GET requests that modify state
+    const method = config.method?.toUpperCase();
+    if (method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      try {
+        const token = await fetchCsrfToken();
+        config.headers['X-CSRF-TOKEN'] = token;
+      } catch {
+        // Ignore CSRF token fetch errors - server will return 400 if CSRF is required
+      }
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 // Response interceptor for handling token refresh
 // Global flags to prevent infinite redirect loops
@@ -139,7 +266,29 @@ const REDIRECT_COOLDOWN = 10000; // 10 seconds cooldown between redirects
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean; _csrfRetry?: boolean };
+
+    // Handle CSRF token errors (400 with antiforgery message)
+    if (
+      error.response?.status === 400 &&
+      originalRequest &&
+      !originalRequest._csrfRetry &&
+      !originalRequest.url?.includes('/csrf-token')
+    ) {
+      const errorMessage = (error.response?.data as { message?: string })?.message || '';
+      if (errorMessage.toLowerCase().includes('antiforgery') || errorMessage.toLowerCase().includes('csrf')) {
+        originalRequest._csrfRetry = true;
+        invalidateCsrfToken();
+
+        try {
+          const token = await fetchCsrfToken();
+          originalRequest.headers['X-CSRF-TOKEN'] = token;
+          return apiClient(originalRequest);
+        } catch {
+          // Retry failed, proceed with normal error handling
+        }
+      }
+    }
 
     // Only attempt refresh for 401 errors on non-auth endpoints
     if (
@@ -149,6 +298,7 @@ apiClient.interceptors.response.use(
       !originalRequest.url?.includes('/auth/login') &&
       !originalRequest.url?.includes('/auth/register') &&
       !originalRequest.url?.includes('/auth/refresh-token') &&
+      !originalRequest.url?.includes('/chat/') &&
       !isRedirecting
     ) {
       originalRequest._retry = true;
@@ -168,8 +318,8 @@ apiClient.interceptors.response.use(
         isRefreshing = true;
         refreshPromise = (async () => {
           try {
-            const response = await apiClient.post<ApiResponse<AuthResponse>>('/auth/refresh-token');
-            if (response.data.success) {
+            const response = await authApi.refreshToken();
+            if (response.success) {
               return true;
             }
             return false;
@@ -218,31 +368,24 @@ apiClient.interceptors.response.use(
 
 // Auth API - Uses HttpOnly cookies (no localStorage)
 export const authApi = {
-  login: async (data: LoginRequest): Promise<ApiResponse<AuthResponse>> => {
-    // Cookies are set automatically by the server response
-    const response = await apiClient.post<ApiResponse<AuthResponse>>('/auth/login', data);
-    return response.data;
+  login: async (data: LoginRequest, operationId?: string): Promise<ApiResponse<AuthResponse>> => {
+    return executeAuthMutation<AuthResponse, LoginRequest>('/auth/login', data, operationId);
   },
 
-  register: async (data: RegisterRequest): Promise<ApiResponse<AuthResponse>> => {
-    // Cookies are set automatically by the server response
-    const response = await apiClient.post<ApiResponse<AuthResponse>>('/auth/register', data);
-    return response.data;
+  register: async (data: RegisterRequest, operationId?: string): Promise<ApiResponse<AuthResponse>> => {
+    return executeAuthMutation<AuthResponse, RegisterRequest>('/auth/register', data, operationId);
   },
 
-  logout: async (): Promise<void> => {
-    // Server clears HttpOnly cookies
+  logout: async (operationId?: string): Promise<void> => {
     try {
-      await apiClient.post('/auth/logout');
+      await executeAuthMutation<object, null>('/auth/logout', null, operationId);
     } catch {
-      // Ignore logout errors - cookies will be cleared by server
+      // Ignore logout errors - cookies will still be cleared locally
     }
   },
 
-  refreshToken: async (): Promise<ApiResponse<AuthResponse>> => {
-    // Server reads refresh token from HttpOnly cookie
-    const response = await apiClient.post<ApiResponse<AuthResponse>>('/auth/refresh-token');
-    return response.data;
+  refreshToken: async (operationId?: string): Promise<ApiResponse<AuthResponse>> => {
+    return executeAuthMutation<AuthResponse, null>('/auth/refresh-token', null, operationId);
   },
 
   getCurrentUser: async (): Promise<ApiResponse<AuthResponse['user']>> => {
@@ -274,38 +417,70 @@ export const postsApi = {
     return response.data;
   },
 
-  create: async (data: CreatePostRequest): Promise<ApiResponse<BlogPost>> => {
-    const response = await apiClient.post<ApiResponse<BlogPost>>('/posts', data);
-    return response.data;
+  create: async (data: CreatePostRequest, operationId?: string): Promise<ApiResponse<BlogPost>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<BlogPost>>(
+        '/posts',
+        data,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
-  update: async (id: string, data: UpdatePostRequest): Promise<ApiResponse<BlogPost>> => {
-    const response = await apiClient.put<ApiResponse<BlogPost>>(`/posts/${id}`, data);
-    return response.data;
+  update: async (id: string, data: UpdatePostRequest, operationId?: string): Promise<ApiResponse<BlogPost>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.put<ApiResponse<BlogPost>>(
+        `/posts/${id}`,
+        data,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
-  delete: async (id: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.delete(`/posts/${id}`);
-    // 204 No Content başarılı bir yanıt
-    if (response.status === 204) {
-      return { success: true, message: 'Post deleted successfully' };
-    }
-    return response.data;
+  delete: async (id: string, operationId?: string): Promise<ApiResponse<void>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.delete(`/posts/${id}`, withIdempotencyHeader(resolvedOperationId));
+    // 204 No Content baÅŸarÄ±lÄ± bir yanÄ±t
+      if (response.status === 204) {
+        return { success: true, data: undefined, message: 'Post deleted successfully' };
+      }
+      return response.data;
+    }, operationId);
   },
 
-  publish: async (id: string): Promise<ApiResponse<BlogPost>> => {
-    const response = await apiClient.post<ApiResponse<BlogPost>>(`/posts/${id}/publish`);
-    return response.data;
+  publish: async (id: string, operationId?: string): Promise<ApiResponse<BlogPost>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<BlogPost>>(
+        `/posts/${id}/publish`,
+        null,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
-  archive: async (id: string): Promise<ApiResponse<BlogPost>> => {
-    const response = await apiClient.post<ApiResponse<BlogPost>>(`/posts/${id}/archive`);
-    return response.data;
+  archive: async (id: string, operationId?: string): Promise<ApiResponse<BlogPost>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<BlogPost>>(
+        `/posts/${id}/archive`,
+        null,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
-  unpublish: async (id: string): Promise<ApiResponse<BlogPost>> => {
-    const response = await apiClient.post<ApiResponse<BlogPost>>(`/posts/${id}/unpublish`);
-    return response.data;
+  unpublish: async (id: string, operationId?: string): Promise<ApiResponse<BlogPost>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<BlogPost>>(
+        `/posts/${id}/unpublish`,
+        null,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
   getMyPosts: async (params?: PaginationParams): Promise<ApiResponse<PaginatedResult<BlogPost>>> => {
@@ -313,17 +488,39 @@ export const postsApi = {
     return response.data;
   },
 
-  generateAiSummary: async (id: string, maxSentences?: number, language?: string): Promise<ApiResponse<AISummaryResponse>> => {
-    const params: { maxSentences?: number; language?: string } = {};
-    if (maxSentences !== undefined) params.maxSentences = maxSentences;
-    if (language !== undefined) params.language = language;
+  generateAiSummary: async (id: string, maxSentences?: number, language?: string, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const params: { maxSentences?: number; language?: string; operationId: string } = {
+        operationId: resolvedOperationId,
+      };
+      if (maxSentences !== undefined) params.maxSentences = maxSentences;
+      if (language !== undefined) params.language = language;
 
-    const response = await apiClient.post<ApiResponse<AISummaryResponse>>(
-      `/posts/${id}/generate-ai-summary`,
-      null,
-      { params }
-    );
-    return response.data;
+      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
+        `/posts/${id}/generate-ai-summary`,
+        null,
+        withIdempotencyHeader(resolvedOperationId, { params })
+      );
+      return response.data;
+    }, operationId);
+  },
+
+  requestAiAnalysis: async (
+    id: string,
+    data: { language?: string; targetRegion?: string; operationId?: string } = {}
+  ): Promise<ApiResponse<AIAnalysisRequestResponse>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<AIAnalysisRequestResponse>>(
+        `/posts/${id}/request-ai-analysis`,
+        {
+          language: data.language,
+          targetRegion: data.targetRegion,
+          operationId: resolvedOperationId,
+        },
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, data.operationId);
   },
 };
 
@@ -340,23 +537,37 @@ export const categoriesApi = {
     return response.data;
   },
 
-  create: async (data: CreateCategoryRequest): Promise<ApiResponse<Category>> => {
-    const response = await apiClient.post<ApiResponse<Category>>('/categories', data);
-    return response.data;
+  create: async (data: CreateCategoryRequest, operationId?: string): Promise<ApiResponse<Category>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<Category>>(
+        '/categories',
+        data,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
-  update: async (id: string, data: CreateCategoryRequest): Promise<ApiResponse<Category>> => {
-    const response = await apiClient.put<ApiResponse<Category>>(`/categories/${id}`, data);
-    return response.data;
+  update: async (id: string, data: CreateCategoryRequest, operationId?: string): Promise<ApiResponse<Category>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.put<ApiResponse<Category>>(
+        `/categories/${id}`,
+        data,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
-  delete: async (id: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.delete(`/categories/${id}`);
-    // 204 No Content means success
-    if (response.status === 204) {
-      return { success: true, data: undefined, message: 'Kategori silindi' };
-    }
-    return response.data;
+  delete: async (id: string, operationId?: string): Promise<ApiResponse<void>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.delete(`/categories/${id}`, withIdempotencyHeader(resolvedOperationId));
+      // 204 No Content means success
+      if (response.status === 204) {
+        return { success: true, data: undefined, message: 'Kategori silindi' };
+      }
+      return response.data;
+    }, operationId);
   },
 };
 
@@ -373,18 +584,26 @@ export const tagsApi = {
     return response.data;
   },
 
-  create: async (data: CreateTagRequest): Promise<ApiResponse<Tag>> => {
-    const response = await apiClient.post<ApiResponse<Tag>>('/tags', data);
-    return response.data;
+  create: async (data: CreateTagRequest, operationId?: string): Promise<ApiResponse<Tag>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<Tag>>(
+        '/tags',
+        data,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
-  delete: async (id: string): Promise<ApiResponse<void>> => {
-    const response = await apiClient.delete(`/tags/${id}`);
-    // 204 No Content means success
-    if (response.status === 204) {
-      return { success: true, data: undefined, message: 'Etiket silindi' };
-    }
-    return response.data;
+  delete: async (id: string, operationId?: string): Promise<ApiResponse<void>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.delete(`/tags/${id}`, withIdempotencyHeader(resolvedOperationId));
+      // 204 No Content means success
+      if (response.status === 204) {
+        return { success: true, data: undefined, message: 'Etiket silindi' };
+      }
+      return response.data;
+    }, operationId);
   },
 };
 
@@ -395,9 +614,15 @@ export const commentsApi = {
     return response.data;
   },
 
-  create: async (data: CreateCommentRequest): Promise<ApiResponse<Comment>> => {
-    const response = await apiClient.post<ApiResponse<Comment>>('/comments', data);
-    return response.data;
+  create: async (data: CreateCommentRequest, operationId?: string): Promise<ApiResponse<Comment>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<Comment>>(
+        '/comments',
+        data,
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, operationId);
   },
 
   approve: async (id: string): Promise<ApiResponse<void>> => {
@@ -411,59 +636,77 @@ export const commentsApi = {
   },
 };
 
-// AI API - Backend üzerinden yönlendiriliyor
+// AI API - Backend uzerinden yonlendiriliyor
 export const aiApi = {
-  generateTitle: async (content: string, signal?: AbortSignal): Promise<{ title: string }> => {
-    const response = await apiClient.post<{ title: string }>(
-      '/ai/generate-title',
-      { content },
-      { signal }
-    );
-    return response.data;
+  generateTitle: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
+        '/ai/generate-title',
+        { content, operationId: resolvedOperationId },
+        withIdempotencyHeader(resolvedOperationId, { signal })
+      );
+      return response.data;
+    }, operationId);
   },
 
-  generateExcerpt: async (content: string, signal?: AbortSignal): Promise<{ excerpt: string }> => {
-    const response = await apiClient.post<{ excerpt: string }>(
-      '/ai/generate-excerpt',
-      { content },
-      { signal }
-    );
-    return response.data;
+  generateExcerpt: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
+        '/ai/generate-excerpt',
+        { content, operationId: resolvedOperationId },
+        withIdempotencyHeader(resolvedOperationId, { signal })
+      );
+      return response.data;
+    }, operationId);
   },
 
-  generateTags: async (content: string, signal?: AbortSignal): Promise<{ tags: string[] }> => {
-    const response = await apiClient.post<{ tags: string[] }>(
-      '/ai/generate-tags',
-      { content },
-      { signal }
-    );
-    return response.data;
+  generateTags: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
+        '/ai/generate-tags',
+        { content, operationId: resolvedOperationId },
+        withIdempotencyHeader(resolvedOperationId, { signal })
+      );
+      return response.data;
+    }, operationId);
   },
 
-  generateSeoDescription: async (content: string, signal?: AbortSignal): Promise<{ description: string }> => {
-    const response = await apiClient.post<{ description: string }>(
-      '/ai/generate-seo',
-      { content },
-      { signal }
-    );
-    return response.data;
+  generateSeoDescription: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
+        '/ai/generate-seo',
+        { content, operationId: resolvedOperationId },
+        withIdempotencyHeader(resolvedOperationId, { signal })
+      );
+      return response.data;
+    }, operationId);
   },
 
-  improveContent: async (content: string, signal?: AbortSignal): Promise<{ content: string }> => {
-    const response = await apiClient.post<{ content: string }>(
-      '/ai/improve-content',
-      { content },
-      { signal }
-    );
-    return response.data;
+  improveContent: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
+        '/ai/improve-content',
+        { content, operationId: resolvedOperationId },
+        withIdempotencyHeader(resolvedOperationId, { signal })
+      );
+      return response.data;
+    }, operationId);
   },
 };
-
 // Chat API
 export const chatApi = {
   sendMessage: async (data: ChatRequest): Promise<ApiResponse<ChatResponse>> => {
-    const response = await apiClient.post<ApiResponse<ChatResponse>>('/chat/message', data);
-    return response.data;
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const response = await apiClient.post<ApiResponse<ChatResponse>>(
+        '/chat/message',
+        {
+          ...data,
+          operationId: resolvedOperationId,
+        },
+        withIdempotencyHeader(resolvedOperationId)
+      );
+      return response.data;
+    }, data.operationId);
   },
 };
 
@@ -471,42 +714,58 @@ export const chatApi = {
 export const mediaApi = {
   uploadImage: async (
     file: File,
-    generateThumbnail = true
+    generateThumbnail = true,
+    operationId?: string
   ): Promise<ApiResponse<ImageUploadResult>> => {
-    const formData = new FormData();
-    formData.append('file', file);
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const formData = new FormData();
+      formData.append('file', file);
 
-    const response = await apiClient.post<ApiResponse<ImageUploadResult>>(
-      `/media/upload/image?generateThumbnail=${generateThumbnail}`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
-    );
-    return response.data;
+      // Note: Set Content-Type to undefined to let axios/browser set it automatically
+      // with the correct boundary for multipart/form-data
+      const response = await apiClient.post<ApiResponse<ImageUploadResult>>(
+        `/media/upload/image?generateThumbnail=${generateThumbnail}`,
+        formData,
+        withIdempotencyHeader(resolvedOperationId, {
+          headers: {
+            'Content-Type': undefined,
+          },
+        })
+      );
+      return response.data;
+    }, operationId);
   },
 
-  uploadImages: async (files: File[]): Promise<ApiResponse<ImageUploadResult[]>> => {
-    const formData = new FormData();
-    files.forEach((file) => {
-      formData.append('files', file);
-    });
+  uploadImages: async (files: File[], operationId?: string): Promise<ApiResponse<ImageUploadResult[]>> => {
+    return executeWithOperationRetry(async (resolvedOperationId) => {
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append('files', file);
+      });
 
-    const response = await apiClient.post<ApiResponse<ImageUploadResult[]>>(
-      '/media/upload/images',
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
-    );
-    return response.data;
+      // Note: Set Content-Type to undefined to let axios/browser set it automatically
+      // with the correct boundary for multipart/form-data
+      const response = await apiClient.post<ApiResponse<ImageUploadResult[]>>(
+        '/media/upload/images',
+        formData,
+        withIdempotencyHeader(resolvedOperationId, {
+          headers: {
+            'Content-Type': undefined,
+          },
+        })
+      );
+      return response.data;
+    }, operationId);
   },
 
-  deleteImage: async (url: string): Promise<void> => {
-    await apiClient.delete('/media', { params: { url } });
+  deleteImage: async (url: string, operationId?: string): Promise<void> => {
+    await executeWithOperationRetry(async (resolvedOperationId) => {
+      await apiClient.delete('/media', withIdempotencyHeader(resolvedOperationId, { params: { url } }));
+    }, operationId);
   },
 };
+
+
+
+
+

@@ -63,16 +63,17 @@ public class CreatePostCommandHandler(
         var post = new BlogPost
         {
             Id = Guid.NewGuid(),
-            Title = htmlSanitizer.Sanitize(dto.Title),
+            Title = htmlSanitizer.Sanitize(dto.Title) ?? string.Empty,
             Slug = slug.Value,
-            Content = htmlSanitizer.Sanitize(dto.Content),
+            // Content is raw markdown — skip HTML sanitization to preserve code blocks
+            Content = dto.Content ?? string.Empty,
             Excerpt = htmlSanitizer.Sanitize(dto.Excerpt),
             FeaturedImageUrl = dto.FeaturedImageUrl,
             CategoryId = categoryId,
             AuthorId = currentUserService.UserId.Value,
             MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70 
                 ? htmlSanitizer.Sanitize(dto.MetaTitle) 
-                : (dto.Title.Length <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)[..70]),
+                : ((dto.Title?.Length ?? 0) <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)?[..70]),
             MetaDescription = htmlSanitizer.Sanitize(dto.MetaDescription),
             MetaKeywords = htmlSanitizer.Sanitize(dto.MetaKeywords),
             Status = status,
@@ -90,7 +91,15 @@ public class CreatePostCommandHandler(
         // Published post eklendiyse liste cache versiyonunu rotate et
         if (status == PostStatus.Published)
         {
-            await cacheService.RotateGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken);
+            try
+            {
+                await cacheService.RotateGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Cache rotation failure should not fail the entire operation
+                // Consider logging this error
+            }
         }
 
         return new CreatePostCommandResponse

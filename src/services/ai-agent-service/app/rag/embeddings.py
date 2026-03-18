@@ -1,4 +1,4 @@
-"""Ollama embedding service using nomic-embed-text model."""
+"""Ollama embedding service using configurable embedding model."""
 
 import logging
 from typing import Optional
@@ -8,24 +8,35 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Embedding model configuration
-EMBEDDING_MODEL = "nomic-embed-text"
-EMBEDDING_DIMENSIONS = 768
+# Known embedding model dimensions
+MODEL_DIMENSIONS = {
+    "bge-m3": 1024,
+    "bge-large": 1024,
+    "nomic-embed-text": 768,
+    "mxbai-embed-large": 1024,
+    "all-minilm": 384,
+}
+
+
+def get_model_dimensions(model_name: str) -> int:
+    """Get embedding dimensions for a model, default to 1024."""
+    # Extract base model name (without tag)
+    base_name = model_name.split(":")[0] if ":" in model_name else model_name
+    return MODEL_DIMENSIONS.get(base_name, 1024)
 
 
 class EmbeddingService:
     """
-    Embedding service using Ollama's nomic-embed-text model.
+    Embedding service using Ollama's embedding models.
 
-    nomic-embed-text features:
-    - 768 dimensions
-    - Multilingual support (TR/EN)
-    - Optimized for semantic search
+    Configured via OLLAMA_EMBEDDING_MODEL in .env
+    Default: nomic-embed-text (768 dimensions, multilingual)
     """
 
-    def __init__(self, base_url: Optional[str] = None):
+    def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None):
         self._base_url = base_url or settings.ollama_base_url
-        self._model = EMBEDDING_MODEL
+        self._model = model or settings.ollama_embedding_model
+        self._dimensions = get_model_dimensions(self._model)
         self._initialized = False
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -54,7 +65,7 @@ class EmbeddingService:
             logger.warning(f"Could not verify embedding model availability: {e}")
 
         self._initialized = True
-        logger.info(f"EmbeddingService initialized with {self._model}")
+        logger.info(f"EmbeddingService initialized with {self._model} ({self._dimensions} dimensions)")
 
     async def shutdown(self) -> None:
         """Close the HTTP client."""
@@ -71,7 +82,7 @@ class EmbeddingService:
             text: Text to embed
 
         Returns:
-            List of floats representing the embedding vector (768 dimensions)
+            List of floats representing the embedding vector
         """
         if not self._initialized:
             await self.initialize()
@@ -126,7 +137,7 @@ class EmbeddingService:
     @property
     def dimensions(self) -> int:
         """Return the embedding dimensions."""
-        return EMBEDDING_DIMENSIONS
+        return self._dimensions
 
 
 

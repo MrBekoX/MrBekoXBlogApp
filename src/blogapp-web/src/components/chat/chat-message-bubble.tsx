@@ -1,7 +1,6 @@
 'use client';
 
-import { User, Bot, Globe } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Globe } from 'lucide-react';
 import type { ChatMessage } from '@/types';
 import { WebSearchSources } from './web-search-sources';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
@@ -15,73 +14,46 @@ export function ChatMessageBubble({ message }: ChatMessageBubbleProps) {
   const isAssistant = message.role === 'assistant';
 
   return (
-    <div
-      className={cn(
-        'flex gap-3',
-        isUser && 'flex-row-reverse'
-      )}
-    >
-      {/* Avatar */}
-      <div
-        className={cn(
-          'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center',
-          isUser ? 'bg-primary text-primary-foreground' : 'bg-muted'
-        )}
-      >
-        {isUser ? (
-          <User className="h-4 w-4" />
-        ) : message.isWebSearchResult ? (
-          <Globe className="h-4 w-4" />
-        ) : (
-          <Bot className="h-4 w-4" />
-        )}
-      </div>
-
-      {/* Message content */}
-      <div
-        className={cn(
-          'flex flex-col gap-1 max-w-[85%]',
-          isUser && 'items-end'
-        )}
-      >
-        <div
-          className={cn(
-            'rounded-2xl px-4 py-3 text-sm overflow-hidden',
-            isUser
-              ? 'bg-primary text-primary-foreground rounded-tr-sm'
-              : 'bg-muted rounded-tl-sm'
-          )}
-        >
-          {/* Web search indicator */}
+    <div className="space-y-1">
+      {isUser ? (
+        /* User message — terminal input line */
+        <div className="flex items-start gap-2 text-sm font-mono">
+          <span className="text-ide-primary shrink-0 mt-0.5">$</span>
+          <p className="text-white break-words whitespace-pre-wrap leading-relaxed">
+            {message.content}
+          </p>
+        </div>
+      ) : (
+        /* AI response — terminal output */
+        <div className="pl-4 border-l border-ide-border/50 space-y-1">
+          {/* Web search badge */}
           {isAssistant && message.isWebSearchResult && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-              <Globe className="h-3 w-3" />
-              <span>Web aramasindan</span>
+            <div className="flex items-center gap-1.5 text-[10px] text-blue-400 mb-1">
+              <Globe className="w-3 h-3" />
+              <span>web aramasindan</span>
             </div>
           )}
 
-          {/* Message content - Markdown rendering for assistant */}
-          {isAssistant ? (
+          {/* AI output via MarkdownRenderer */}
+          <div className="text-gray-300">
             <MarkdownRenderer
               content={message.content}
               proseSize="sm"
               forChat={true}
-              className="!p-0 !m-0 !max-w-none !bg-transparent !text-current"
+              className="!p-0 !m-0 !max-w-none"
             />
-          ) : (
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          </div>
+
+          {/* Web search sources */}
+          {isAssistant && message.isWebSearchResult && message.sources && (
+            <WebSearchSources sources={message.sources} />
           )}
         </div>
+      )}
 
-        {/* Web search sources */}
-        {isAssistant && message.isWebSearchResult && message.sources && (
-          <WebSearchSources sources={message.sources} />
-        )}
-
-        {/* Timestamp */}
-        <span className="text-xs text-muted-foreground px-1">
-          {formatTime(message.timestamp)}
-        </span>
+      {/* Timestamp */}
+      <div className={`text-[10px] text-gray-600 font-mono ${isUser ? 'pl-4' : 'pl-4'}`}>
+        {formatTime(message.timestamp)}
       </div>
     </div>
   );

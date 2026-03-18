@@ -3,22 +3,23 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-# Accept build arguments for API URLs
-ARG NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
-ARG API_URL=http://localhost:8080/api/v1
-
-# Set environment variables during build
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-ENV API_URL=${API_URL}
-
-# Copy package files
+# Copy package files and install dependencies first (cache-friendly)
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
 
 # Copy source files
 COPY . ./
+
+# Accept build arguments for API URLs (after npm ci to preserve cache)
+ARG NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+ARG NEXT_PUBLIC_SIGNALR_URL=
+ARG API_URL=http://localhost:8080/api/v1
+ARG REWRITE_URL=http://localhost:5116
+
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_SIGNALR_URL=${NEXT_PUBLIC_SIGNALR_URL}
+ENV API_URL=${API_URL}
+ENV REWRITE_URL=${REWRITE_URL}
 
 # Build application (standalone output)
 RUN npm run build

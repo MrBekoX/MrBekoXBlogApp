@@ -5,6 +5,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* IDE Design Tokens - Fixed colors for VS Code / terminal aesthetic */
+@theme {
+  --color-ide-bg: #000000;
+  --color-ide-sidebar: #0a0a0a;
+  --color-ide-border: #1e293b;
+  --color-ide-primary: #FBBF24;
+  --color-ide-primary-dim: #B45309;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -182,6 +191,25 @@
   }
 }
 
+/* Mobile sidebar drawer animations */
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
@@ -272,4 +300,76 @@
 /* Dark mode prose */
 .dark .prose-blog {
   @apply prose-invert;
+}
+
+/* ============================================================
+   IDE / VS Code Aesthetic Utilities
+   ============================================================ */
+
+/* Scanlines CRT effect overlay */
+.scanlines {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 0, 0, 0.05) 50%,
+    rgba(0, 0, 0, 0.05)
+  );
+  background-size: 100% 4px;
+  z-index: 50;
+  opacity: 0.1;
+}
+
+/* Cursor blink animation */
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Amber glow text shadow */
+.glow-text {
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+}
+
+/* IDE-style slim scrollbar */
+.ide-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.ide-scrollbar::-webkit-scrollbar-track {
+  background: #0a0f1a;
+}
+
+.ide-scrollbar::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+
+.ide-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* IDE prose overrides for dark editor background */
+.prose-ide {
+  @apply prose prose-invert max-w-none;
+  @apply prose-headings:font-mono prose-headings:text-white;
+  @apply prose-p:text-gray-300 prose-p:leading-relaxed;
+  @apply prose-a:text-ide-primary prose-a:no-underline hover:prose-a:underline;
+  @apply prose-code:text-ide-primary prose-code:bg-black/40 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none;
+  @apply prose-pre:bg-black/50 prose-pre:border prose-pre:border-ide-border prose-pre:rounded-lg;
+  @apply prose-blockquote:border-l-ide-primary prose-blockquote:text-gray-400;
+  @apply prose-strong:text-white;
+  @apply prose-img:rounded-lg;
+  @apply prose-hr:border-ide-border;
 }

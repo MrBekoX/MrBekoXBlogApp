@@ -67,3 +67,15 @@ class IMessageBroker(ABC):
     def is_connected(self) -> bool:
         """Check if connected to the broker."""
         pass
+
+    @abstractmethod
+    async def start_consuming_multi(
+        self,
+        handlers: dict[str, "MessageHandler"],
+    ) -> None:
+        """Start consuming from multiple queues with separate handlers.
+
+        Args:
+            handlers: Dict mapping queue_name -> handler function
+        """
+        pass

@@ -15,7 +15,11 @@ import { loginSchema, type LoginFormData } from '@/lib/validations';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { login, isLoading, error, clearError, authStatus, checkAuth } = useAuthStore();
+  const login = useAuthStore((state) => state.login);
+  const isLoading = useAuthStore((state) => state.isLoading);
+  const error = useAuthStore((state) => state.error);
+  const clearError = useAuthStore((state) => state.clearError);
+  const authStatus = useAuthStore((state) => state.authStatus);
   const [showPassword, setShowPassword] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -33,19 +37,15 @@ export default function AdminLoginPage() {
     setHasMounted(true);
   }, []);
 
-  // Check auth status after mount ONLY if idle (not if already unauthenticated)
-  // This prevents infinite API calls when user is not logged in
+  // If already authenticated (from persisted state), redirect to dashboard
+  // This is the ONLY auth check we need on login page
   useEffect(() => {
-    if (hasMounted && authStatus === 'idle') {
-      checkAuth();
-    }
-    // Don't include checkAuth in deps to prevent re-runs
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMounted, authStatus]);
+    // Wait for hydration to complete
+    if (!hasMounted) return;
 
-  // Redirect to dashboard if already authenticated
-  useEffect(() => {
-    if (hasMounted && authStatus === 'authenticated') {
+    // Only redirect if we have a confirmed authenticated state
+    // (from persisted sessionStorage, not from a fresh check)
+    if (authStatus === 'authenticated') {
       router.replace('/mrbekox-console/dashboard');
     }
   }, [hasMounted, authStatus, router]);
@@ -54,24 +54,20 @@ export default function AdminLoginPage() {
     clearError();
     const success = await login(data.email, data.password);
     if (success) {
-      toast.success('Hoş geldiniz!');
+      toast.success('Hos geldiniz!');
       router.push('/mrbekox-console/dashboard');
     } else {
-      toast.error(error || 'Giriş başarısız');
+      toast.error(error || 'Giris basarisiz');
     }
   };
 
-  // Show loading only during initial hydration or active auth check
-  // If 'unauthenticated', show login form immediately (no API call needed)
-  const showLoading = !hasMounted || authStatus === 'checking' ||
-    (authStatus === 'idle' && !hasMounted);
-
-  if (showLoading) {
+  // Show loading only during hydration
+  if (!hasMounted) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
-          <p className="mt-4 text-muted-foreground">Yükleniyor...</p>
+          <p className="mt-4 text-muted-foreground">Yukleniyor...</p>
         </div>
       </div>
     );
@@ -83,26 +79,14 @@ export default function AdminLoginPage() {
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
-          <p className="mt-4 text-muted-foreground">Yönlendiriliyor...</p>
+          <p className="mt-4 text-muted-foreground">Yonlendiriliyor...</p>
         </div>
       </div>
     );
   }
 
-  // If 'idle' and mounted, checkAuth is running - show loading
-  if (authStatus === 'idle') {
-    return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
-          <p className="mt-4 text-muted-foreground">Oturum kontrol ediliyor...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // authStatus === 'unauthenticated' - show login form
-
+  // Show login form for all other states (unauthenticated, idle, checking)
+  // We trust the persisted state - no additional auth check needed
   return (
     <div className="min-h-[calc(100vh-4rem)] sm:min-h-[calc(100vh-8rem)] flex items-center justify-center py-6 sm:py-12 px-3 sm:px-4 relative">
       {/* Background decoration */}
@@ -119,7 +103,7 @@ export default function AdminLoginPage() {
             </div>
             <CardTitle className="text-xl sm:text-2xl font-serif">Admin Paneli</CardTitle>
             <CardDescription className="text-sm sm:text-base">
-              Yönetim paneline erişmek için giriş yapın
+              Yonetim paneline erismek icin giris yapin
             </CardDescription>
           </CardHeader>
 
@@ -142,12 +126,12 @@ export default function AdminLoginPage() {
               </div>
 
               <div className="space-y-1.5 sm:space-y-2">
-                <Label htmlFor="password" className="text-xs sm:text-sm font-medium">Şifre</Label>
+                <Label htmlFor="password" className="text-xs sm:text-sm font-medium">Sifre</Label>
                 <div className="relative">
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Şifrenizi girin"
+                    placeholder="Sifrenizi girin"
                     className="h-10 sm:h-12 text-sm sm:text-base bg-background/50 border-border/50 focus:border-primary pr-10 sm:pr-12"
                     {...register('password')}
                   />
@@ -176,12 +160,12 @@ export default function AdminLoginPage() {
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Giriş yapılıyor...
+                    Giris yapiliyor...
                   </>
                 ) : (
                   <>
                     <Shield className="mr-2 h-4 w-4" />
-                    Giriş Yap
+                    Giris Yap
                   </>
                 )}
               </Button>
@@ -192,4 +176,3 @@ export default function AdminLoginPage() {
     </div>
   );
 }
-

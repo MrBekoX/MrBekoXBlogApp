@@ -27,11 +27,12 @@ class AnalysisService:
     def __init__(
         self,
         llm_provider: ILLMProvider,
-        seo_service: SeoService | None = None
+        seo_service: SeoService | None = None,
+        content_cleaner: ContentCleanerService | None = None,
     ):
         self._llm = llm_provider
         self._seo_service = seo_service
-        self._cleaner = ContentCleanerService()
+        self._cleaner = content_cleaner or ContentCleanerService()
 
     async def summarize_article(
         self,
@@ -72,7 +73,7 @@ Article:
 
 Summary:"""
 
-        result = await self._llm.generate_text(prompt)
+        result = await self._llm.generate_text(prompt, think=False)
         return result.strip()
 
     async def extract_keywords(
@@ -120,7 +121,7 @@ Content:
 
 Keywords:"""
 
-        result = await self._llm.generate_text(prompt)
+        result = await self._llm.generate_text(prompt, think=False)
 
         # Parse keywords
         keywords_text = result.strip()
@@ -268,7 +269,13 @@ Analysis:"""
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Handle exceptions
+        # Handle exceptions with detailed logging
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                task_names = ["summary", "keywords", "sentiment", "seo_description", "geo_optimization"]
+                task_name = task_names[i] if i < len(task_names) else f"task_{i}"
+                logger.error(f"Analysis task '{task_name}' failed: {result}")
+
         summary = results[0] if not isinstance(results[0], Exception) else "Özet oluşturulamadı"
         keywords = results[1] if not isinstance(results[1], Exception) else []
         sentiment = results[2] if not isinstance(results[2], Exception) else SentimentResult(
@@ -308,7 +315,7 @@ Content:
 
 Meta Description:"""
 
-        result = await self._llm.generate_text(prompt)
+        result = await self._llm.generate_text(prompt, think=False)
         desc = result.strip()
         if len(desc) > max_length:
             desc = desc[:max_length - 3] + "..."

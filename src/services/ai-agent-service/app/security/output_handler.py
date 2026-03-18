@@ -26,21 +26,37 @@ class SecureResponseHandler:
         PIIType.IP_ADDRESS: re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'),
     }
 
-    # XSS patterns
+    # XSS patterns — only match inside HTML tags to avoid false positives
+    # on normal text like "based on =", "depends on =", or web search snippets
     XSS_PATTERNS = [
-        r'<script[^>]*>.*?</script>',
-        r'javascript:',
-        r'on\w+\s*=',
-        r'<iframe[^>]*>',
-        r'<object[^>]*>',
-        r'<embed[^>]*>',
+        r'<script[^>]*>.*?</script>',      # Script tags
+        r'javascript\s*:',                  # JavaScript protocol
+        r'<[^>]+\bon\w+\s*=',              # Event handlers ONLY inside HTML tags
+        r'<iframe[^>]*>',                   # iFrame tags
+        r'<object[^>]*>',                   # Object tags
+        r'<embed[^>]*>',                    # Embed tags
+        r'<form[^>]*>',                     # Form tags
+        r'<meta[^>]*http-equiv',            # Meta refresh
     ]
 
     def __init__(self):
         self.xss_pattern = re.compile('|'.join(self.XSS_PATTERNS), re.IGNORECASE | re.DOTALL)
 
+    def _strip_dangerous_content(self, text: str) -> str:
+        """Strip dangerous HTML tags and attributes instead of raising errors."""
+        text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r'<iframe[^>]*>.*?</iframe>', '', text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r'<object[^>]*>.*?</object>', '', text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r'<embed[^>]*/?>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'<form[^>]*>.*?</form>', '', text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r'<meta[^>]*http-equiv[^>]*>', '', text, flags=re.IGNORECASE)
+        # Strip event handlers from remaining tags
+        text = re.sub(r'\bon\w+\s*=\s*["\'][^"\']*["\']', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'javascript\s*:', '', text, flags=re.IGNORECASE)
+        return text
+
     def sanitize_response(self, response: str) -> str:
-        """Sanitize LLM response by redacting PII and filtering XSS."""
+        """Sanitize LLM response by redacting PII and stripping dangerous content."""
         if not response:
             return response
 
@@ -48,28 +64,22 @@ class SecureResponseHandler:
         for pii_type, pattern in self.PII_PATTERNS.items():
             response = pattern.sub(f'[{pii_type.value.upper()}_REDACTED]', response)
 
-        # Step 2: XSS Detection (raise error if found)
+        # Step 2: XSS — strip dangerous tags instead of raising
         if self.xss_pattern.search(response):
-             # Log the attempt but maybe don't display the full payload to avoid log pollution/security risks
-             logger.warning("Potential XSS attack detected in LLM response.")
-             raise ValueError('Potential XSS attack detected in LLM response')
+            logger.warning("Potential XSS content detected in LLM response, sanitizing.")
+            response = self._strip_dangerous_content(response)
 
         return response
 
     def validate_response(self, response: Any) -> bool:
         """Validate response structure and content."""
         if not isinstance(response, dict):
-            # If we expect a dict but get something else, it might be valid if the caller handles it,
-            # but this method specifically validates dict structure safety if utilized that way.
-            # For general validation, we rely on sanitize_response for strings.
             return True
 
         # Check for malicious content in string representations of the dict
-        # This is a broad check
         response_str = str(response)
         if self.xss_pattern.search(response_str):
-             logger.warning("Potential XSS in structured response")
-             raise ValueError('Potential XSS in response')
+            logger.warning("Potential XSS in structured response, will be sanitized via sanitize_dict")
 
         return True
 

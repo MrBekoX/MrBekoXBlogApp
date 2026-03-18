@@ -1,17 +1,24 @@
 import type { Metadata } from 'next';
-import { Playfair_Display, Source_Sans_3, JetBrains_Mono, Merriweather, Crimson_Text } from 'next/font/google';
-import { Header } from '@/components/layout/header';
-import { Footer } from '@/components/layout/footer';
+import { Fira_Code, Playfair_Display, Source_Sans_3, JetBrains_Mono, Merriweather, Crimson_Text } from 'next/font/google';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
 import { CacheSyncProvider } from '@/components/cache-sync-provider';
+import { AuthSyncProvider } from '@/components/auth/auth-sync-provider';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { OrganizationSchema } from '@/components/seo/organization-schema';
 import { WebsiteSchema } from '@/components/seo/website-schema';
 import { PersonSchema } from '@/components/seo/person-schema';
 import './globals.css';
 
-// Google Fonts with Next.js optimization
+// IDE fonts
+const firaCode = Fira_Code({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  variable: '--font-fira-code',
+  display: 'swap',
+});
+
+// Legacy serif/sans fonts kept for admin console pages
 const playfairDisplay = Playfair_Display({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700', '800'],
@@ -48,6 +55,9 @@ const crimsonText = Crimson_Text({
 });
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
+
+// Enable SignalR debug logging in development
+const isDev = process.env.NODE_ENV === 'development';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -140,11 +150,18 @@ export default function RootLayout({
       <head>
         {/* Enable View Transitions API for smooth page transitions (modern browsers) */}
         <meta name="view-transition" content="same-origin" />
+        {/* VT323 display font via CDN — next/font does not support this family */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=VT323&display=swap"
+          rel="stylesheet"
+        />
         <OrganizationSchema />
         <WebsiteSchema />
         <PersonSchema />
       </head>
-      <body className={`${playfairDisplay.variable} ${sourceSans3.variable} ${jetbrainsMono.variable} ${merriweather.variable} ${crimsonText.variable} antialiased min-h-screen flex flex-col`}>
+      <body
+        className={`${firaCode.variable} ${playfairDisplay.variable} ${sourceSans3.variable} ${jetbrainsMono.variable} ${merriweather.variable} ${crimsonText.variable} antialiased min-h-screen`}
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
@@ -152,10 +169,10 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <ErrorBoundary>
-            <CacheSyncProvider>
-              <Header />
-              <main className="flex-1">{children}</main>
-              <Footer />
+            <CacheSyncProvider debug={isDev}>
+              <AuthSyncProvider>
+                {children}
+              </AuthSyncProvider>
               <Toaster position="top-right" />
             </CacheSyncProvider>
           </ErrorBoundary>

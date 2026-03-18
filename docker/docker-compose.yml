@@ -6,7 +6,7 @@ name: MrBekoXBlogApp
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: blogapp-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
@@ -24,7 +24,7 @@ services:
       start_period: 60s
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: blogapp-redis
     command: redis-server ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
     ports:
@@ -41,8 +41,8 @@ services:
     image: rabbitmq:4-management-alpine
     container_name: blogapp-rabbitmq
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?RABBITMQ_PASS is required}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -67,13 +67,21 @@ services:
       - ConnectionStrings__Redis=redis:6379
       - RabbitMQ__HostName=rabbitmq
       - RabbitMQ__Port=5672
-      - RabbitMQ__UserName=${RABBITMQ_USER:-guest}
-      - RabbitMQ__Password=${RABBITMQ_PASS:-guest}
+      - RabbitMQ__UserName=${RABBITMQ_USER:?RABBITMQ_USER is required}
+      - RabbitMQ__Password=${RABBITMQ_PASS:?RABBITMQ_PASS is required}
       - RabbitMQ__Enabled=true
+      - InternalServiceAuth__ServiceKey=${INTERNAL_SERVICE_AUTH_KEY:?INTERNAL_SERVICE_AUTH_KEY is required}
       - JwtSettings__Secret=${JwtSettings__Secret:?JwtSettings__Secret is required}
       - JwtSettings__Issuer=BlogApp
       - JwtSettings__Audience=BlogApp
-      - CorsOrigins=http://localhost:3000,http://localhost:8080,http://localhost:5173
+      - CorsOrigins__0=http://localhost:3000
+      - CorsOrigins__1=http://localhost:8080
+      - CorsOrigins__2=http://localhost:5173
+      - CorsOrigins__3=http://127.0.0.1:3000
+      - CorsOrigins__4=http://127.0.0.1:8080
+      - Turnstile__SiteKey=${TURNSTILE_SITE_KEY:-}
+      - Turnstile__SecretKey=${TURNSTILE_SECRET_KEY:-}
+
     ports:
       - "8080:8080"
     volumes:
@@ -98,15 +106,21 @@ services:
       context: ../src/blogapp-web
       dockerfile: ../../docker/frontend/Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8080/api/v1
+        NEXT_PUBLIC_API_URL: /api/v1
+        NEXT_PUBLIC_SIGNALR_URL: http://localhost:8080
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
         API_URL: http://backend:8080/api/v1
+        REWRITE_URL: http://backend:8080
     image: blogapp-frontend:latest
     pull_policy: never
     container_name: blogapp-frontend
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+      - NEXT_PUBLIC_API_URL=/api/v1
+      - NEXT_PUBLIC_SIGNALR_URL=http://localhost:8080
+      - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-}
       - API_URL=http://backend:8080/api/v1
+      - REWRITE_URL=http://backend:8080
     ports:
       - "3000:3000"
     depends_on:
@@ -131,18 +145,24 @@ services:
       - "8000:8000"
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-phi4-mini}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-4096}
       - OLLAMA_TEMPERATURE=${OLLAMA_TEMPERATURE:-0.7}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_PASS=${RABBITMQ_PASS:-guest}
+      - RABBITMQ_USER=${RABBITMQ_USER:?RABBITMQ_USER is required}
+      - RABBITMQ_PASS=${RABBITMQ_PASS:?RABBITMQ_PASS is required}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - BACKEND_API_URL=http://backend:8080/api/v1
       - DEBUG=false
       - CHROMA_PERSIST_DIR=/app/chroma_data
+      - INTERNAL_SERVICE_AUTH_HEADER_NAME=X-Service-Key
+      - INTERNAL_SERVICE_AUTH_KEY=${INTERNAL_SERVICE_AUTH_KEY:?INTERNAL_SERVICE_AUTH_KEY is required}
+      # Idle shutdown configuration (cost optimization)
+      - IDLE_SHUTDOWN_ENABLED=${IDLE_SHUTDOWN_ENABLED:-true}
+      - IDLE_TIMEOUT_SECONDS=${IDLE_TIMEOUT_SECONDS:-1800}  # 30 minutes
     volumes:
       - chroma_data:/app/chroma_data:rw
       - ./logs:/app/logs:rw
@@ -159,8 +179,13 @@ services:
       retries: 3
       start_period: 40s
 
+
 volumes:
   postgres_data:
   redis_data:
   rabbitmq_data:
   chroma_data:
+
+
+
+

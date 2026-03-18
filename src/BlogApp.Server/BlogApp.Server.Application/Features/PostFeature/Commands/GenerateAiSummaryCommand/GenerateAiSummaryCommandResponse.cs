@@ -1,31 +1,19 @@
-using BlogApp.Server.Application.Common.Models;
+﻿using BlogApp.Server.Application.Common.Models;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.GenerateAiSummaryCommand;
 
 /// <summary>
-/// Response for AI summary generation (async via RabbitMQ)
+/// Response for AI summary generation.
 /// </summary>
 public class GenerateAiSummaryCommandResponse
 {
-    public Result Result { get; set; } = null!;
-    
-    /// <summary>
-    /// Summary text (null for async requests, delivered via SignalR)
-    /// </summary>
-    public string? Summary { get; set; }
-    
-    /// <summary>
-    /// Word count of the original content
-    /// </summary>
-    public int WordCount { get; set; }
-    
-    /// <summary>
-    /// Correlation ID for tracking the async request
-    /// </summary>
+    public string OperationId { get; set; } = string.Empty;
     public string? CorrelationId { get; set; }
-    
-    /// <summary>
-    /// Status message
-    /// </summary>
+    public bool IsProcessing { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? ErrorMessage { get; set; }
+    public Result Result { get; set; } = null!;
+    public string? Summary { get; set; }
+    public int WordCount { get; set; }
     public string? Message { get; set; }
 }

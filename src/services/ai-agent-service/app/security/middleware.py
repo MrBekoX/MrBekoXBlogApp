@@ -1,9 +1,8 @@
-from fastapi import Request, HTTPException
+from fastapi import Request
 from fastapi.responses import JSONResponse
-import time
 import logging
+from app.container import container
 from app.security.token_rate_limiter import UnifiedRateLimiter
-from app.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -11,24 +10,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_RATE_LIMIT = 50
 DEFAULT_PERIOD = 60
 
-limiter = None
-
-async def get_redis_client():
-    try:
-        return cache.client
-    except Exception as e:
-        logger.warning("Redis client unavailable: %s", e)
-        return None
-
 async def rate_limit_middleware(request: Request, call_next):
     """Rate limiting middleware using UnifiedRateLimiter."""
-    global limiter
-
-    # Initialize limiter if needed
-    if limiter is None:
-        redis_client = await get_redis_client()
-        limiter = UnifiedRateLimiter(redis_client=redis_client)
-
     # Identify user by client IP for rate limiting
     client_ip = request.client.host if request.client else "unknown"
     user_key = f"ip:{client_ip}"
@@ -36,6 +19,8 @@ async def rate_limit_middleware(request: Request, call_next):
     # Skip rate limiting for health checks or internal paths
     if request.url.path in ["/health", "/metrics", "/docs", "/openapi.json"]:
         return await call_next(request)
+
+    limiter = UnifiedRateLimiter(redis_client=container.redis_client())
 
     # Check rate limit
     allowed = await limiter.check_limit(user_key, DEFAULT_RATE_LIMIT, DEFAULT_PERIOD)

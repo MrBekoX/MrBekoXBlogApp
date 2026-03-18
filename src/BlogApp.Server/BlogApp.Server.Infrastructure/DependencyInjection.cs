@@ -1,7 +1,9 @@
+using BlogApp.BuildingBlocks.Caching;
 using BlogApp.BuildingBlocks.Caching.Abstractions;
 using BlogApp.BuildingBlocks.Caching.Metrics;
 using BlogApp.BuildingBlocks.Caching.Options;
 using BlogApp.BuildingBlocks.Messaging;
+using MessagingRabbitMqSettings = BlogApp.BuildingBlocks.Messaging.Options.RabbitMqSettings;
 using BlogApp.Server.Application.Common.Interfaces.Data;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Persistence.BlogPostRepository;
@@ -25,32 +27,35 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace BlogApp.Server.Infrastructure;
 
-/// <summary>
-/// Infrastructure katmanı dependency injection
-/// </summary>
 public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
-        // Options Pattern Configuration
         services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
         services.Configure<AdminUserSettings>(configuration.GetSection(AdminUserSettings.SectionName));
+        services.Configure<ChatSessionTokenSettings>(configuration.GetSection(ChatSessionTokenSettings.SectionName));
+        services.Configure<InternalServiceAuthSettings>(configuration.GetSection(InternalServiceAuthSettings.SectionName));
+        services.Configure<ChatAbuseProtectionSettings>(configuration.GetSection(ChatAbuseProtectionSettings.SectionName));
+        services.Configure<TurnstileSettings>(configuration.GetSection(TurnstileSettings.SectionName));
 
-        // SiteSettings için CorsOrigins array'ini özel olarak bağla
         services.Configure<SiteSettings>(options =>
         {
             var origins = configuration.GetSection("CorsOrigins").Get<string[]>();
             options.Origins = origins ?? ["http://localhost:3000"];
         });
 
-        // Database
         var connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException(
                 "Connection string 'DefaultConnection' not found. " +
                 "Please ensure it is configured in appsettings.json or environment variables.");
+
         services.AddDbContext<AppDbContext>(options =>
         {
             options.UseNpgsql(connectionString, npgsqlOptions =>
@@ -58,8 +63,7 @@ public static class DependencyInjection
                 npgsqlOptions.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
                 npgsqlOptions.EnableRetryOnFailure(3);
             });
-            
-            // Suppress PendingModelChangesWarning - we handle migrations manually via SQL scripts
+
             options.ConfigureWarnings(warnings =>
                 warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
         });
@@ -67,54 +71,12 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(provider =>
             provider.GetRequiredService<AppDbContext>());
 
-        // Redis Cache Configuration (using BuildingBlocks shared settings)
-        services.Configure<RedisSettings>(configuration.GetSection(RedisSettings.SectionName));
-        
-        var redisSettings = configuration.GetSection(RedisSettings.SectionName).Get<RedisSettings>();
-        var redisConnectionString = redisSettings?.ConnectionString 
-                                    ?? configuration.GetConnectionString("Redis");
-        
-        if (redisSettings?.Enabled == true && !string.IsNullOrEmpty(redisConnectionString))
-        {
-            // Configure Redis connection with retry policy
-            var options = StackExchange.Redis.ConfigurationOptions.Parse(redisConnectionString);
-            options.ConnectRetry = 3;
-            options.ReconnectRetryPolicy = new StackExchange.Redis.ExponentialRetry(1000);
-            options.AbortOnConnectFail = false;
-            options.ConnectTimeout = 10000;
-            options.SyncTimeout = 5000;
-            options.AsyncTimeout = 5000;
+        services.AddHybridCachingInfrastructure(
+            configuration,
+            meterName: "BlogApp.Cache");
 
-            services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
-                StackExchange.Redis.ConnectionMultiplexer.Connect(options));
-            
-            services.AddStackExchangeRedisCache(opts =>
-            {
-                opts.Configuration = redisConnectionString;
-                opts.InstanceName = redisSettings.InstanceName;
-            });
-        }
-        else
-        {
-            // Fallback to in-memory cache when Redis is disabled or not configured
-            services.AddDistributedMemoryCache();
-            
-            // Ensure RedisSettings is configured with defaults for CacheService
-            if (redisSettings == null)
-            {
-                services.Configure<RedisSettings>(opts =>
-                {
-                    opts.Enabled = false;
-                    opts.InstanceName = "BlogApp_";
-                    opts.DefaultExpirationMinutes = 60;
-                });
-            }
-        }
-
-        // UnitOfWork
         services.AddScoped<IUnitOfWork, UnitOfWork>();
-        
-        // Entity-Specific Repositories
+
         services.AddScoped<IBlogPostReadRepository, EfCoreBlogPostReadRepository>();
         services.AddScoped<IBlogPostWriteRepository, EfCoreBlogPostWriteRepository>();
         services.AddScoped<IUserReadRepository, EfCoreUserReadRepository>();
@@ -127,42 +89,63 @@ public static class DependencyInjection
         services.AddScoped<ICommentWriteRepository, EfCoreCommentWriteRepository>();
         services.AddScoped<IRefreshTokenReadRepository, EfCoreRefreshTokenReadRepository>();
         services.AddScoped<IRefreshTokenWriteRepository, EfCoreRefreshTokenWriteRepository>();
-        
-        // Generic Repositories (still available for flexibility)
+
         services.AddScoped(typeof(IRepository<>), typeof(EfCoreRepository<>));
         services.AddScoped(typeof(IReadRepository<>), typeof(EfCoreReadRepository<>));
         services.AddScoped(typeof(IWriteRepository<>), typeof(EfCoreWriteRepository<>));
 
-        // Cache Metrics (using BuildingBlocks with domain-specific meter name)
-        services.AddSingleton(sp =>
-        {
-            var meterFactory = sp.GetService<System.Diagnostics.Metrics.IMeterFactory>();
-            return new CacheMetrics(meterFactory, "BlogApp.Cache");
-        });
-
-        // Services
-        services.AddScoped<IJwtTokenService, JwtTokenService>();
-        services.AddScoped<ITagService, TagService>();
-
-        // Cache Services - ICacheService extends IHybridCacheService extends IBasicCacheService
-        // All interfaces resolve to the same CacheService instance
         services.AddScoped<ICacheService, CacheService>();
         services.AddScoped<IHybridCacheService>(sp => sp.GetRequiredService<ICacheService>());
         services.AddScoped<IBasicCacheService>(sp => sp.GetRequiredService<ICacheService>());
-        
+
+        services.AddHttpClient(nameof(ChatAbuseProtectionService));
+
         services.AddScoped<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<IPostAuthorizationService, PostAuthorizationService>();
+        services.AddScoped<IChatSessionTokenService, ChatSessionTokenService>();
+        services.AddScoped<IChatAbuseProtectionService>(sp => new ChatAbuseProtectionService(
+            sp.GetService<IConnectionMultiplexer>(),
+            sp.GetRequiredService<IHttpClientFactory>(),
+            sp.GetRequiredService<IOptions<ChatAbuseProtectionSettings>>(),
+            sp.GetRequiredService<IOptions<TurnstileSettings>>(),
+            sp.GetRequiredService<IHostEnvironment>(),
+            sp.GetRequiredService<ILogger<ChatAbuseProtectionService>>()));
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
 
-        // Database Seeder
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<ITagService, TagService>();
+
+        services.AddSingleton<IAiGenerationCorrelationService, AiGenerationCorrelationService>();
+        services.AddScoped<IIdempotencyService, IdempotencyService>();
+        services.AddScoped<IAiGenerationRequestExecutor, AiGenerationRequestExecutor>();
+        services.AddScoped<IAsyncOperationDispatcher, AsyncOperationDispatcher>();
+
+        // Admin services for RabbitMQ management
+        services.AddSingleton<IRabbitMqAdminClient, RabbitMqAdminClient>();
+        services.AddScoped<IAdminService, AdminService>();
+        services.AddSingleton<IQueueDepthService>(sp => new QueueDepthService(
+            sp.GetService<IConnectionMultiplexer>(),
+            sp.GetRequiredService<ILogger<QueueDepthService>>()));
+
+        var rabbitMqSettings = configuration.GetSection(MessagingRabbitMqSettings.SectionName).Get<MessagingRabbitMqSettings>();
+        if (rabbitMqSettings?.Enabled == true)
+        {
+            services.AddScoped<IOutboxService, OutboxService>();
+            services.AddHostedService<OutboxPublisherHostedService>();
+        }
+        else
+        {
+            services.AddScoped<IOutboxService, NoOpOutboxService>();
+        }
+
         services.AddScoped<DbSeeder>();
-
-        // Background Services
         services.AddHostedService<RefreshTokenCleanupService>();
-
-        // Messaging Services (RabbitMQ via Shared Library)
+        services.AddHostedService<IdempotencyCleanupService>();
         services.AddMessagingServices(configuration);
 
         return services;
     }
 }
+
+

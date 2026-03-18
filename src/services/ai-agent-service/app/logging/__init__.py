@@ -1,0 +1,1 @@
+"""Structured agent logging."""

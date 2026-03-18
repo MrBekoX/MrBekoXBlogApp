@@ -29,6 +29,10 @@ public class BlogPostConfiguration : IEntityTypeConfiguration<BlogPost>
         builder.Property(p => p.Excerpt)
             .HasMaxLength(500);
 
+        builder.Property(p => p.Version)
+            .HasColumnName("xmin")
+            .IsRowVersion();
+
         builder.Property(p => p.FeaturedImageUrl)
             .HasMaxLength(500);
 

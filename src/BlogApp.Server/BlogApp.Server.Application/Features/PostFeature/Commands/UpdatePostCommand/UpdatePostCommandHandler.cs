@@ -7,9 +7,8 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using BlogApp.Server.Application.Features.PostFeature.Constants;
 using BlogApp.Server.Application.Features.PostFeature.Rules;
+using BlogApp.Server.Domain.Exceptions;
 using BlogApp.Server.Domain.ValueObjects;
-using Microsoft.Extensions.Logging;
-
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.UpdatePostCommand;
 
 public class UpdatePostCommandHandler(
@@ -18,7 +17,6 @@ public class UpdatePostCommandHandler(
     IPostBusinessRules postBusinessRules,
     ITagService tagService,
     ICacheService cacheService,
-    ILogger<UpdatePostCommandHandler> logger,
     IHtmlSanitizerService htmlSanitizer) : IRequestHandler<UpdatePostCommandRequest, UpdatePostCommandResponse>
 {
     public async Task<UpdatePostCommandResponse> Handle(UpdatePostCommandRequest request, CancellationToken cancellationToken)
@@ -39,9 +37,11 @@ public class UpdatePostCommandHandler(
         }
 
         // Include Tags to ensure EF Core tracks existing relationships correctly
+        // Use AsTracking() to override default AsNoTracking() from Query()
         // This prevents "duplicate key violates unique constraint PK_post_tags" error
         var post = await unitOfWork.PostsRead.Query()
             .Include(p => p.Tags)
+            .AsTracking()
             .FirstOrDefaultAsync(p => p.Id == dto.Id, cancellationToken);
         if (post is null)
         {
@@ -78,11 +78,49 @@ public class UpdatePostCommandHandler(
         }
 
         // Tag'leri al veya oluştur (batch query ile N+1 önleme)
-        post.Tags.Clear();
-        var tags = await tagService.GetOrCreateTagsAsync(dto.TagNames, cancellationToken);
-        foreach (var tag in tags)
+        // FIX: Entity tracking çakışmasını önlemek için diff-based update yap
+        // Mevcut tag'leri koru, sadece değişenleri işle
+
+        // Tag isimlerini normalize et
+        var normalizedTagNames = dto.TagNames
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Mevcut tag'leri isme göre indexle
+        var existingTagsByName = post.Tags.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+
+        // Silinecek tag'ler (eski listede var, yeni listede yok)
+        var tagsToRemove = post.Tags
+            .Where(t => !normalizedTagNames.Contains(t.Name))
+            .ToList();
+        foreach (var tag in tagsToRemove)
         {
-            post.Tags.Add(tag);
+            post.Tags.Remove(tag);
+        }
+
+        // Eklenecek tag'ler (yeni listede var, eski listede yok)
+        var missingTagNames = normalizedTagNames
+            .Where(name => !existingTagsByName.ContainsKey(name))
+            .ToList();
+
+        if (missingTagNames.Count > 0)
+        {
+            // Yeni tag'leri getir veya oluştur
+            var newTags = await tagService.GetOrCreateTagsAsync(missingTagNames, cancellationToken);
+
+            // Yeni tag'leri ekle
+            // Not: EF Core tracking çatışmasını önlemek için, yeni tag'ler farklı context'ten gelse bile
+            // SaveChanges sırasında doğru ilişkiler kurulacak
+            foreach (var tag in newTags)
+            {
+                // Tag zaten collection'da değilse ekle
+                if (!post.Tags.Any(t => t.Id == tag.Id))
+                {
+                    post.Tags.Add(tag);
+                }
+            }
         }
 
         // İlk kategoriyi al
@@ -98,15 +136,17 @@ public class UpdatePostCommandHandler(
         };
 
         // Diğer alanları güncelle
-        post.Title = htmlSanitizer.Sanitize(dto.Title);
-        post.Content = htmlSanitizer.Sanitize(dto.Content);
+        post.Title = htmlSanitizer.Sanitize(dto.Title) ?? string.Empty;
+        // Content is raw markdown rendered by react-markdown (auto-escapes HTML, no rehype-raw)
+        // so HTML sanitization is skipped to prevent corruption of code blocks with angle brackets
+        post.Content = dto.Content ?? string.Empty;
         post.Excerpt = htmlSanitizer.Sanitize(dto.Excerpt);
         post.FeaturedImageUrl = dto.FeaturedImageUrl;
         post.CategoryId = categoryId;
         // MetaTitle max 70 karakter limiti
         post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
             ? htmlSanitizer.Sanitize(dto.MetaTitle)
-            : (dto.Title.Length <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)[..70]);
+            : ((dto.Title?.Length ?? 0) <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)?[..70]);
         post.MetaDescription = htmlSanitizer.Sanitize(dto.MetaDescription);
         post.MetaKeywords = htmlSanitizer.Sanitize(dto.MetaKeywords);
         post.IsFeatured = dto.IsFeatured;
@@ -140,30 +180,9 @@ public class UpdatePostCommandHandler(
             await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException ex)
+        catch (DbUpdateConcurrencyException ex)
         {
-            // Handle database constraint violations
-            if (ex.InnerException?.Message.Contains("duplicate key") == true)
-            {
-                return new UpdatePostCommandResponse
-                {
-                    Result = Result.Failure("A post with this slug already exists.")
-                };
-            }
-
-            return new UpdatePostCommandResponse
-            {
-                Result = Result.Failure("Database error occurred while updating post.")
-            };
-        }
-        catch (Exception ex)
-        {
-            // Log the exception details but don't expose them to the client
-            logger.LogError(ex, "Unexpected error while updating post {PostId}", dto.Id);
-            return new UpdatePostCommandResponse
-            {
-                Result = Result.Failure("An unexpected error occurred while updating the post. Please try again later.")
-            };
+            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently, ex);
         }
 
         // Cache invalidation

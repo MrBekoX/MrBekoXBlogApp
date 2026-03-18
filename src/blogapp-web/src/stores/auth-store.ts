@@ -1,15 +1,9 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User } from '@/types';
 import { authApi, getErrorMessage } from '@/lib/api';
+import { AUTH_CHANNEL_NAME, broadcastAuthMessage } from '@/lib/auth-events';
 
-/**
- * Auth status represents the current authentication state.
- * - 'idle': Initial state, auth hasn't been checked yet
- * - 'checking': Currently verifying auth with backend
- * - 'authenticated': User is authenticated
- * - 'unauthenticated': User is not authenticated
- */
 type AuthStatus = 'idle' | 'checking' | 'authenticated' | 'unauthenticated';
 
 interface AuthState {
@@ -17,18 +11,39 @@ interface AuthState {
   authStatus: AuthStatus;
   isLoading: boolean;
   error: string | null;
-
-  // Actions
-  login: (email: string, password: string) => Promise<boolean>;
-  register: (data: { userName: string; email: string; password: string; confirmPassword: string; firstName?: string; lastName?: string }) => Promise<boolean>;
-  logout: () => Promise<void>;
-  checkAuth: () => Promise<void>;
+  lastAuthCheck: number | null;
+  login: (email: string, password: string, operationId?: string) => Promise<boolean>;
+  register: (
+    data: { userName: string; email: string; password: string; confirmPassword: string; firstName?: string; lastName?: string },
+    operationId?: string,
+  ) => Promise<boolean>;
+  logout: (operationId?: string) => Promise<void>;
+  checkAuth: (force?: boolean) => Promise<void>;
   clearError: () => void;
   reset: () => void;
 }
 
-// Store for tracking in-flight auth check to prevent duplicates
 let authCheckPromise: Promise<void> | null = null;
+let authChannel: BroadcastChannel | null = null;
+
+// Cooldown period for auth checks (5 seconds)
+const AUTH_CHECK_COOLDOWN_MS = 5000;
+
+function getAuthChannel(): BroadcastChannel | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  if (!authChannel) {
+    try {
+      authChannel = new BroadcastChannel(AUTH_CHANNEL_NAME);
+    } catch {
+      authChannel = null;
+    }
+  }
+
+  return authChannel;
+}
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -37,79 +52,93 @@ export const useAuthStore = create<AuthState>()(
       authStatus: 'idle',
       isLoading: false,
       error: null,
+      lastAuthCheck: null,
 
-      login: async (email: string, password: string) => {
+      login: async (email: string, password: string, operationId?: string) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await authApi.login({ email, password });
+          const response = await authApi.login({ email, password }, operationId);
           if (response.success && response.data) {
             set({
               user: response.data.user,
               authStatus: 'authenticated',
               isLoading: false,
+              lastAuthCheck: Date.now(),
             });
+            broadcastAuthMessage({ type: 'login', user: response.data.user });
             return true;
-          } else {
-            set({ error: response.message || 'Login failed', isLoading: false });
-            return false;
           }
+
+          set({ error: response.message || 'Giris basarisiz', isLoading: false });
+          return false;
         } catch (error) {
-          const message = getErrorMessage(error, 'Giriş başarısız');
-          set({ error: message, isLoading: false });
+          set({ error: getErrorMessage(error, 'Giris basarisiz'), isLoading: false });
           return false;
         }
       },
 
-      register: async (data) => {
+      register: async (data, operationId?: string) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await authApi.register(data);
+          const response = await authApi.register(data, operationId);
           if (response.success && response.data) {
             set({
               user: response.data.user,
               authStatus: 'authenticated',
               isLoading: false,
+              lastAuthCheck: Date.now(),
             });
+            broadcastAuthMessage({ type: 'login', user: response.data.user });
             return true;
-          } else {
-            set({ error: response.message || 'Kayıt başarısız', isLoading: false });
-            return false;
           }
+
+          set({ error: response.message || 'Kayit basarisiz', isLoading: false });
+          return false;
         } catch (error) {
-          const message = getErrorMessage(error, 'Kayıt başarısız');
-          set({ error: message, isLoading: false });
+          set({ error: getErrorMessage(error, 'Kayit basarisiz'), isLoading: false });
           return false;
         }
       },
 
-      logout: async () => {
+      logout: async (operationId?: string) => {
         try {
-          await authApi.logout();
+          await authApi.logout(operationId);
         } catch {
-          // Ignore logout errors
+          // Ignore logout errors.
         } finally {
-          set({ user: null, authStatus: 'unauthenticated' });
+          set({
+            user: null,
+            authStatus: 'unauthenticated',
+            isLoading: false,
+            error: null,
+            lastAuthCheck: Date.now(),
+          });
+          broadcastAuthMessage({ type: 'logout' });
+          getAuthChannel()?.close();
+          authChannel = null;
         }
       },
 
-      checkAuth: async () => {
+      checkAuth: async (force = false) => {
         const state = get();
 
-        // If already checking, wait for the existing check to complete
+        // If already checking, wait for that to complete
         if (authCheckPromise) {
           await authCheckPromise;
-          // Re-check state after promise completes - another call may have set auth
-          const newState = get();
-          if (newState.authStatus !== 'unauthenticated') {
-            return;
-          }
           return;
         }
 
-        // If already authenticated and we have a user, skip the check
-        // (login/register already set the state correctly)
-        if (state.authStatus === 'authenticated' && state.user) {
+        // If already authenticated and not forcing, skip
+        if (!force && state.authStatus === 'authenticated' && state.user) {
           return;
+        }
+
+        // Check cooldown (unless forcing)
+        if (!force && state.lastAuthCheck) {
+          const timeSinceLastCheck = Date.now() - state.lastAuthCheck;
+          if (timeSinceLastCheck < AUTH_CHECK_COOLDOWN_MS) {
+            return;
+          }
         }
 
         set({ authStatus: 'checking' });
@@ -118,31 +147,25 @@ export const useAuthStore = create<AuthState>()(
           try {
             const response = await authApi.getCurrentUser();
             if (response.success && response.data) {
-              set({ user: response.data, authStatus: 'authenticated' });
-            } else {
-              set({ user: null, authStatus: 'unauthenticated' });
+              set({
+                user: response.data,
+                authStatus: 'authenticated',
+                error: null,
+                lastAuthCheck: Date.now(),
+              });
+              return;
             }
-          } catch (error) {
-            if (error && typeof error === 'object' && 'response' in error) {
-              const axiosError = error as { response?: { status?: number } };
-
-              // 401 means not authenticated
-              if (axiosError.response?.status === 401) {
-                set({ user: null, authStatus: 'unauthenticated' });
-                return;
-              }
-
-              // 429 rate limit - treat as unauthenticated to prevent infinite loop
-              if (axiosError.response?.status === 429) {
-                set({ user: null, authStatus: 'unauthenticated' });
-                return;
-              }
-            }
-
-            set({ user: null, authStatus: 'unauthenticated' });
+          } catch {
+            // fall through to unauthenticated state
           } finally {
             authCheckPromise = null;
           }
+
+          set({
+            user: null,
+            authStatus: 'unauthenticated',
+            lastAuthCheck: Date.now(),
+          });
         })();
 
         await authCheckPromise;
@@ -150,23 +173,21 @@ export const useAuthStore = create<AuthState>()(
 
       clearError: () => set({ error: null }),
 
-      reset: () => set({ user: null, authStatus: 'idle', error: null }),
+      reset: () => set({
+        user: null,
+        authStatus: 'idle',
+        error: null,
+        isLoading: false,
+        lastAuthCheck: null,
+      }),
     }),
     {
-      name: 'auth-storage',
-      // Persist both user and authStatus to prevent infinite loops
-      // On page load, if unauthenticated, don't call checkAuth
-      // If authenticated, verify with backend once
+      name: 'blogapp-auth',
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
-        user: state.user ? {
-          id: state.user.id,
-          userName: state.user.userName,
-          fullName: state.user.fullName,
-          role: state.user.role,
-          avatarUrl: state.user.avatarUrl,
-          // Exclude: email
-        } as typeof state.user : null,
-        authStatus: state.authStatus === 'checking' ? 'idle' : state.authStatus,
+        user: state.user,
+        authStatus: state.authStatus,
+        lastAuthCheck: state.lastAuthCheck,
       }),
     }
   )

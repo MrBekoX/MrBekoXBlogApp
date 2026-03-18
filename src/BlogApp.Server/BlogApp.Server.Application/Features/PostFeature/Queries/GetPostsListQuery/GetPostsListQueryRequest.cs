@@ -21,8 +21,10 @@ public class GetPostsListQueryRequest : IRequest<GetPostsListQueryResponse>, ICa
     // CacheKey: İsteğin parametrelerine göre benzersiz bir anahtar oluşturur
     public string CacheKey => $"posts-list-{PageNumber}-{PageSize}-{SearchTerm}-{CategoryId}-{TagId}-{AuthorId}-{Status}-{IsFeatured}-{SortBy}-{SortDescending}";
 
-    // Cache süresi (hard expiration for SWR)
-    public TimeSpan? CacheDuration => TimeSpan.FromMinutes(10);
+    // Cache süresi: arama sorguları için daha kısa
+    public TimeSpan? CacheDuration => string.IsNullOrWhiteSpace(SearchTerm)
+        ? TimeSpan.FromMinutes(10)
+        : TimeSpan.FromMinutes(2);
 
     // Cache group for version-based invalidation
     public string? CacheGroup => PostCacheKeys.ListGroup;

@@ -13,8 +13,15 @@ public class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICur
     {
         get
         {
-            var userIdClaim = httpContextAccessor.HttpContext?.User?.FindFirst("userId")
-                              ?? httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier);
+            // Fix: Add explicit null check for HttpContext
+            var httpContext = httpContextAccessor.HttpContext;
+            if (httpContext == null)
+            {
+                return null;
+            }
+
+            var userIdClaim = httpContext.User?.FindFirst("userId")
+                              ?? httpContext.User?.FindFirst(ClaimTypes.NameIdentifier);
 
             if (userIdClaim is not null && Guid.TryParse(userIdClaim.Value, out var userId))
             {
@@ -24,6 +31,9 @@ public class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICur
             return null;
         }
     }
+
+    public string? CorrelationId =>
+        httpContextAccessor.HttpContext?.TraceIdentifier;
 
     public string? UserName =>
         httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.Name)?.Value;

@@ -18,7 +18,7 @@ public class RequestLoggingMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var requestId = Guid.NewGuid().ToString()[..8];
+        var correlationId = context.TraceIdentifier;
         var stopwatch = Stopwatch.StartNew();
 
         var method = context.Request.Method;
@@ -26,8 +26,8 @@ public class RequestLoggingMiddleware
         var queryString = context.Request.QueryString;
 
         _logger.LogInformation(
-            "[{RequestId}] {Method} {Path}{QueryString} - Started",
-            requestId, method, path, queryString);
+            "[{CorrelationId}] {Method} {Path}{QueryString} - Started",
+            correlationId, method, path, queryString);
 
         await _next(context);
 
@@ -41,8 +41,8 @@ public class RequestLoggingMiddleware
 
         _logger.Log(
             logLevel,
-            "[{RequestId}] {Method} {Path} - {StatusCode} in {Elapsed}ms",
-            requestId, method, path, statusCode, elapsed);
+            "[{CorrelationId}] {Method} {Path} - {StatusCode} in {Elapsed}ms",
+            correlationId, method, path, statusCode, elapsed);
     }
 }
 
@@ -53,4 +53,3 @@ public static class RequestLoggingMiddlewareExtensions
         return builder.UseMiddleware<RequestLoggingMiddleware>();
     }
 }
-

@@ -1,14 +1,14 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { useAuthStore } from '@/stores/auth-store';
-import { API_BASE_URL, HUB_URL } from '@/lib/env';
+import { AUTHORING_EVENTS_HUB_URL } from '@/lib/env';
+import { getErrorMessage, postsApi } from '@/lib/api';
+import { createOperationId } from '@/lib/idempotency';
 
-/**
- * AI Analysis result from SignalR notification
- */
 export interface AiAnalysisResult {
   postId: string;
   correlationId: string;
+  operationId?: string;
   summary: string;
   keywords: string[];
   seoDescription: string;
@@ -17,220 +17,215 @@ export interface AiAnalysisResult {
   timestamp: string;
 }
 
-/**
- * State for AI analysis request
- */
 export interface AiAnalysisState {
   isLoading: boolean;
   result: AiAnalysisResult | null;
   error: string | null;
   correlationId: string | null;
+  operationId: string | null;
 }
 
 interface UseAiAnalysisOptions {
-  /** Callback when analysis completes */
   onComplete?: (result: AiAnalysisResult) => void;
-  /** Callback when an error occurs */
   onError?: (error: string) => void;
-  /** Enable debug logging */
   debug?: boolean;
 }
 
-/**
- * React hook for requesting and receiving AI analysis via SignalR.
- *
- * Usage:
- * ```tsx
- * const { requestAnalysis, isLoading, result, error } = useAiAnalysis(postId);
- *
- * // Request analysis
- * await requestAnalysis();
- *
- * // Result will be set automatically when AI Agent completes
- * ```
- */
+function normalizeAnalysisEvent(event: Record<string, unknown>): AiAnalysisResult {
+  const keywords = event.keywords ?? event.Keywords;
+
+  return {
+    postId: String(event.postId ?? event.PostId ?? ''),
+    correlationId: String(event.correlationId ?? event.CorrelationId ?? ''),
+    operationId: (event.operationId ?? event.OperationId) as string | undefined,
+    summary: String(event.summary ?? event.Summary ?? ''),
+    keywords: Array.isArray(keywords) ? keywords.map((item) => String(item)) : [],
+    seoDescription: String(event.seoDescription ?? event.SeoDescription ?? ''),
+    readingTime: Number(event.readingTime ?? event.ReadingTime ?? 0),
+    sentiment: String(event.sentiment ?? event.Sentiment ?? ''),
+    timestamp: String(event.timestamp ?? event.Timestamp ?? new Date().toISOString()),
+  };
+}
+
 export function useAiAnalysis(postId: string, options: UseAiAnalysisOptions = {}) {
   const { onComplete, onError, debug = false } = options;
-
   const [state, setState] = useState<AiAnalysisState>({
     isLoading: false,
     result: null,
     error: null,
     correlationId: null,
+    operationId: null,
   });
 
   const connectionRef = useRef<signalR.HubConnection | null>(null);
   const onCompleteRef = useRef(onComplete);
   const onErrorRef = useRef(onError);
+  const postIdRef = useRef(postId);
+  const activeOperationIdRef = useRef<string | null>(null);
+  const completedOperationIdsRef = useRef<Set<string>>(new Set());
   const { user } = useAuthStore();
 
-  // Keep callback refs updated
   useEffect(() => {
+    postIdRef.current = postId;
     onCompleteRef.current = onComplete;
     onErrorRef.current = onError;
-  }, [onComplete, onError]);
+  }, [onComplete, onError, postId]);
 
-  const log = useCallback((..._args: unknown[]) => {
-    // logging disabled
-  }, []);
+  const log = useCallback((...args: unknown[]) => {
+    if (debug) {
+      console.debug('[useAiAnalysis]', ...args);
+    }
+  }, [debug]);
 
-  // Connect to SignalR hub
   useEffect(() => {
-    // Don't connect if not logged in
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
     let connection: signalR.HubConnection | null = null;
     let isMounted = true;
 
+    const handleAiAnalysisCompleted = (rawEvent: Record<string, unknown>) => {
+      if (!isMounted) return;
+      const event = normalizeAnalysisEvent(rawEvent);
+      if (event.postId !== postIdRef.current) return;
+
+      const activeOperationId = activeOperationIdRef.current;
+      if (activeOperationId && event.operationId && event.operationId !== activeOperationId) {
+        return;
+      }
+
+      if (event.operationId && completedOperationIdsRef.current.has(event.operationId)) {
+        return;
+      }
+
+      if (event.operationId) {
+        completedOperationIdsRef.current.add(event.operationId);
+      }
+
+      activeOperationIdRef.current = null;
+      setState({
+        isLoading: false,
+        result: event,
+        error: null,
+        correlationId: event.correlationId || null,
+        operationId: event.operationId ?? null,
+      });
+      onCompleteRef.current?.(event);
+    };
+
     const connect = async () => {
       try {
-        log('Connecting to SignalR hub for AI analysis notifications...');
-
         connection = new signalR.HubConnectionBuilder()
-          .withUrl(HUB_URL, {
+          .withUrl(AUTHORING_EVENTS_HUB_URL, {
             withCredentials: true,
             skipNegotiation: true,
             transport: signalR.HttpTransportType.WebSockets,
           })
           .withAutomaticReconnect()
-          .configureLogging(debug ? signalR.LogLevel.Debug : signalR.LogLevel.None)
+          .configureLogging(signalR.LogLevel.None)
           .build();
 
-        // Listen for AI analysis completed events
-        connection.on('AiAnalysisCompleted', (event: AiAnalysisResult) => {
-          if (!isMounted) return;
-          log('Received AiAnalysisCompleted event:', event);
-
-          if (event.postId === postId) {
-            log('Event matches our postId, updating state');
-            setState(prev => ({
-              ...prev,
-              isLoading: false,
-              result: event,
-              error: null,
-            }));
-            onCompleteRef.current?.(event);
+        connection.on('AiAnalysisCompleted', handleAiAnalysisCompleted);
+        connection.on('aiAnalysisCompleted', handleAiAnalysisCompleted);
+        connection.onreconnected(async () => {
+          try {
+            await connection?.invoke('JoinPostGroup', postIdRef.current);
+          } catch {
+            // Ignore rejoin failures.
           }
         });
 
-        connection.onreconnecting(() => log('SignalR reconnecting...'));
-        connection.onreconnected(() => log('SignalR reconnected'));
-        connection.onclose((error) => log('SignalR connection closed', error));
-
-        connectionRef.current = connection;
-
         await connection.start();
-
-        if (isMounted) {
-          log('Connected to SignalR hub');
-
-          // Join post group for targeted notifications
-          try {
-            await connection.invoke('JoinPostGroup', postId);
-            log(`Joined post group: ${postId}`);
-          } catch (err) {
-            log('Failed to join post group:', err);
-          }
+        if (!isMounted) {
+          await connection.stop();
+          return;
         }
 
+        connectionRef.current = connection;
+        await connection.invoke('JoinPostGroup', postIdRef.current);
       } catch (error) {
-        if (!isMounted) return;
-
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const isBenignError = 
-           errorMessage.includes('stop()') || 
-           errorMessage.includes('HttpConnection') || 
-           errorMessage.includes('abort');
-
-        if (isBenignError) {
-           return;
+        if (isMounted) {
+          log('SignalR connection failed', error);
         }
       }
     };
 
-    connect();
+    void connect();
 
     return () => {
       isMounted = false;
+      completedOperationIdsRef.current.clear();
       if (connection) {
-        connection.stop().catch((err) => { if (process.env.NODE_ENV === 'development') console.error(err); });
+        connection.off('AiAnalysisCompleted', handleAiAnalysisCompleted);
+        connection.off('aiAnalysisCompleted', handleAiAnalysisCompleted);
+        connection.stop().catch(() => undefined);
       }
       connectionRef.current = null;
     };
-  }, [postId, debug, log, user]);
+  }, [debug, log, user]);
 
-  /**
-   * Request AI analysis for the post.
-   * Result will be delivered via SignalR when ready.
-   */
   const requestAnalysis = useCallback(async (language = 'tr', targetRegion = 'TR') => {
     if (!postId) {
-      const errorMsg = 'Post ID is required';
-      setState(prev => ({ ...prev, error: errorMsg }));
-      onErrorRef.current?.(errorMsg);
+      const errorMessage = 'Post ID is required';
+      setState((prev) => ({ ...prev, error: errorMessage }));
+      onErrorRef.current?.(errorMessage);
       return;
     }
 
-    setState(prev => ({
-      ...prev,
+    const requestOperationId = createOperationId();
+    activeOperationIdRef.current = requestOperationId;
+    completedOperationIdsRef.current.delete(requestOperationId);
+
+    setState({
       isLoading: true,
-      error: null,
       result: null,
-    }));
+      error: null,
+      correlationId: null,
+      operationId: requestOperationId,
+    });
 
     try {
-      log(`Requesting AI analysis for post ${postId}...`);
-
-      const response = await fetch(`${API_BASE_URL}/posts/${postId}/request-ai-analysis`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ language, targetRegion }),
+      const response = await postsApi.requestAiAnalysis(postId, {
+        language,
+        targetRegion,
+        operationId: requestOperationId,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.message || `Request failed with status ${response.status}`;
-        throw new Error(errorMsg);
+      if (!response.success) {
+        throw new Error(response.message ?? 'AI analysis request failed');
       }
 
-      const data = await response.json();
-      log('AI analysis request accepted:', data);
-
-      // Store correlation ID for tracking
-      if (data.data?.correlationId) {
-        setState(prev => ({
-          ...prev,
-          correlationId: data.data.correlationId,
-        }));
-      }
-
-      // Now waiting for SignalR notification...
-      // isLoading stays true until we receive the result
-
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to request AI analysis';
-      setState(prev => ({
+      const acceptedOperationId = response.data?.operationId ?? requestOperationId;
+      activeOperationIdRef.current = acceptedOperationId;
+      setState((prev) => ({
         ...prev,
-        isLoading: false,
-        error: errorMsg,
+        correlationId: response.data?.correlationId ?? null,
+        operationId: acceptedOperationId,
       }));
-
-      onErrorRef.current?.(errorMsg);
+    } catch (error) {
+      activeOperationIdRef.current = null;
+      const errorMessage = getErrorMessage(error, 'Failed to request AI analysis');
+      setState({
+        isLoading: false,
+        result: null,
+        error: errorMessage,
+        correlationId: null,
+        operationId: null,
+      });
+      onErrorRef.current?.(errorMessage);
     }
-  }, [postId, log]);
+  }, [postId]);
 
-  /**
-   * Clear the current result and error state
-   */
   const reset = useCallback(() => {
+    activeOperationIdRef.current = null;
+    completedOperationIdsRef.current.clear();
     setState({
       isLoading: false,
       result: null,
       error: null,
       correlationId: null,
+      operationId: null,
     });
   }, []);
 
@@ -241,48 +236,38 @@ export function useAiAnalysis(postId: string, options: UseAiAnalysisOptions = {}
     result: state.result,
     error: state.error,
     correlationId: state.correlationId,
+    operationId: state.operationId,
   };
 }
 
-/**
- * Simpler hook that just requests analysis without SignalR.
- * Use this when you don't need real-time updates.
- */
 export function useRequestAiAnalysis() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const requestAnalysis = useCallback(async (
     postId: string,
     language = 'tr',
-    targetRegion = 'TR'
+    targetRegion = 'TR',
   ) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/posts/${postId}/request-ai-analysis`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ language, targetRegion }),
+      const operationId = createOperationId();
+      const response = await postsApi.requestAiAnalysis(postId, {
+        language,
+        targetRegion,
+        operationId,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Request failed with status ${response.status}`);
+      if (!response.success) {
+        throw new Error(response.message ?? 'AI analysis request failed');
       }
 
-      const data = await response.json();
-      return data.data;
-
+      return response.data;
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to request AI analysis';
-      setError(errorMsg);
+      setError(getErrorMessage(err, 'Failed to request AI analysis'));
       throw err;
-
     } finally {
       setIsLoading(false);
     }

@@ -7,6 +7,7 @@ namespace BlogApp.BuildingBlocks.Messaging.Events.Ai;
 /// </summary>
 public record AiSeoDescriptionGenerationRequestedEvent : IntegrationEvent
 {
+    public override string EventType => "ai.seo.generation.requested";
     public AiSeoDescriptionGenerationPayload Payload { get; init; } = null!;
 }
 

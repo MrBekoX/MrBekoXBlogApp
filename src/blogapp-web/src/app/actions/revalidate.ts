@@ -1,36 +1,48 @@
 'use server';
 
-import { revalidateTag } from 'next/cache';
+import { revalidatePath, refresh } from 'next/cache';
 
 /**
- * Server action to revalidate Next.js cache by tag.
+ * Server action to revalidate Next.js cache.
  * Called from client when SignalR cache invalidation events are received.
+ *
+ * With cache:'no-store' on fetches, there is no Data Cache to purge.
+ * revalidatePath purges the Full Route Cache so the next navigation
+ * triggers a fresh server render. refresh() signals the current client
+ * to re-fetch the RSC payload immediately.
  */
-export async function revalidateCacheTag(tag: string): Promise<{ success: boolean }> {
+export async function revalidateCacheTag(_tag: string): Promise<{ success: boolean }> {
   try {
-    // Use appropriate profile based on tag
-    const profile = tag.includes('posts') ? 'posts' : 
-                   tag.includes('categories') ? 'categories' : 
-                   tag.includes('tags') ? 'tags' : 'default';
-    
-    revalidateTag(tag, profile);
-    return { success: true };
+    revalidatePath('/', 'layout');
   } catch {
-    return { success: false };
+    // Ignore revalidation errors
   }
+
+  try {
+    refresh();
+  } catch {
+    // Ignore refresh errors
+  }
+
+  return { success: true };
 }
 
 /**
- * Revalidate all content-related cache tags.
- * Use this for broad invalidation events.
+ * Revalidate all content-related caches.
  */
 export async function revalidateAllContent(): Promise<{ success: boolean }> {
   try {
-    revalidateTag('posts', 'posts');
-    revalidateTag('categories', 'categories');
-    revalidateTag('tags', 'tags');
-    return { success: true };
+    revalidatePath('/', 'layout');
   } catch {
-    return { success: false };
+    // Ignore revalidation errors
   }
+
+  try {
+    refresh();
+  } catch {
+    // Ignore refresh errors
+  }
+
+  return { success: true };
 }
+

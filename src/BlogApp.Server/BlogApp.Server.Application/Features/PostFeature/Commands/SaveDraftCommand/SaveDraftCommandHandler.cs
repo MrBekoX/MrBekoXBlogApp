@@ -4,9 +4,11 @@ using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Constants;
 using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Domain.Enums;
+using BlogApp.Server.Domain.Exceptions;
 using BlogApp.Server.Domain.ValueObjects;
 using FluentValidation;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.SaveDraftCommand;
 
@@ -69,16 +71,16 @@ public class SaveDraftCommandHandler(
                 };
             }
 
-            // BUG-006 FIX: HTML sanitization for all user inputs
-            post.Title = htmlSanitizer.Sanitize(dto.Title);
-            post.Content = htmlSanitizer.Sanitize(dto.Content);
+            post.Title = htmlSanitizer.Sanitize(dto.Title) ?? string.Empty;
+            // Content is raw markdown — skip HTML sanitization to preserve code blocks
+            post.Content = dto.Content ?? string.Empty;
             post.Excerpt = htmlSanitizer.Sanitize(dto.Excerpt);
             post.FeaturedImageUrl = dto.FeaturedImageUrl;
             post.CategoryId = categoryId;
             // MetaTitle max 70 karakter limiti
             post.MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
                 ? htmlSanitizer.Sanitize(dto.MetaTitle)
-                : (dto.Title.Length <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)[..70]);
+                : ((dto.Title?.Length ?? 0) <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)?[..70]);
             post.MetaDescription = htmlSanitizer.Sanitize(dto.MetaDescription);
             post.MetaKeywords = htmlSanitizer.Sanitize(dto.MetaKeywords);
             post.UpdatedAt = DateTime.UtcNow;
@@ -86,7 +88,7 @@ public class SaveDraftCommandHandler(
             // Slug'ı güncelle (sadece draft ise)
             if (post.Status == PostStatus.Draft)
             {
-                var slugValue = Slug.CreateFromTitle(dto.Title).Value;
+                var slugValue = Slug.CreateFromTitle(dto.Title ?? string.Empty).Value;
                 var timestamp = DateTime.UtcNow.Ticks.ToString()[^8..];
                 var fullSlug = $"{slugValue}-{timestamp}";
                 if (fullSlug.Length > 250)
@@ -114,13 +116,13 @@ public class SaveDraftCommandHandler(
                 fullSlug = $"{slugValue[..Math.Min(slugValue.Length, maxBaseLength)].TrimEnd('-')}-{timestamp}";
             }
 
-            // Yeni taslak oluştur - BUG-006 FIX: HTML sanitization
             post = new BlogPost
             {
                 Id = Guid.NewGuid(),
-                Title = htmlSanitizer.Sanitize(dto.Title),
+                Title = htmlSanitizer.Sanitize(dto.Title) ?? string.Empty,
                 Slug = fullSlug,
-                Content = htmlSanitizer.Sanitize(dto.Content),
+                // Content is raw markdown — skip HTML sanitization to preserve code blocks
+                Content = dto.Content ?? string.Empty,
                 Excerpt = htmlSanitizer.Sanitize(dto.Excerpt),
                 FeaturedImageUrl = dto.FeaturedImageUrl,
                 Status = PostStatus.Draft,
@@ -129,7 +131,7 @@ public class SaveDraftCommandHandler(
                 // MetaTitle max 70 karakter limiti
                 MetaTitle = dto.MetaTitle != null && dto.MetaTitle.Length <= 70
                     ? htmlSanitizer.Sanitize(dto.MetaTitle)
-                    : (dto.Title.Length <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)[..70]),
+                    : ((dto.Title?.Length ?? 0) <= 70 ? htmlSanitizer.Sanitize(dto.Title) : htmlSanitizer.Sanitize(dto.Title)?[..70]),
                 MetaDescription = htmlSanitizer.Sanitize(dto.MetaDescription),
                 MetaKeywords = htmlSanitizer.Sanitize(dto.MetaKeywords),
                 CreatedAt = DateTime.UtcNow,
@@ -152,7 +154,14 @@ public class SaveDraftCommandHandler(
             }
         }
 
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently, ex);
+        }
 
         return new SaveDraftCommandResponse
         {

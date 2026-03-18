@@ -15,12 +15,12 @@ public class EfCoreWriteRepository<T> : EfCoreRepository<T>, IWriteRepository<T>
 
     public async Task AddAsync(T entity, CancellationToken cancellationToken = default)
     {
-        await _dbSet.AddAsync(entity, cancellationToken);
+        await _dbSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task AddRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
     {
-        await _dbSet.AddRangeAsync(entities, cancellationToken);
+        await _dbSet.AddRangeAsync(entities, cancellationToken).ConfigureAwait(false);
     }
 
     public Task RemoveAsync(T entity, CancellationToken cancellationToken = default)
@@ -31,7 +31,7 @@ public class EfCoreWriteRepository<T> : EfCoreRepository<T>, IWriteRepository<T>
 
     public async Task<bool> RemoveIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbSet.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var entity = await _dbSet.FirstOrDefaultAsync(x => x.Id == id, cancellationToken).ConfigureAwait(false);
 
         if (entity == null)
             return false;

@@ -26,8 +26,10 @@ public class CacheService : HybridCacheServiceBase, ICacheService
 {
     private readonly ICacheInvalidationNotifier? _notifier;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
-    // BUG-004: Track ongoing refresh tasks to prevent accumulation
-    private readonly ConcurrentDictionary<string, Task> _ongoingRefreshes = new();
+    // Deduplicate concurrent SWR background refreshes for the same key.
+    // Lazy<Task> + GetOrAdd guarantees the Task factory is invoked at most once
+    // per key, eliminating the check-then-act race that existed with TryGetValue/TryAdd.
+    private readonly ConcurrentDictionary<string, Lazy<Task>> _ongoingRefreshes = new();
 
     public CacheService(
         IMemoryCache l1Cache,
@@ -50,7 +52,14 @@ public class CacheService : HybridCacheServiceBase, ICacheService
     {
         if (_notifier != null)
         {
-            _ = _notifier.NotifyKeyRemovedAsync(key, CancellationToken.None);
+            try
+            {
+                await _notifier.NotifyKeyRemovedAsync(key, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "SignalR notification failed for key: {Key}", key);
+            }
         }
 
         await base.OnKeyRemovedAsync(key, cancellationToken);
@@ -60,7 +69,14 @@ public class CacheService : HybridCacheServiceBase, ICacheService
     {
         if (_notifier != null)
         {
-            _ = _notifier.NotifyPrefixRemovedAsync(prefix, CancellationToken.None);
+            try
+            {
+                await _notifier.NotifyPrefixRemovedAsync(prefix, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "SignalR notification failed for prefix: {Prefix}", prefix);
+            }
         }
 
         await base.OnPrefixRemovedAsync(prefix, cancellationToken);
@@ -70,7 +86,14 @@ public class CacheService : HybridCacheServiceBase, ICacheService
     {
         if (_notifier != null)
         {
-            _ = _notifier.NotifyGroupInvalidatedAsync(groupName, CancellationToken.None);
+            try
+            {
+                await _notifier.NotifyGroupInvalidatedAsync(groupName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "SignalR notification failed for group: {GroupName}", groupName);
+            }
         }
 
         await base.OnGroupInvalidatedAsync(groupName, cancellationToken);
@@ -109,54 +132,43 @@ public class CacheService : HybridCacheServiceBase, ICacheService
                 Logger.LogDebug("SWR (scoped): Returning stale value for {Key}, triggering background refresh", key);
                 Metrics.RecordSwrBackgroundRefresh(keyPrefix);
 
-                // BUG-004: Check if refresh is already in progress for this key
                 var refreshKey = $"swr_refresh:{key}";
-                var existingTask = _ongoingRefreshes.TryGetValue(refreshKey, out var ongoingTask);
 
-                if (existingTask && ongoingTask is not null && !ongoingTask.IsCompleted)
-                {
-                    Logger.LogDebug("SWR: Background refresh already in progress for {Key}, skipping duplicate", key);
-                    return result.Value!;
-                }
-
-                // Background refresh with proper DI scope and deduplication
-                var backgroundTask = Task.Run(async () =>
-                {
-                    try
+                // GetOrAdd + Lazy<Task> is atomic: only one Task is ever created per key.
+                // Concurrent callers that race here all receive the same Lazy instance and
+                // the same underlying Task — no duplicate background refreshes.
+                var lazyRefresh = _ongoingRefreshes.GetOrAdd(refreshKey, _ => new Lazy<Task>(() =>
+                    Task.Run(async () =>
                     {
-                        if (_serviceScopeFactory == null)
+                        try
                         {
-                            Logger.LogWarning("SWR: IServiceScopeFactory not available, cannot perform background refresh for {Key}", key);
-                            return;
+                            if (_serviceScopeFactory == null)
+                            {
+                                Logger.LogWarning("SWR: IServiceScopeFactory not available, cannot perform background refresh for {Key}", key);
+                                return;
+                            }
+
+                            using var backgroundScope = _serviceScopeFactory.CreateScope();
+                            var mediator = backgroundScope.ServiceProvider.GetRequiredService<IMediator>();
+
+                            var freshValue = await mediator.Send(request, CancellationToken.None);
+                            await SetWithSoftExpirationAsync(key, freshValue, softExpiration, actualHardExpiration, CancellationToken.None);
+                            Logger.LogDebug("SWR: Background refresh completed for {Key}", key);
                         }
+                        catch (Exception ex)
+                        {
+                            Logger.LogWarning(ex, "SWR: Background refresh failed for {Key}", key);
+                            Metrics.RecordSwrBackgroundRefreshError(keyPrefix);
+                        }
+                        finally
+                        {
+                            _ongoingRefreshes.TryRemove(refreshKey, out Lazy<Task> _);
+                        }
+                    }, CancellationToken.None)));
 
-                        // Create a new DI scope for background work
-                        using var backgroundScope = _serviceScopeFactory.CreateScope();
-                        var mediator = backgroundScope.ServiceProvider.GetRequiredService<IMediator>();
-
-                        // Re-execute the request with fresh services
-                        var freshValue = await mediator.Send(request, CancellationToken.None);
-
-                        await SetWithSoftExpirationAsync(key, freshValue, softExpiration, actualHardExpiration, CancellationToken.None);
-                        Logger.LogDebug("SWR: Background refresh completed for {Key}", key);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogWarning(ex, "SWR: Background refresh failed for {Key}", key);
-                        Metrics.RecordSwrBackgroundRefreshError(keyPrefix);
-                    }
-                    finally
-                    {
-                        // BUG-004: Remove from tracking when complete
-                        _ongoingRefreshes.TryRemove(refreshKey, out _);
-                    }
-                }, CancellationToken.None);
-
-                // BUG-004: Track this refresh task
-                _ongoingRefreshes.TryAdd(refreshKey, backgroundTask);
-
-                // Configure continuation to handle unobserved exceptions
-                _ = backgroundTask.ContinueWith(t =>
+                // Lazy.Value triggers the Task exactly once; all subsequent accesses
+                // return the already-running Task without starting a new one.
+                _ = lazyRefresh.Value.ContinueWith(t =>
                 {
                     if (t.IsFaulted)
                     {

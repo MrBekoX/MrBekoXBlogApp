@@ -44,6 +44,8 @@ public class EventConsumerConfig
 /// </summary>
 public class RabbitMqEventConsumer : BackgroundService
 {
+    private const int MaxRetries = 5;
+
     private readonly RabbitMqConnection _connection;
     private readonly RabbitMqSettings _settings;
     private readonly IServiceProvider _serviceProvider;
@@ -53,6 +55,7 @@ public class RabbitMqEventConsumer : BackgroundService
 
     private IChannel? _channel;
     private readonly List<string> _consumerTags = [];
+    private CancellationToken _stoppingToken;
 
     public RabbitMqEventConsumer(
         RabbitMqConnection connection,
@@ -77,6 +80,8 @@ public class RabbitMqEventConsumer : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _stoppingToken = stoppingToken;
+
         if (!_settings.Enabled)
         {
             _logger.LogInformation("RabbitMQ is disabled, event consumer will not start");
@@ -100,10 +105,8 @@ public class RabbitMqEventConsumer : BackgroundService
 
             _channel = await _connection.CreateChannelAsync(publisherConfirms: false, cancellationToken: stoppingToken);
 
-            // Set QoS prefetch to 1 for backpressure control
-            await _channel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false, cancellationToken: stoppingToken);
+            await _channel.BasicQosAsync(prefetchSize: 0, prefetchCount: _settings.PrefetchCount, global: false, cancellationToken: stoppingToken);
 
-            // Ensure exchange exists
             await _channel.ExchangeDeclareAsync(
                 exchange: MessagingConstants.ExchangeName,
                 type: ExchangeType.Direct,
@@ -111,7 +114,6 @@ public class RabbitMqEventConsumer : BackgroundService
                 autoDelete: false,
                 cancellationToken: stoppingToken);
 
-            // Declare DLX and DLQ
             await _channel.ExchangeDeclareAsync(
                 exchange: MessagingConstants.DeadLetterExchange,
                 type: ExchangeType.Fanout,
@@ -119,7 +121,6 @@ public class RabbitMqEventConsumer : BackgroundService
                 autoDelete: false,
                 cancellationToken: stoppingToken);
 
-            // Setup each consumer configuration
             foreach (var config in _consumerConfigs)
             {
                 await SetupConsumerAsync(config, stoppingToken);
@@ -129,7 +130,6 @@ public class RabbitMqEventConsumer : BackgroundService
                 "RabbitMQ event consumer started, listening on {QueueCount} queue(s)",
                 _consumerConfigs.Count);
 
-            // Keep the service running
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -146,10 +146,11 @@ public class RabbitMqEventConsumer : BackgroundService
     private async Task SetupConsumerAsync(EventConsumerConfig config, CancellationToken stoppingToken)
     {
         if (_channel is null)
+        {
             throw new InvalidOperationException("Channel not initialized");
+        }
 
-        // Declare dead letter queue
-        var dlqName = $"dlq.{config.QueueName.Replace("q.", "")}";
+        var dlqName = $"dlq.{config.QueueName.Replace("q.", string.Empty)}";
         await _channel.QueueDeclareAsync(
             queue: dlqName,
             durable: true,
@@ -160,10 +161,9 @@ public class RabbitMqEventConsumer : BackgroundService
         await _channel.QueueBindAsync(
             queue: dlqName,
             exchange: MessagingConstants.DeadLetterExchange,
-            routingKey: "",
+            routingKey: string.Empty,
             cancellationToken: stoppingToken);
 
-        // Declare main queue with DLX configuration
         await _channel.QueueDeclareAsync(
             queue: config.QueueName,
             durable: true,
@@ -176,7 +176,6 @@ public class RabbitMqEventConsumer : BackgroundService
             },
             cancellationToken: stoppingToken);
 
-        // Bind queue to exchange with routing key
         await _channel.QueueBindAsync(
             queue: config.QueueName,
             exchange: MessagingConstants.ExchangeName,
@@ -189,14 +188,12 @@ public class RabbitMqEventConsumer : BackgroundService
             MessagingConstants.ExchangeName,
             config.RoutingKey);
 
-        // Create consumer
         var consumer = new AsyncEventingBasicConsumer(_channel);
-        consumer.ReceivedAsync += async (sender, args) =>
+        consumer.ReceivedAsync += async (_, args) =>
         {
             await HandleMessageAsync(args, config);
         };
 
-        // Start consuming
         var consumerTag = await _channel.BasicConsumeAsync(
             queue: config.QueueName,
             autoAck: false,
@@ -216,6 +213,7 @@ public class RabbitMqEventConsumer : BackgroundService
         var deliveryTag = args.DeliveryTag;
         var messageId = args.BasicProperties?.MessageId ?? "unknown";
         var deliveryCount = GetDeliveryCount(args);
+        using var scope = _serviceProvider.CreateScope();
 
         try
         {
@@ -225,10 +223,8 @@ public class RabbitMqEventConsumer : BackgroundService
                 config.QueueName,
                 deliveryCount);
 
-            // Deserialize event
             var body = Encoding.UTF8.GetString(args.Body.ToArray());
             var @event = JsonSerializer.Deserialize(body, config.EventType, _jsonOptions);
-
             if (@event is null)
             {
                 _logger.LogWarning("Failed to deserialize message {MessageId}, rejecting", messageId);
@@ -236,11 +232,7 @@ public class RabbitMqEventConsumer : BackgroundService
                 return;
             }
 
-            // Create scope and resolve handler
-            using var scope = _serviceProvider.CreateScope();
             var handler = scope.ServiceProvider.GetRequiredService(config.HandlerType);
-
-            // Invoke HandleAsync via reflection
             var handleMethod = config.HandlerType.GetMethod("HandleAsync");
             if (handleMethod is null)
             {
@@ -249,13 +241,12 @@ public class RabbitMqEventConsumer : BackgroundService
                 return;
             }
 
-            var task = (Task?)handleMethod.Invoke(handler, [@event, CancellationToken.None]);
+            var task = (Task?)handleMethod.Invoke(handler, [@event, _stoppingToken]);
             if (task is not null)
             {
                 await task;
             }
 
-            // Acknowledge successful processing
             await AcknowledgeMessageAsync(deliveryTag);
 
             _logger.LogInformation(
@@ -265,7 +256,7 @@ public class RabbitMqEventConsumer : BackgroundService
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "Failed to parse message {MessageId}, rejecting", messageId);
+            _logger.LogError(ex, "Failed to parse message {MessageId}, rejecting without requeue", messageId);
             await RejectMessageAsync(deliveryTag, requeue: false);
         }
         catch (Exception ex)
@@ -276,25 +267,22 @@ public class RabbitMqEventConsumer : BackgroundService
                 messageId,
                 config.QueueName);
 
-            // Retry logic: requeue if under max retries
-            const int maxRetries = 5;
-            if (deliveryCount < maxRetries)
+            if (deliveryCount < MaxRetries)
             {
                 _logger.LogWarning(
                     "Requeuing message {MessageId} (attempt {DeliveryCount}/{MaxRetries})",
                     messageId,
                     deliveryCount,
-                    maxRetries);
+                    MaxRetries);
                 await RejectMessageAsync(deliveryTag, requeue: true);
+                return;
             }
-            else
-            {
-                _logger.LogError(
-                    "Message {MessageId} exceeded max retries ({MaxRetries}), sending to DLQ",
-                    messageId,
-                    maxRetries);
-                await RejectMessageAsync(deliveryTag, requeue: false);
-            }
+
+            _logger.LogError(
+                "Message {MessageId} exceeded max retries ({MaxRetries}), sending to DLQ",
+                messageId,
+                MaxRetries);
+            await RejectMessageAsync(deliveryTag, requeue: false);
         }
     }
 
@@ -309,6 +297,7 @@ public class RabbitMqEventConsumer : BackgroundService
                 _ => 1
             };
         }
+
         return 1;
     }
 
@@ -332,7 +321,6 @@ public class RabbitMqEventConsumer : BackgroundService
     {
         _logger.LogInformation("Stopping RabbitMQ event consumer...");
 
-        // Cancel all consumers
         if (_channel is not null)
         {
             foreach (var consumerTag in _consumerTags)

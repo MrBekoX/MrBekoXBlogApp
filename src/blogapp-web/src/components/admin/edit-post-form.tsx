@@ -88,6 +88,7 @@ export function EditPostForm({ postId }: EditPostFormProps) {
   const content = watch('content');
 
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
       try {
         const [postRes, categoriesRes, tagsRes] = await Promise.all([
@@ -95,7 +96,9 @@ export function EditPostForm({ postId }: EditPostFormProps) {
           categoriesApi.getAll(),
           tagsApi.getAll(),
         ]);
-        
+
+        if (cancelled) return;
+
         if (postRes.success && postRes.data) {
           const postData = postRes.data;
           setPost(postData);
@@ -104,7 +107,7 @@ export function EditPostForm({ postId }: EditPostFormProps) {
           setValue('excerpt', postData.excerpt || '');
           setValue('featuredImageUrl', postData.featuredImageUrl || '');
           setValue('status', postData.status as PostStatus);
-          
+
           if (postData.category) {
             setSelectedCategories([postData.category.id]);
           }
@@ -115,7 +118,7 @@ export function EditPostForm({ postId }: EditPostFormProps) {
           toast.error('Yazı bulunamadı');
           router.push('/mrbekox-console/dashboard/posts');
         }
-        
+
         if (categoriesRes.success && categoriesRes.data) {
           setCategories(categoriesRes.data);
         }
@@ -123,13 +126,15 @@ export function EditPostForm({ postId }: EditPostFormProps) {
           setTags(tagsRes.data);
         }
       } catch {
+        if (cancelled) return;
         toast.error('Yazı bulunamadı veya veri yüklenirken hata oluştu');
         router.push('/mrbekox-console/dashboard/posts');
       } finally {
-        setLoadingPost(false);
+        if (!cancelled) setLoadingPost(false);
       }
     };
     fetchData();
+    return () => { cancelled = true; };
   }, [postId, setValue, router]);
 
   const submitPost = async (data: PostFormData, statusOverride?: PostStatus) => {
@@ -230,13 +235,19 @@ export function EditPostForm({ postId }: EditPostFormProps) {
                   <Label htmlFor="content">İçerik</Label>
                   <MarkdownEditor
                     value={content || ''}
-                    onChange={(value) => setValue('content', value)}
+                    onChange={(value) => {
+                      setValue('content', value);
+                    }}
                     placeholder="Yazı içeriğinizi Markdown formatında yazın..."
                     height={500}
                   />
                   {errors.content && (
                     <p className="text-sm text-destructive">{errors.content.message}</p>
                   )}
+                  {/* DEBUG: Show content length indicator */}
+                  <div className="text-xs text-muted-foreground text-right">
+                    Karakter: {content?.length || 0}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -273,8 +284,12 @@ export function EditPostForm({ postId }: EditPostFormProps) {
                     type="button"
                     className="flex-1"
                     disabled={isLoading}
-                    onClick={() => {
-                      handleSubmit((data) => submitPost(data, 'Draft'))();
+                    onClick={async () => {
+                      try {
+                        await handleSubmit((data) => submitPost(data, 'Draft'))();
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : 'Taslak kaydedilemedi');
+                      }
                     }}
                     variant="outline"
                   >
@@ -289,8 +304,12 @@ export function EditPostForm({ postId }: EditPostFormProps) {
                     type="button"
                     className="flex-1"
                     disabled={isLoading}
-                    onClick={() => {
-                      handleSubmit((data) => submitPost(data, 'Published'))();
+                    onClick={async () => {
+                      try {
+                        await handleSubmit((data) => submitPost(data, 'Published'))();
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : 'Yayınlanamadı');
+                      }
                     }}
                   >
                     {isLoading ? (

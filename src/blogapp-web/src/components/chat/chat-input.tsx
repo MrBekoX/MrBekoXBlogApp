@@ -1,9 +1,7 @@
 'use client';
 
 import React, { useState, KeyboardEvent, useEffect } from 'react';
-import { Send, FileText, Globe, Bot } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { Send, FileText, Globe, Bot, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AgentType } from '@/types';
 
@@ -13,13 +11,10 @@ interface ChatInputProps {
   onOpenAgentDialog: () => void;
 }
 
-export function ChatInput({
-  onSend,
-  isLoading,
-  onOpenAgentDialog,
-}: ChatInputProps) {
+export function ChatInput({ onSend, isLoading, onOpenAgentDialog }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [agentType, setAgentType] = useState<AgentType>('normal');
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const handleSend = () => {
     if (!input.trim() || isLoading) return;
@@ -37,36 +32,18 @@ export function ChatInput({
 
   const handleQuickAction = (selectedAgentType: AgentType, defaultMessage?: string) => {
     if (isLoading) return;
-
     if (selectedAgentType === 'summary') {
-      // AI Summary - direkt sabit mesaj gönder
       onSend('Bu makalenin özetini oluştur', 'normal');
     } else if (selectedAgentType === 'web-search' && defaultMessage) {
       if (agentType === 'web-search') {
-        // Zaten aktifse pasif hale getir
         setAgentType('normal');
-        // Eğer input sadece default mesaj ise temizle
-        if (input === defaultMessage) {
-          setInput('');
-        }
+        if (input === defaultMessage) setInput('');
       } else {
-        // Aktif değilse aktif et
         setInput(defaultMessage);
         setAgentType('web-search');
       }
     }
   };
-
-  // Placeholder'ı agent type'a göre değiştir
-  const getPlaceholder = () => {
-    if (agentType === 'web-search') {
-      return 'Web araması için sorunuzu düzenleyin...';
-    }
-    return 'Bir soru sorun...';
-  };
-
-  // Input ref'i ile otomatik focus
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (agentType === 'web-search' && input.trim()) {
@@ -74,81 +51,100 @@ export function ChatInput({
     }
   }, [agentType, input]);
 
+  const isWebSearch = agentType === 'web-search';
+
   return (
-    <div className="border-t p-4 flex-shrink-0">
-      {/* Quick Action Buttons */}
-      <div className="flex gap-2 mb-3">
-        <Button
-          variant="outline"
-          size="sm"
+    <div className="shrink-0 border-t border-ide-border bg-ide-sidebar font-mono">
+      {/* Quick action buttons */}
+      <div className="flex gap-1 px-3 pt-2.5 pb-1">
+        <button
           onClick={() => handleQuickAction('summary')}
           disabled={isLoading}
-          className="flex-1 h-9 text-xs"
+          className="flex-1 flex items-center justify-center gap-1.5 text-[10px] py-1.5 rounded border border-ide-border text-gray-500 hover:border-ide-primary/50 hover:text-ide-primary transition-colors disabled:opacity-40"
         >
-          <FileText className="h-3.5 w-3.5 mr-1.5" />
+          <FileText className="w-3 h-3" />
           AI Özet
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
+        </button>
+        <button
           onClick={() => handleQuickAction('web-search', 'Makale hakkında detaylı bilgi ver')}
           disabled={isLoading}
           className={cn(
-            'flex-1 h-9 text-xs',
-            agentType === 'web-search' && 'bg-primary text-primary-foreground'
+            'flex-1 flex items-center justify-center gap-1.5 text-[10px] py-1.5 rounded border transition-colors disabled:opacity-40',
+            isWebSearch
+              ? 'border-blue-500/70 text-blue-400 bg-blue-500/10'
+              : 'border-ide-border text-gray-500 hover:border-blue-500/50 hover:text-blue-400'
           )}
         >
-          <Globe className="h-3.5 w-3.5 mr-1.5" />
-          Web&apos;de Ara
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
+          <Globe className="w-3 h-3" />
+          Web Ara
+        </button>
+        <button
           onClick={onOpenAgentDialog}
           disabled={isLoading}
-          className="flex-1 h-9 text-xs"
+          className="flex-1 flex items-center justify-center gap-1.5 text-[10px] py-1.5 rounded border border-ide-border text-gray-500 hover:border-ide-primary/50 hover:text-ide-primary transition-colors disabled:opacity-40"
         >
-          <Bot className="h-3.5 w-3.5 mr-1.5" />
+          <Bot className="w-3 h-3" />
           Diğer
-        </Button>
+        </button>
       </div>
 
-      {/* Agent Type Indicator */}
-      {agentType === 'web-search' && (
-        <p className="text-xs text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
-          <Globe className="h-3 w-3" />
-          Web arama modu aktif
+      {/* Web search active indicator */}
+      {isWebSearch && (
+        <p className="px-3 text-[10px] text-blue-400 flex items-center gap-1 pb-1">
+          <Globe className="w-2.5 h-2.5" />
+          web arama modu aktif
         </p>
       )}
 
-      <div className="flex gap-2 items-end">
-        <div className="flex-1 relative">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={getPlaceholder()}
-            disabled={isLoading}
-            className={cn(
-              "min-h-[44px] max-h-[120px] resize-none pr-10",
-              agentType === 'web-search' && 'border-blue-500 focus:border-blue-500'
-            )}
-            rows={1}
-          />
-        </div>
-
-        <Button
-          onClick={handleSend}
-          disabled={!input.trim() || isLoading}
-          size="icon"
+      {/* Terminal input row */}
+      <div className="flex items-end gap-2 px-3 pb-3 pt-1">
+        {/* Prompt symbol */}
+        <span
           className={cn(
-            "h-9 w-9",
-            agentType === 'web-search' && 'bg-blue-600 hover:bg-blue-700'
+            'text-sm pb-1.5 shrink-0 font-bold',
+            isWebSearch ? 'text-blue-400' : 'text-ide-primary'
           )}
         >
-          <Send className="h-4 w-4" />
-        </Button>
+          $
+        </span>
+
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={isWebSearch ? 'Web araması için sorunuzu düzenleyin...' : 'Bir soru sorun...'}
+          disabled={isLoading}
+          rows={1}
+          className={cn(
+            'flex-1 resize-none bg-transparent text-sm text-white placeholder:text-gray-600 outline-none border-b focus:border-b transition-colors min-h-[28px] max-h-[100px]',
+            isWebSearch
+              ? 'border-blue-500/50 focus:border-blue-400'
+              : 'border-ide-border focus:border-ide-primary/60'
+          )}
+          style={{ fieldSizing: 'content' } as React.CSSProperties}
+        />
+
+        {/* Send button */}
+        <button
+          onClick={handleSend}
+          disabled={!input.trim() || isLoading}
+          className={cn(
+            'shrink-0 w-7 h-7 flex items-center justify-center rounded transition-colors',
+            !input.trim() || isLoading
+              ? 'text-gray-600 cursor-not-allowed'
+              : isWebSearch
+                ? 'text-blue-400 hover:bg-blue-500/20'
+                : 'text-ide-primary hover:bg-ide-primary/10'
+          )}
+        >
+          {isLoading ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Send className="w-3.5 h-3.5" />
+          )}
+        </button>
       </div>
     </div>
   );

@@ -2,27 +2,37 @@
 
 import re
 from dataclasses import dataclass
+
 from pydantic import BaseModel, Field, field_validator
 
 GUID_PATTERN = re.compile(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 MAX_CONTENT_LENGTH = 100_000
 
 
 @dataclass
 class ChatMessage:
-    """A chat message (dataclass for internal use)."""
+    """A chat message used internally by the agent."""
 
-    role: str  # 'user' or 'assistant'
+    role: str
     content: str
 
 
 class ChatHistoryItem(BaseModel):
-    """A single chat history item (Pydantic for validation)."""
+    """A single chat history item."""
 
     role: str = Field(..., pattern="^(user|assistant)$")
     content: str = Field(..., min_length=1)
+
+
+class ChatAuthorizationContext(BaseModel):
+    """Authorization context forwarded from the backend chat edge."""
+
+    subjectType: str = Field(default="anonymous")
+    subjectId: str | None = Field(default=None)
+    roles: list[str] = Field(default_factory=list)
+    fingerprint: str | None = Field(default=None)
 
 
 class ChatRequestPayload(BaseModel):
@@ -36,31 +46,32 @@ class ChatRequestPayload(BaseModel):
     conversationHistory: list[ChatHistoryItem] = Field(default_factory=list)
     language: str = Field(default="tr")
     enableWebSearch: bool = Field(default=False)
+    authContext: ChatAuthorizationContext = Field(default_factory=ChatAuthorizationContext)
 
-    @field_validator('postId')
+    @field_validator("postId")
     @classmethod
-    def validate_post_id(cls, v: str) -> str:
-        """Validate postId is a valid GUID format."""
-        if not GUID_PATTERN.match(v):
-            raise ValueError(f'Invalid GUID format: {v}')
-        return v
+    def validate_post_id(cls, value: str) -> str:
+        if not GUID_PATTERN.match(value):
+            raise ValueError(f"Invalid GUID format: {value}")
+        return value
 
-    @field_validator('language')
+    @field_validator("language")
     @classmethod
-    def validate_language(cls, v: str) -> str:
-        """Validate and normalize language code."""
-        v_lower = v.lower()
+    def validate_language(cls, value: str) -> str:
+        normalized = value.lower()
         valid_languages = {"tr", "en", "de", "fr", "es"}
-        if v_lower not in valid_languages:
+        if normalized not in valid_languages:
             return "tr"
-        return v_lower
+        return normalized
 
 
 class ChatRequestMessage(BaseModel):
-    """Message structure for chat request events."""
+    """Message envelope for chat request events."""
 
     messageId: str
+    operationId: str | None = None
     correlationId: str | None = None
+    causationId: str | None = None
     timestamp: str
     eventType: str
     payload: ChatRequestPayload
@@ -75,3 +86,4 @@ class ChatResponse:
     is_rag_response: bool
     context_preview: str | None = None
     sources: list[dict] | None = None
+    citations: list[dict] | None = None

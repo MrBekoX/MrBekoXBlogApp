@@ -1,9 +1,7 @@
 using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
-using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
-using BlogApp.Server.Application.Features.PostFeature.Constants;
 using BlogApp.Server.Application.Features.PostFeature.DTOs;
 using BlogApp.Server.Domain.Enums;
 using MediatR;
@@ -13,31 +11,11 @@ namespace BlogApp.Server.Application.Features.PostFeature.Queries.GetPostsListQu
 
 public class GetPostsListQueryHandler(
     IUnitOfWork unitOfWork,
-    ICacheService cacheService,
     IMapper mapper) : IRequestHandler<GetPostsListQueryRequest, GetPostsListQueryResponse>
 {
-    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan SearchCacheDuration = TimeSpan.FromMinutes(2);
-
     public async Task<GetPostsListQueryResponse> Handle(GetPostsListQueryRequest request, CancellationToken cancellationToken)
     {
         var isSearchQuery = !string.IsNullOrWhiteSpace(request.SearchTerm);
-        var shouldCache = ShouldUseCache(request);
-
-        var version = shouldCache
-            ? await cacheService.GetGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken)
-            : 0L;
-
-        var cacheKey = GenerateCacheKey(request, (int)version);
-
-        if (shouldCache)
-        {
-            var cachedResult = await cacheService.GetAsync<PaginatedList<PostListQueryDto>>(cacheKey, cancellationToken);
-            if (cachedResult != null)
-            {
-                return new GetPostsListQueryResponse { Result = cachedResult };
-            }
-        }
 
         // Base query - Include'lar ProjectTo ile otomatik yönetilir
         var query = unitOfWork.PostsRead.Query()
@@ -159,13 +137,6 @@ public class GetPostsListQueryHandler(
 
         var result = new PaginatedList<PostListQueryDto>(posts, totalCount, request.PageNumber, request.PageSize);
 
-        // Arama sorguları için de kısa süreli cache
-        if (shouldCache || isSearchQuery)
-        {
-            var cacheDur = isSearchQuery ? SearchCacheDuration : CacheDuration;
-            await cacheService.SetAsync(cacheKey, result, cacheDur, cancellationToken);
-        }
-
         return new GetPostsListQueryResponse { Result = result };
     }
 
@@ -175,7 +146,7 @@ public class GetPostsListQueryHandler(
     private static string NormalizeTurkishCharacters(string input)
     {
         if (string.IsNullOrEmpty(input)) return input;
-        
+
         return input
             .Replace('ı', 'i')
             .Replace('İ', 'i')
@@ -189,25 +160,6 @@ public class GetPostsListQueryHandler(
             .Replace('Ğ', 'g')
             .Replace('ç', 'c')
             .Replace('Ç', 'c');
-    }
-
-    private static string GenerateCacheKey(GetPostsListQueryRequest request, int version)
-    {
-        var searchKey = string.IsNullOrEmpty(request.SearchTerm) 
-            ? "" 
-            : NormalizeTurkishCharacters(request.SearchTerm.Trim().ToLowerInvariant());
-        
-        var keySuffix = $"{request.PageNumber}:{request.PageSize}:{request.Status}:" +
-                        $"{request.CategoryId}:{request.TagId}:{request.IsFeatured}:" +
-                        $"{request.SortBy}:{request.SortDescending}:{searchKey}";
-        return PostCacheKeys.VersionedListKey(version, keySuffix);
-    }
-
-    private static bool ShouldUseCache(GetPostsListQueryRequest request)
-    {
-        // Arama sorguları için de cache kullan, ancak daha kısa süreyle
-        return (request.Status == null || request.Status == PostStatus.Published)
-               && request.AuthorId == null;
     }
 }
 

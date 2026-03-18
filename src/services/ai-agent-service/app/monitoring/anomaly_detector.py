@@ -8,10 +8,9 @@ from enum import Enum
 import logging
 
 try:
-    from app.security.audit_logger import audit_logger
+    from app.security.audit_logger import AuditLogger
 except ImportError:
-    # Fallback or mock if audit logger isn't strictly ready
-    audit_logger = None
+    AuditLogger = None
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +46,19 @@ class AnomalyDetector:
         window_seconds: int = 60,
         burst_threshold_ms: int = 100,
         rate_spike_threshold: int = 100,
-        alert_callback=None
+        alert_callback=None,
+        audit_logger_instance=None
     ):
         self.window_seconds = window_seconds
         self.burst_threshold_ms = burst_threshold_ms
         self.rate_spike_threshold = rate_spike_threshold
         self.alert_callback = alert_callback
+        if audit_logger_instance is not None:
+            self._audit_logger = audit_logger_instance
+        elif AuditLogger:
+            self._audit_logger = AuditLogger()
+        else:
+            self._audit_logger = None
 
         # User request history
         self.user_requests: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
@@ -274,8 +280,8 @@ class AnomalyDetector:
             pass
 
         # Log to audit (if available)
-        if audit_logger and anomaly.severity in ["high", "critical"]:
-            await audit_logger.log_event(
+        if self._audit_logger and anomaly.severity in ["high", "critical"]:
+            self._audit_logger.log_event(
                 event_type="anomaly_detected",
                 user_id=anomaly.user_id,
                 resource_id=anomaly.anomaly_type.value,

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BlogApp.BuildingBlocks.Messaging.Abstractions;
@@ -6,8 +6,57 @@ using BlogApp.BuildingBlocks.Messaging.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 
 namespace BlogApp.BuildingBlocks.Messaging.RabbitMQ;
+
+/// <summary>
+/// Retry policy for RabbitMQ publish operations.
+/// </summary>
+public class RabbitMqRetryPolicy
+{
+    private const int MaxRetries = 3;
+    private static readonly TimeSpan[] RetryDelays =
+    [
+        TimeSpan.FromMilliseconds(100),
+        TimeSpan.FromMilliseconds(500),
+        TimeSpan.FromSeconds(1)
+    ];
+
+    public static async Task<T> ExecuteWithRetryAsync<T>(
+        Func<Task<T>> operation,
+        Func<Exception, bool> isTransient,
+        ILogger logger,
+        string operationName,
+        CancellationToken cancellationToken = default)
+    {
+        Exception? lastException = null;
+
+        for (int attempt = 0; attempt <= MaxRetries; attempt++)
+        {
+            try
+            {
+                if (attempt > 0)
+                {
+                    var delay = RetryDelays[Math.Min(attempt - 1, RetryDelays.Length - 1)];
+                    logger.LogWarning("Retry attempt {Attempt}/{MaxRetries} for {Operation} after {Delay}ms",
+                        attempt, MaxRetries, operationName, delay.TotalMilliseconds);
+                    await Task.Delay(delay, cancellationToken);
+                }
+
+                return await operation();
+            }
+            catch (Exception ex) when (attempt < MaxRetries && isTransient(ex))
+            {
+                lastException = ex;
+                logger.LogWarning(ex, "Transient error during {Operation} (attempt {Attempt}/{MaxRetries})",
+                    operationName, attempt + 1, MaxRetries);
+            }
+        }
+
+        throw new InvalidOperationException($"Failed to execute {operationName} after {MaxRetries} retries", lastException);
+    }
+}
 
 /// <summary>
 /// Generic RabbitMQ implementation of IEventBus.
@@ -50,63 +99,61 @@ public class RabbitMqEventBus : IEventBus
             return;
         }
 
-        try
-        {
-            // Create channel with publisher confirms enabled for reliable delivery
-            await using var channel = await _connection.CreateChannelAsync(publisherConfirms: true, cancellationToken);
-
-            // Ensure exchange exists (idempotent declaration)
-            await channel.ExchangeDeclareAsync(
-                exchange: MessagingConstants.ExchangeName,
-                type: ExchangeType.Direct,
-                durable: true,
-                autoDelete: false,
-                cancellationToken: cancellationToken);
-
-            // Serialize event to JSON
-            var json = JsonSerializer.Serialize(@event, @event.GetType(), _jsonOptions);
-            var body = Encoding.UTF8.GetBytes(json);
-
-            // Set message properties for guaranteed delivery
-            var properties = new BasicProperties
+        await RabbitMqRetryPolicy.ExecuteWithRetryAsync(
+            async () =>
             {
-                // Persist message to disk
-                Persistent = true,
-                DeliveryMode = DeliveryModes.Persistent,
-                // Message metadata
-                MessageId = @event.MessageId.ToString(),
-                CorrelationId = @event.CorrelationId,
-                ContentType = "application/json",
-                Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
-                // Type identifier
-                Type = @event.EventType
-            };
+                await using var channel = await _connection.CreateChannelAsync(publisherConfirms: true, cancellationToken);
 
-            // Publish message
-            await channel.BasicPublishAsync(
-                exchange: MessagingConstants.ExchangeName,
-                routingKey: routingKey,
-                mandatory: false,
-                basicProperties: properties,
-                body: body,
-                cancellationToken: cancellationToken);
+                await channel.ExchangeDeclareAsync(
+                    exchange: MessagingConstants.ExchangeName,
+                    type: ExchangeType.Direct,
+                    durable: true,
+                    autoDelete: false,
+                    cancellationToken: cancellationToken);
 
-            _logger.LogInformation(
-                "Published {EventType} event with MessageId {MessageId} to {RoutingKey}",
-                @event.EventType,
-                @event.MessageId,
-                routingKey);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Failed to publish {EventType} event with MessageId {MessageId}",
-                @event.EventType,
-                @event.MessageId);
+                var json = JsonSerializer.Serialize(@event, @event.GetType(), _jsonOptions);
+                var body = Encoding.UTF8.GetBytes(json);
 
-            // Don't throw - event publishing should not break the main flow
-        }
+                var properties = new BasicProperties
+                {
+                    Persistent = true,
+                    DeliveryMode = DeliveryModes.Persistent,
+                    MessageId = @event.MessageId.ToString(),
+                    CorrelationId = @event.CorrelationId,
+                    ContentType = "application/json",
+                    Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
+                    Type = @event.EventType,
+                    Headers = new Dictionary<string, object?>
+                    {
+                        ["operationId"] = @event.OperationId,
+                        ["causationId"] = @event.CausationId
+                    }
+                };
+
+                await channel.BasicPublishAsync(
+                    exchange: MessagingConstants.ExchangeName,
+                    routingKey: routingKey,
+                    mandatory: false,
+                    basicProperties: properties,
+                    body: body,
+                    cancellationToken: cancellationToken);
+
+                _logger.LogInformation(
+                    "Published {EventType} event with MessageId {MessageId} to {RoutingKey} (OperationId: {OperationId})",
+                    @event.EventType,
+                    @event.MessageId,
+                    routingKey,
+                    @event.OperationId);
+
+                return true;
+            },
+            ex => ex is AlreadyClosedException ||
+                  ex is BrokerUnreachableException ||
+                  (ex is InvalidOperationException ioe && ioe.Message.Contains("connection", StringComparison.OrdinalIgnoreCase)) ||
+                  ex is TimeoutException,
+            _logger,
+            $"Publish {@event.EventType} event",
+            cancellationToken);
     }
 }
 

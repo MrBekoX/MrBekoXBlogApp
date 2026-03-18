@@ -7,6 +7,7 @@ namespace BlogApp.BuildingBlocks.Messaging.Events.Ai;
 /// </summary>
 public record AiContentImprovementRequestedEvent : IntegrationEvent
 {
+    public override string EventType => "ai.content.improvement.requested";
     public AiContentImprovementPayload Payload { get; init; } = null!;
 }
 

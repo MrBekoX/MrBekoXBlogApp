@@ -1,54 +1,47 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessageReceivedEvent, WebSearchSource } from '@/types';
-import { HUB_URL } from '@/lib/env';
+import { CHAT_EVENTS_HUB_URL, TURNSTILE_SITE_KEY } from '@/lib/env';
+
+const CHAT_TIMEOUT_MS = 60_000;
+
+type AddAssistantMessage = (content: string, isWebSearchResult?: boolean, sources?: WebSearchSource[], operationId?: string) => void;
 
 interface UseArticleChatOptions {
-  /** Enable debug logging */
   debug?: boolean;
-  /** Callback when a message is received */
   onMessageReceived?: (message: ChatMessageReceivedEvent) => void;
 }
 
-/**
- * React hook for article chat with SignalR integration.
- *
- * Manages:
- * - SignalR connection for real-time chat responses
- * - Session management
- * - Message sending and receiving
- *
- * Usage:
- * ```tsx
- * const { sendMessage, isLoading, messages, isConnected } = useArticleChat(postId);
- * ```
- */
 export function useArticleChat(postId: string, options: UseArticleChatOptions = {}) {
   const { debug = false, onMessageReceived } = options;
 
   const connectionRef = useRef<signalR.HubConnection | null>(null);
+  const chatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
   const onMessageReceivedRef = useRef(onMessageReceived);
-  
-  // Use ref for addAssistantMessage to avoid reconnection when store updates
-  const addAssistantMessageRef = useRef<typeof addAssistantMessage | null>(null);
+  const sessionTokenRef = useRef<string | null>(null);
+  const addAssistantMessageRef = useRef<AddAssistantMessage | null>(null);
 
   const {
     sessionId,
+    sessionToken,
     messages,
     isLoading,
     loadingState,
     error,
     isOpen,
+    turnstileRequired,
+    turnstileChallengeKey,
     setOpen,
     setPostId,
     sendMessage: storeSendMessage,
     addAssistantMessage,
     clearChat,
     setLoading,
+    submitTurnstileToken,
   } = useChatStore();
 
-  // Keep refs updated
   useEffect(() => {
     onMessageReceivedRef.current = onMessageReceived;
   }, [onMessageReceived]);
@@ -57,185 +50,229 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
     addAssistantMessageRef.current = addAssistantMessage;
   }, [addAssistantMessage]);
 
-  const log = useCallback(
-    (..._args: unknown[]) => {
-      // logging disabled
-    },
-    []
-  );
+  useEffect(() => {
+    sessionTokenRef.current = sessionToken;
+  }, [sessionToken]);
 
-  // Set post ID when component mounts
   useEffect(() => {
     if (postId) {
       setPostId(postId);
     }
   }, [postId, setPostId]);
 
-  // Connect to SignalR hub
+  const log = useCallback((message: string) => {
+    if (debug) {
+      console.debug(message);
+    }
+  }, [debug]);
+
   useEffect(() => {
-    let connection: signalR.HubConnection | null = null;
+    if (!sessionId || !sessionToken) {
+      if (connectionRef.current) {
+        connectionRef.current.stop().catch(() => undefined);
+        connectionRef.current = null;
+      }
+      return;
+    }
+
+    let connection = connectionRef.current;
     let isMounted = true;
 
-    const connect = async () => {
-      try {
-        log('Connecting to SignalR hub for chat...');
+    const handleChatMessage = (event: Record<string, unknown>) => {
+      if (!isMounted) return;
 
-        connection = new signalR.HubConnectionBuilder()
-          .withUrl(HUB_URL, {
-            withCredentials: true,
-          })
-          .withAutomaticReconnect()
-          .configureLogging(debug ? signalR.LogLevel.Debug : signalR.LogLevel.None)
-          .build();
+      const eventSessionId = (event.sessionId || event.SessionId) as string | undefined;
+      const eventResponse = (event.response || event.Response) as string | undefined;
+      const eventIsWebSearch = (event.isWebSearchResult ?? event.IsWebSearchResult ?? false) as boolean;
+      const eventSources = (event.sources || event.Sources) as WebSearchSource[] | undefined;
+      const eventOperationId = (event.operationId || event.OperationId) as string | undefined;
+      const currentSessionId = useChatStore.getState().sessionId;
 
-        // Listen for chat message received events
-        // Note: SignalR may use either PascalCase or camelCase depending on configuration
-        const handleChatMessage = (event: Record<string, unknown>) => {
-          if (!isMounted) return;
-          log('📨 Received chat message event:', event);
-
-          // Handle both PascalCase and camelCase property names from backend
-          const eventSessionId = (event.sessionId || event.SessionId) as string | undefined;
-          const eventResponse = (event.response || event.Response) as string | undefined;
-          const eventIsWebSearch = (event.isWebSearchResult ?? event.IsWebSearchResult ?? false) as boolean;
-          const eventSources = (event.sources || event.Sources) as WebSearchSource[] | undefined;
-
-          // Check if this message is for our session
-          const currentSessionId = useChatStore.getState().sessionId;
-
-          // If currentSessionId is null (first message), we should accept if it matches the one we just got from API
-          // But since we can't easily know that here without passing it, let's trust the event for now if we don't have a session yet
-          // OR if it matches exactly
-
-          if (eventSessionId && (eventSessionId === currentSessionId || !currentSessionId)) {
-            log('✅ Event matches or new session, updating state');
-
-            // If we don't have a session ID yet, set it now
-            if (!currentSessionId && eventSessionId) {
-                useChatStore.getState().setSessionId(eventSessionId);
-            }
-
-            addAssistantMessageRef.current?.(
-              eventResponse || '',
-              eventIsWebSearch,
-              eventSources
-            );
-
-            onMessageReceivedRef.current?.(event as unknown as ChatMessageReceivedEvent);
-          }
-        };
-
-        // Listen on all casing variants (SignalR can lowercase method names)
-        connection.on('ChatMessageReceived', handleChatMessage);
-        connection.on('chatMessageReceived', handleChatMessage);
-        connection.on('chatmessagereceived', handleChatMessage);
-        
-        // Also listen for AI analysis completed events
-        const handleAIAnalysis = (event: Record<string, unknown>) => {
-          if (!isMounted) return;
-          log('Received AI analysis event:', event);
-          // Handle AI analysis events if needed
-        };
-        
-        connection.on('AIAnalysisCompleted', handleAIAnalysis);
-        connection.on('aiAnalysisCompleted', handleAIAnalysis);
-        connection.on('aianalysiscompleted', handleAIAnalysis);
-
-        connection.onreconnecting(() => log('SignalR reconnecting...'));
-        connection.onreconnected(() => log('SignalR reconnected'));
-        connection.onclose((error) => log('SignalR connection closed', error));
-
-        connectionRef.current = connection;
-
-        await connection.start();
-
-        if (isMounted) {
-          log('Connected to SignalR hub');
-
-          // Join chat session group for targeted notifications
-          const currentSessionId = useChatStore.getState().sessionId;
-          if (currentSessionId) {
-            try {
-              await connection.invoke('JoinChatSessionGroup', currentSessionId);
-              log(`Joined chat session group: ${currentSessionId}`);
-            } catch (err) {
-              log('Failed to join chat session group:', err);
-            }
-          }
+      if (eventSessionId && eventSessionId === currentSessionId) {
+        addAssistantMessageRef.current?.(
+          eventResponse || '',
+          eventIsWebSearch,
+          eventSources,
+          eventOperationId,
+        );
+        // Clear chat timeout since a complete response arrived
+        if (chatTimeoutRef.current) {
+          clearTimeout(chatTimeoutRef.current);
+          chatTimeoutRef.current = null;
         }
-      } catch (error) {
-        if (!isMounted) return;
-
-        const errorMessage = error instanceof Error ? error.message : String(error);
-
-        // Suppress common benign errors (connection issues when backend is not running)
-        const isBenignError =
-          errorMessage.includes('stop()') ||
-          errorMessage.includes('HttpConnection') ||
-          errorMessage.includes('abort') ||
-          errorMessage.includes('WebSocket failed') ||
-          errorMessage.includes('Failed to fetch') ||
-          errorMessage.includes('Failed to complete negotiation');
-
-        if (isBenignError) {
-          return;
-        }
+        onMessageReceivedRef.current?.(event as unknown as ChatMessageReceivedEvent);
       }
     };
 
-    connect();
-
-    return () => {
-      isMounted = false;
-      if (connection) {
-        connection.stop().catch((err) => { if (process.env.NODE_ENV === 'development') console.error(err); });
+    const handleChatChunk = (event: Record<string, unknown>) => {
+      if (!isMounted) return;
+      const eventSessionId = (event.sessionId || event.SessionId) as string | undefined;
+      const currentSessionId = useChatStore.getState().sessionId;
+      if (eventSessionId && eventSessionId === currentSessionId) {
+        // Clear chat timeout on first chunk — response has started arriving
+        if (chatTimeoutRef.current) {
+          clearTimeout(chatTimeoutRef.current);
+          chatTimeoutRef.current = null;
+        }
+        useChatStore.getState().appendChunkToLastAssistantMessage(
+          (event.operationId || event.OperationId) as string | undefined,
+          ((event.chunk || event.Chunk) as string | undefined) || '',
+          Number(event.sequence || event.Sequence || 0),
+          Boolean(event.isFinal ?? event.IsFinal ?? false),
+        );
       }
-      connectionRef.current = null;
     };
-  }, [debug, log]);
 
-  /**
-   * Send a message to the chat
-   */
-  const sendMessage = useCallback(
-    async (content: string, enableWebSearch = false) => {
-      if (!postId) {
+    const handleChatCompleted = (event: Record<string, unknown>) => {
+      if (!isMounted) return;
+      const eventSessionId = (event.sessionId || event.SessionId) as string | undefined;
+      const eventOperationId = (event.operationId || event.OperationId) as string | undefined;
+      if (eventSessionId && eventSessionId === useChatStore.getState().sessionId) {
+        // Clear chat timeout since stream completed
+        if (chatTimeoutRef.current) {
+          clearTimeout(chatTimeoutRef.current);
+          chatTimeoutRef.current = null;
+        }
+        useChatStore.getState().markChunkStreamCompleted(eventOperationId);
+      }
+    };
+
+    const ensureConnection = async () => {
+      if (connectionRef.current?.state === signalR.HubConnectionState.Connected) {
+        // Re-register handlers with the current closure so isMounted stays valid
+        // across sessionToken refreshes that re-run this effect.
+        connectionRef.current.off('ChatMessageReceived');
+        connectionRef.current.off('chatMessageReceived');
+        connectionRef.current.off('chatmessagereceived');
+        connectionRef.current.off('ChatChunkReceived');
+        connectionRef.current.off('chatChunkReceived');
+        connectionRef.current.off('chatchunkreceived');
+        connectionRef.current.off('ChatMessageCompleted');
+        connectionRef.current.off('chatMessageCompleted');
+        connectionRef.current.off('chatmessagecompleted');
+        connectionRef.current.on('ChatMessageReceived', handleChatMessage);
+        connectionRef.current.on('chatMessageReceived', handleChatMessage);
+        connectionRef.current.on('chatmessagereceived', handleChatMessage);
+        connectionRef.current.on('ChatChunkReceived', handleChatChunk);
+        connectionRef.current.on('chatChunkReceived', handleChatChunk);
+        connectionRef.current.on('chatchunkreceived', handleChatChunk);
+        connectionRef.current.on('ChatMessageCompleted', handleChatCompleted);
+        connectionRef.current.on('chatMessageCompleted', handleChatCompleted);
+        connectionRef.current.on('chatmessagecompleted', handleChatCompleted);
+        try {
+          await connectionRef.current.invoke('JoinChatSessionGroup', sessionId);
+        } catch {
+          // Ignore join failures.
+        }
         return;
       }
 
-      await storeSendMessage(postId, content, enableWebSearch);
-    },
-    [postId, storeSendMessage]
-  );
+      connection = new signalR.HubConnectionBuilder()
+        .withUrl(CHAT_EVENTS_HUB_URL, {
+          accessTokenFactory: () => sessionTokenRef.current ?? '',
+        })
+        .withAutomaticReconnect()
+        .configureLogging(signalR.LogLevel.None)
+        .build();
 
-  /**
-   * Open the chat panel
-   */
+      connection.on('ChatMessageReceived', handleChatMessage);
+      connection.on('chatMessageReceived', handleChatMessage);
+      connection.on('chatmessagereceived', handleChatMessage);
+      connection.on('ChatChunkReceived', handleChatChunk);
+      connection.on('chatChunkReceived', handleChatChunk);
+      connection.on('chatchunkreceived', handleChatChunk);
+      connection.on('ChatMessageCompleted', handleChatCompleted);
+      connection.on('chatMessageCompleted', handleChatCompleted);
+      connection.on('chatmessagecompleted', handleChatCompleted);
+      connection.onreconnected(async () => {
+        setIsConnected(true);
+        try {
+          const currentSessionId = useChatStore.getState().sessionId;
+          if (currentSessionId) {
+            await connection?.invoke('JoinChatSessionGroup', currentSessionId);
+          }
+        } catch {
+          // Ignore rejoin failures.
+        }
+      });
+      connection.onclose(() => {
+        setIsConnected(false);
+        log('SignalR connection closed');
+      });
+
+      await connection.start();
+      if (!isMounted) {
+        await connection.stop();
+        return;
+      }
+
+      connectionRef.current = connection;
+      setIsConnected(true);
+      await connection.invoke('JoinChatSessionGroup', sessionId);
+    };
+
+    void ensureConnection();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [sessionId, sessionToken, log]);
+
+  useEffect(() => {
+    return () => {
+      if (chatTimeoutRef.current) {
+        clearTimeout(chatTimeoutRef.current);
+        chatTimeoutRef.current = null;
+      }
+      if (connectionRef.current) {
+        connectionRef.current.stop().catch(() => undefined);
+      }
+      connectionRef.current = null;
+    };
+  }, []);
+
+  const sendMessage = useCallback(async (content: string, enableWebSearch = false) => {
+    if (!postId) {
+      return;
+    }
+
+    // Clear any previous pending timeout before starting a new request
+    if (chatTimeoutRef.current) {
+      clearTimeout(chatTimeoutRef.current);
+      chatTimeoutRef.current = null;
+    }
+
+    await storeSendMessage(postId, content, enableWebSearch);
+
+    // Start 60s timeout — if no SignalR response arrives, show a fallback message
+    chatTimeoutRef.current = setTimeout(() => {
+      chatTimeoutRef.current = null;
+      const state = useChatStore.getState();
+      if (state.isLoading) {
+        addAssistantMessage('Yanıt alınamadı, lütfen tekrar deneyin.');
+        setLoading(false);
+      }
+    }, CHAT_TIMEOUT_MS);
+  }, [postId, storeSendMessage, addAssistantMessage, setLoading]);
+
+  const solveTurnstileChallenge = useCallback(async (token: string) => {
+    await submitTurnstileToken(token);
+  }, [submitTurnstileToken]);
+
   const openChat = useCallback(() => {
     setOpen(true);
   }, [setOpen]);
 
-  /**
-   * Close the chat panel
-   */
   const closeChat = useCallback(() => {
     setOpen(false);
   }, [setOpen]);
 
-  /**
-   * Toggle the chat panel
-   */
   const toggleChat = useCallback(() => {
     setOpen(!isOpen);
   }, [isOpen, setOpen]);
 
-  /**
-   * Check if SignalR is connected
-   */
-  const isConnected = connectionRef.current?.state === signalR.HubConnectionState.Connected;
 
   return {
-    // State
     sessionId,
     messages,
     isLoading,
@@ -243,9 +280,11 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
     error,
     isOpen,
     isConnected,
-
-    // Actions
+    turnstileRequired,
+    turnstileChallengeKey,
+    turnstileSiteKey: TURNSTILE_SITE_KEY,
     sendMessage,
+    solveTurnstileChallenge,
     openChat,
     closeChat,
     toggleChat,
@@ -253,3 +292,5 @@ export function useArticleChat(postId: string, options: UseArticleChatOptions = 
     setLoading,
   };
 }
+
+

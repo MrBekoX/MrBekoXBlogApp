@@ -21,6 +21,11 @@ class IEmbeddingProvider(ABC):
         pass
 
     @abstractmethod
+    async def warmup(self) -> None:
+        """Warm up the embedding model to prevent cold start delays."""
+        pass
+
+    @abstractmethod
     async def embed(self, text: str) -> list[float]:
         """
         Generate embedding for a single text.

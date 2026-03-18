@@ -8,6 +8,15 @@ using Microsoft.Extensions.Options;
 namespace BlogApp.BuildingBlocks.Caching.Redis;
 
 /// <summary>
+/// Exception thrown when JSON deserialization fails in cache operations.
+/// </summary>
+public class CacheSerializationException : Exception
+{
+    public CacheSerializationException(string message, Exception? innerException = null)
+        : base(message, innerException) { }
+}
+
+/// <summary>
 /// Basic Redis cache service implementation.
 /// Provides simple get/set/remove operations without advanced features.
 /// </summary>
@@ -41,6 +50,13 @@ public class BasicRedisCacheService : IBasicCacheService
                 return default;
 
             return JsonSerializer.Deserialize<T>(data, _jsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            // Fix: Re-throw JsonException instead of returning default
+            // This prevents null references downstream when deserialization fails
+            _logger.LogError(ex, "JSON deserialization failed for cache key: {Key}", key);
+            throw new CacheSerializationException($"Failed to deserialize cache key '{key}'", ex);
         }
         catch (Exception ex)
         {

@@ -22,7 +22,6 @@ class VectorChunk:
         """Convert distance to similarity score (0-1, higher is better).
         Assumes Cosine Distance (0=identical, 1=orthogonal, 2=opposite).
         """
-        # Ensure we don't return negative similarity for opposite vectors
         return max(0.0, 1.0 - self.distance)
 
 
@@ -33,6 +32,7 @@ class TextChunk:
     content: str
     chunk_index: int
     section_title: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class IVectorStore(ABC):
@@ -85,7 +85,8 @@ class IVectorStore(ABC):
         self,
         query_embedding: list[float],
         post_id: str | None = None,
-        k: int = 5
+        k: int = 5,
+        metadata_filter: dict[str, Any] | None = None,
     ) -> list[VectorChunk]:
         """
         Search for similar chunks.
@@ -94,6 +95,7 @@ class IVectorStore(ABC):
             query_embedding: Query embedding vector
             post_id: Optional post_id to filter results
             k: Number of results to return
+            metadata_filter: Optional metadata filter to enforce ACL/visibility
 
         Returns:
             List of VectorChunk objects ordered by similarity
@@ -101,7 +103,11 @@ class IVectorStore(ABC):
         pass
 
     @abstractmethod
-    def get_post_chunks(self, post_id: str) -> list[VectorChunk]:
+    def get_post_chunks(
+        self,
+        post_id: str,
+        metadata_filter: dict[str, Any] | None = None,
+    ) -> list[VectorChunk]:
         """Get all chunks for a specific post."""
         pass
 
@@ -124,12 +130,12 @@ class IVectorStore(ABC):
     ) -> list[dict]:
         """
         Search for similar cached queries.
-        
+
         Args:
             query_embedding: Embedding of the new query
             k: Number of results
             threshold: Similarity threshold (0-1) to consider a match
-            
+
         Returns:
             List of cached query results (dict with 'response', 'similarity', etc.)
         """
@@ -145,11 +151,57 @@ class IVectorStore(ABC):
     ) -> None:
         """
         Cache a query and its response.
-        
+
         Args:
             query_text: Original query text
             query_embedding: Embedding vector
             response: Response to cache
             metadata: Additional metadata
+        """
+        pass
+
+    @abstractmethod
+    def add_documents(
+        self,
+        collection_name: str,
+        documents: list[str],
+        embeddings: list[list[float]],
+        ids: list[str],
+        metadatas: list[dict[str, Any]] | None = None,
+    ) -> int:
+        """
+        Add documents to a named collection for LTM/Episodic memory.
+
+        Args:
+            collection_name: Name of the collection to add to
+            documents: List of document texts
+            embeddings: Corresponding embedding vectors
+            ids: Unique IDs for each document
+            metadatas: Optional metadata for each document
+
+        Returns:
+            Number of documents added
+        """
+        pass
+
+    @abstractmethod
+    def query(
+        self,
+        collection_name: str,
+        query_embeddings: list[list[float]],
+        n_results: int = 5,
+        where: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Query a named collection for similar documents.
+
+        Args:
+            collection_name: Name of the collection to query
+            query_embeddings: Query embedding vectors
+            n_results: Number of results to return
+            where: Optional metadata filter
+
+        Returns:
+            Query results dict or None if collection doesn't exist
         """
         pass

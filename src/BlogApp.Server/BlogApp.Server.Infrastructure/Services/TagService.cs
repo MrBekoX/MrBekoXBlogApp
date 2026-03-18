@@ -30,19 +30,15 @@ public class TagService(IUnitOfWork unitOfWork) : ITagService
             .Select(t => t.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // Create missing tags
+        // Create missing tags atomically — each call performs a DB-level
+        // INSERT ... ON CONFLICT DO NOTHING so concurrent requests never
+        // produce duplicate-key violations.
         var newTags = new List<Tag>();
         foreach (var tagName in tagNameList.Where(name => !existingTagNames.Contains(name)))
         {
-            var newTag = new Tag
-            {
-                Id = Guid.NewGuid(),
-                Name = tagName,
-                Slug = Slug.CreateFromTitle(tagName).Value,
-                CreatedAt = DateTime.UtcNow
-            };
-            await unitOfWork.TagsWrite.AddAsync(newTag, cancellationToken);
-            newTags.Add(newTag);
+            var slug = Slug.CreateFromTitle(tagName).Value;
+            var tag = await unitOfWork.TagsWrite.GetOrCreateAsync(tagName, slug, cancellationToken);
+            newTags.Add(tag);
         }
 
         return [.. existingTags, .. newTags];

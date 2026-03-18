@@ -57,8 +57,19 @@ export interface BlogPost {
 
 // AI Summary Response
 export interface AISummaryResponse {
-  summary: string;
-  wordCount: number;
+  summary?: string;
+  wordCount?: number;
+  operationId?: string;
+  correlationId?: string;
+  status?: string;
+}
+
+export interface AIAnalysisRequestResponse {
+  postId?: string;
+  operationId: string;
+  correlationId?: string;
+  message?: string;
+  status?: string;
 }
 
 export interface Author {
@@ -193,6 +204,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  operationId?: string;
   agentType?: AgentType;
   isWebSearchResult?: boolean;
   sources?: WebSearchSource[];
@@ -208,10 +220,13 @@ export interface WebSearchSource {
 export interface ChatRequest {
   postId: string;
   message: string;
+  operationId?: string;
   sessionId?: string;
   conversationHistory?: ChatHistoryItem[];
   language?: string;
   enableWebSearch?: boolean;
+  clientFingerprint?: string;
+  turnstileToken?: string;
 }
 
 export interface ChatHistoryItem {
@@ -220,16 +235,40 @@ export interface ChatHistoryItem {
 }
 
 export interface ChatResponse {
-  correlationId: string;
-  sessionId: string;
-  message: string;
+  correlationId?: string;
+  operationId?: string;
+  sessionId?: string;
+  sessionToken?: string;
+  sessionTokenExpiresAt?: string;
+  message?: string;
+  status?: string;
 }
 
 export interface ChatMessageReceivedEvent {
   sessionId: string;
   correlationId: string;
+  operationId?: string;
   response: string;
   isWebSearchResult: boolean;
   sources?: WebSearchSource[];
+  timestamp: string;
+}
+
+
+
+
+export interface AiOperationAcceptedResponse {
+  operationId: string;
+  correlationId?: string;
+  status?: string;
+  message?: string;
+}
+
+export interface AiOperationCompletedEvent {
+  operationId: string;
+  correlationId: string;
+  operationType: string;
+  resourceId?: string;
+  result: unknown;
   timestamp: string;
 }

@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using BlogApp.Server.Application.Common.Interfaces.Data;
 using BlogApp.Server.Domain.Common;
 using BlogApp.Server.Domain.Entities;
@@ -22,12 +22,15 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<ConsumerInboxMessage> ConsumerInboxMessages => Set<ConsumerInboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // Tüm configuration'ları uygula
+        // TÃ¼m configuration'larÄ± uygula
         modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
 
         // Global query filter for soft delete
@@ -36,11 +39,10 @@ public class AppDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<Tag>().HasQueryFilter(t => !t.IsDeleted);
         modelBuilder.Entity<User>().HasQueryFilter(u => !u.IsDeleted);
         modelBuilder.Entity<Comment>().HasQueryFilter(c => !c.IsDeleted);
-
-        // RefreshToken needs matching filter because User has filter and RefreshToken.User is required navigation
-        // This prevents "required entity filtered out" warnings
-        // Added explicit null check for safer query execution
         modelBuilder.Entity<RefreshToken>().HasQueryFilter(r => r.User != null && !r.User.IsDeleted);
+        modelBuilder.Entity<IdempotencyRecord>().HasQueryFilter(r => !r.IsDeleted);
+        modelBuilder.Entity<OutboxMessage>().HasQueryFilter(m => !m.IsDeleted);
+        modelBuilder.Entity<ConsumerInboxMessage>().HasQueryFilter(m => !m.IsDeleted);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

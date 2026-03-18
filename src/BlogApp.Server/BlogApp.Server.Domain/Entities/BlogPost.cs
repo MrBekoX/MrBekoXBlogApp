@@ -18,6 +18,7 @@ public class BlogPost : BaseAuditableEntity
     public int ViewCount { get; set; }
     public int LikeCount { get; set; }
     public bool IsFeatured { get; set; }
+    public uint Version { get; private set; }
     public string? MetaTitle { get; set; }
     public string? MetaDescription { get; set; }
     public string? MetaKeywords { get; set; }

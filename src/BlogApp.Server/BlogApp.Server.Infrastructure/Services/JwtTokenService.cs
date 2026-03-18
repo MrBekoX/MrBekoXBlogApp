@@ -28,6 +28,7 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.UserName),
             new(ClaimTypes.Role, user.Role.ToString()),
             new("userId", user.Id.ToString())
@@ -73,7 +74,7 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
                 ValidateAudience = true,
                 ValidAudience = _settings.Audience,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.FromSeconds(30)
             }, out _);
 
             return true;
@@ -111,12 +112,13 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
                 ValidateAudience = true,
                 ValidAudience = _settings.Audience,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.FromSeconds(30)
             };
 
             var principal = tokenHandler.ValidateToken(token, validationParameters, out _);
             var userIdClaim = principal.FindFirst("userId")?.Value
-                           ?? principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+                ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
 
             if (userIdClaim is not null && Guid.TryParse(userIdClaim, out var userId))
             {

@@ -1,5 +1,6 @@
 """Web search tool using DuckDuckGo."""
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Search configuration
 DEFAULT_MAX_RESULTS = 10  # Increased for better coverage
 DEFAULT_REGION = "wt-wt"  # Worldwide
-SEARCH_TIMEOUT = 10  # seconds
+SEARCH_TIMEOUT = 15  # seconds per search attempt
 
 
 @dataclass
@@ -93,19 +94,38 @@ class WebSearchTool:
         def _perform_sync_search(search_query: str, search_region: str):
             """Helper to run search synchronously."""
             try:
-                # Use DDGS context manager
+                # Use DDGS context manager (removed backend parameter which may cause issues)
                 with DDGS() as ddgs:
                     results = list(ddgs.text(
                         search_query,
                         region=search_region,
                         safesearch=safe_search,
                         max_results=max_results,
-                        backend="duckduckgo"
                     ))
                 return results
             except Exception as e:
                 logger.error(f"DDGS internal error for '{search_query}': {e}")
                 return []
+        
+        # Clean query: remove excessive negative filters that break DDGS
+        def _clean_query(search_query: str) -> str:
+            """Remove excessive negative filters that cause DDGS to return no results."""
+            negative_filters = ["-wordpress", "-blogspot", "-wix", "-squarespace"]
+            words = search_query.split()
+            negative_count = sum(1 for w in words if w in negative_filters)
+            
+            if negative_count > 1:
+                cleaned_words = []
+                kept_negative = False
+                for word in words:
+                    if word in negative_filters:
+                        if not kept_negative:
+                            cleaned_words.append(word)
+                            kept_negative = True
+                    else:
+                        cleaned_words.append(word)
+                return " ".join(cleaned_words)
+            return search_query
 
         # Trusted domains allowlist
         ALLOWLIST_DOMAINS = {
@@ -199,25 +219,44 @@ class WebSearchTool:
             return filtered
 
         try:
-            # 1. Primary Search
-            results = await asyncio.to_thread(_perform_sync_search, query, region)
+            # Clean query before searching
+            clean_query = _clean_query(query)
+            
+            # 1. Primary Search with timeout
+            results = await asyncio.wait_for(
+                asyncio.to_thread(_perform_sync_search, clean_query, region),
+                timeout=SEARCH_TIMEOUT
+            )
             search_results = _filter_results(results)
 
-            # 2. Fallback: Broader Query (if 0 results)
-            if len(search_results) == 0 and len(query.split()) > 3:
-                # Keep first 3 words + "software" context if needed
-                words = query.split()
-                # Try simple query: first 3 words
-                broader_query = " ".join(words[:3])
-                logger.info(f"0 results found. Retrying with broader query: '{broader_query}'...")
-                
-                results = await asyncio.to_thread(_perform_sync_search, broader_query, region)
+            # 2. Fallback: Try original query if cleaned query failed
+            if len(search_results) == 0 and clean_query != query:
+                logger.info(f"Clean query failed, trying original: '{query[:50]}...'")
+                results = await asyncio.wait_for(
+                    asyncio.to_thread(_perform_sync_search, query, region),
+                    timeout=SEARCH_TIMEOUT
+                )
                 search_results = _filter_results(results)
 
-            # 3. Fallback: Global Region (if still 0 results and region was TR)
-            if len(search_results) == 0 and region == "tr-tr":
-                logger.info("Still 0 results. Retrying in global region (wt-wt)...")
-                results = await asyncio.to_thread(_perform_sync_search, query, "wt-wt")
+            # 3. Fallback: Broader Query (if 0 results)
+            if len(search_results) == 0 and len(query.split()) > 3:
+                words = query.split()
+                broader_query = " ".join(words[:4])  # Use first 4 words
+                logger.info(f"0 results. Retrying with broader query: '{broader_query}'...")
+                
+                results = await asyncio.wait_for(
+                    asyncio.to_thread(_perform_sync_search, broader_query, region),
+                    timeout=SEARCH_TIMEOUT
+                )
+                search_results = _filter_results(results)
+
+            # 4. Fallback: Global Region (if still 0 results and region was not global)
+            if len(search_results) == 0 and region != "wt-wt":
+                logger.info("Retrying in global region (wt-wt)...")
+                results = await asyncio.wait_for(
+                    asyncio.to_thread(_perform_sync_search, clean_query, "wt-wt"),
+                    timeout=SEARCH_TIMEOUT
+                )
                 search_results = _filter_results(results)
 
             logger.info(f"Found {len(search_results)} results total (after fallbacks)")
@@ -228,6 +267,9 @@ class WebSearchTool:
                 total_results=len(search_results)
             )
 
+        except asyncio.TimeoutError:
+            logger.warning(f"Web search timed out after {SEARCH_TIMEOUT}s for '{query[:50]}...'")
+            return WebSearchResponse(query=query, results=[], total_results=0)
         except Exception as e:
             logger.error(f"Web search failed for '{query}': {e}")
             return WebSearchResponse(
@@ -295,4 +337,6 @@ class WebSearchTool:
         return await self.search(search_query, max_results=max_results)
 
 
+# Singleton instance for backward compatibility
+web_search_tool = WebSearchTool()
 

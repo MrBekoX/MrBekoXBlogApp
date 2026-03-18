@@ -42,41 +42,37 @@ public class LoginCommandHandler(
         }
 
         // Güvenli şifre doğrulama (BCrypt)
-        if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+        // Fix: Wrap in try-catch to handle potential exceptions
+        bool passwordValid;
+        try
         {
-            // Fix Race Condition: Use transaction to prevent concurrent login attempts
-            using var transaction = await unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-            
-            try
-            {
-                // Başarısız giriş sayısını thread-safe (atomik) olarak artır
-                await unitOfWork.UsersWrite.IncrementFailedLoginAttemptsAsync(user.Id, cancellationToken);
-                
-                // Transaction içinde kullanıcıyı yeniden çek (Race condition önlemi)
-                var updatedUser = await unitOfWork.UsersRead.GetByIdAsync(user.Id, cancellationToken);
-                
-                if (updatedUser != null)
-                {
-                    if (updatedUser.FailedLoginAttempts >= MaxFailedAttempts)
-                    {
-                        // Hesabı kilitle
-                        updatedUser.LockoutEndTime = DateTime.UtcNow.Add(LockoutDuration);
-                        updatedUser.FailedLoginAttempts = 0;
-                        await unitOfWork.UsersWrite.UpdateAsync(updatedUser, cancellationToken);
-                    }
-                }
-                
-                await unitOfWork.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-            }
-            catch
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
-            }
+            passwordValid = BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash);
+        }
+        catch (Exception ex)
+        {
+            // Log the error but treat as invalid password to avoid information leakage
+            // Consider adding proper logging here
+            passwordValid = false;
+        }
+
+        if (!passwordValid)
+        {
+            // Atomik SQL UPDATE ile başarısız giriş sayısını artır (ExecuteUpdateAsync)
+            await unitOfWork.UsersWrite.IncrementFailedLoginAttemptsAsync(user.Id, cancellationToken);
 
             // Güncel durumu kontrol et
-            var finalUser = await unitOfWork.UsersRead.GetByIdAsync(user.Id, cancellationToken);
+            var updatedUser = await unitOfWork.UsersRead.GetByIdAsync(user.Id, cancellationToken);
+
+            if (updatedUser != null && updatedUser.FailedLoginAttempts >= MaxFailedAttempts)
+            {
+                // Hesabı kilitle
+                updatedUser.LockoutEndTime = DateTime.UtcNow.Add(LockoutDuration);
+                updatedUser.FailedLoginAttempts = 0;
+                await unitOfWork.UsersWrite.UpdateAsync(updatedUser, cancellationToken);
+                await unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            var finalUser = updatedUser;
             if (finalUser?.LockoutEndTime > DateTime.UtcNow)
             {
                 var remainingMinutes = (int)Math.Ceiling((finalUser.LockoutEndTime.Value - DateTime.UtcNow).TotalMinutes);

@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Sparkles, Loader2, FileText, Hash, Clock, Save } from 'lucide-react';
+import { Sparkles, Loader2, FileText, Hash, Save } from 'lucide-react';
 import { postsApi } from '@/lib/api';
+import { useAuthoringAiOperations } from '@/hooks/use-authoring-ai-operations';
 import { toast } from 'sonner';
 
 interface AIAnalysisData {
@@ -22,34 +22,34 @@ export function AIAnalysisCard({ postId, onAnalysisSaved }: AIAnalysisCardProps)
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [analysis, setAnalysis] = useState<AIAnalysisData | null>(null);
+  const { generateSummary } = useAuthoringAiOperations();
 
   const handleGenerateAnalysis = async () => {
     setLoading(true);
     try {
-      const response = await postsApi.generateAiSummary(postId, 5, 'tr');
-
-      if (response.success && response.data) {
-        setAnalysis(response.data);
-        toast.success('AI analizi başarıyla oluşturuldu');
-      } else {
-        toast.error(response.message || 'AI analizi oluşturulamadı');
-      }
+      const summary = await generateSummary(postId, 5, 'tr');
+      setAnalysis({
+        summary,
+        wordCount: summary.split(/\s+/).filter(Boolean).length,
+      });
+      toast.success('AI analizi basariyla olusturuldu');
     } catch {
-      toast.error('AI analizi oluşturulurken bir hata oluştu');
+      toast.error('AI analizi olusturulurken bir hata olustu');
     } finally {
       setLoading(false);
     }
   };
 
   const handleSaveAnalysis = async () => {
-    if (!analysis) return;
+    if (!analysis) {
+      return;
+    }
 
     setSaving(true);
     try {
-      // Update post with AI summary
       await postsApi.update(postId, {
         id: postId,
-        title: '', // Will be ignored by backend if empty
+        title: '',
         content: '',
         excerpt: '',
         status: 'Draft',
@@ -58,13 +58,10 @@ export function AIAnalysisCard({ postId, onAnalysisSaved }: AIAnalysisCardProps)
         aiSummary: analysis.summary,
       });
 
-      toast.success('AI analizi başarıyla kaydedildi');
-
-      if (onAnalysisSaved) {
-        onAnalysisSaved();
-      }
+      toast.success('AI analizi basariyla kaydedildi');
+      onAnalysisSaved?.();
     } catch {
-      toast.error('AI analizi kaydedilirken bir hata oluştu');
+      toast.error('AI analizi kaydedilirken bir hata olustu');
     } finally {
       setSaving(false);
     }
@@ -89,41 +86,38 @@ export function AIAnalysisCard({ postId, onAnalysisSaved }: AIAnalysisCardProps)
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Analiz Ediliyor...
+                  Analiz ediliyor...
                 </>
               ) : (
                 <>
                   <Sparkles className="mr-2 h-4 w-4" />
-                  AI Analizi Başlat
+                  AI analizi baslat
                 </>
               )}
             </Button>
           </div>
         ) : (
           <div className="space-y-4 rounded-lg border bg-muted/50 p-4">
-            {/* Summary */}
             <div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="mb-2 flex items-center gap-2">
                 <FileText className="h-4 w-4 text-primary" />
-                <h4 className="font-semibold text-sm">Özet</h4>
+                <h4 className="text-sm font-semibold">Ozet</h4>
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 {analysis.summary}
               </p>
             </div>
 
-            {/* Statistics */}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <Hash className="h-4 w-4 text-muted-foreground" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Kelime Sayısı</p>
+                  <p className="text-xs text-muted-foreground">Kelime sayisi</p>
                   <p className="text-sm font-semibold">{analysis.wordCount}</p>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
             <div className="flex gap-2 pt-2">
               <Button
                 onClick={handleSaveAnalysis}
@@ -139,7 +133,7 @@ export function AIAnalysisCard({ postId, onAnalysisSaved }: AIAnalysisCardProps)
                 ) : (
                   <>
                     <Save className="mr-2 h-4 w-4" />
-                    Analizi Kaydet
+                    Analizi kaydet
                   </>
                 )}
               </Button>
@@ -148,7 +142,7 @@ export function AIAnalysisCard({ postId, onAnalysisSaved }: AIAnalysisCardProps)
                 variant="outline"
                 size="sm"
               >
-                Yeniden Oluştur
+                Yeniden olustur
               </Button>
             </div>
           </div>

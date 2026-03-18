@@ -13,7 +13,7 @@ public static class CookieHelper
         {
             HttpOnly = true,
             Secure = isProduction,
-            SameSite = SameSiteMode.Strict,
+            SameSite = SameSiteMode.Lax,
             Path = "/",
             Expires = accessTokenExpiry,
             IsEssential = true
@@ -23,7 +23,7 @@ public static class CookieHelper
         {
             HttpOnly = true,
             Secure = isProduction,
-            SameSite = SameSiteMode.Strict,
+            SameSite = SameSiteMode.Lax,
             Path = "/",
             Expires = DateTime.UtcNow.AddDays(7),
             IsEssential = true
@@ -40,7 +40,7 @@ public static class CookieHelper
         {
             HttpOnly = true,
             Secure = isProduction,
-            SameSite = SameSiteMode.Strict,
+            SameSite = SameSiteMode.Lax,
             Path = "/"
         });
 
@@ -48,7 +48,7 @@ public static class CookieHelper
         {
             HttpOnly = true,
             Secure = isProduction,
-            SameSite = SameSiteMode.Strict,
+            SameSite = SameSiteMode.Lax,
             Path = "/"
         });
     }

@@ -2,7 +2,9 @@ using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Constants;
+using BlogApp.Server.Domain.Exceptions;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.UpdateAiAnalysisCommand;
 
@@ -48,8 +50,15 @@ public class UpdateAiAnalysisCommandHandler(
         post.AiProcessedAt = DateTime.UtcNow;
 
         // 3. Save changes
-        await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently, ex);
+        }
 
         // 4. Invalidate caches
         await cacheService.RemoveAsync(PostCacheKeys.ById(post.Id), cancellationToken);

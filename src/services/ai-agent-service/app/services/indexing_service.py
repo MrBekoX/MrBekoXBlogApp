@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # Chunking parameters
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 50
+VALID_VISIBILITIES = {'published', 'restricted'}
+
+def normalize_visibility(value: str | None) -> str:
+    normalized = (value or 'published').strip().lower()
+    return normalized if normalized in VALID_VISIBILITIES else 'published'
 
 
 @dataclass
@@ -157,14 +162,15 @@ class IndexingService:
         embedding_provider: IEmbeddingProvider,
         vector_store: IVectorStore,
         chunker: SemanticChunker | AdaptiveChunker | None = None,
-        bm25_index: BM25Index | None = None
+        bm25_index: BM25Index | None = None,
+        content_cleaner: ContentCleanerService | None = None,
     ):
         self._embedding = embedding_provider
         self._vector_store = vector_store
         # Default to SemanticChunker if not provided, fallback to Adaptive if Semantic fails to init
         # For now, default to SemanticChunker
         self._chunker = chunker or SemanticChunker()
-        self._cleaner = ContentCleanerService()
+        self._cleaner = content_cleaner or ContentCleanerService()
         self._bm25 = bm25_index or BM25Index()
         self._initialized = False
 
@@ -184,6 +190,8 @@ class IndexingService:
         post_id: str,
         title: str,
         content: str,
+        author_id: str | None = None,
+        visibility: str = 'published',
         delete_existing: bool = True
     ) -> IndexingResult:
         """
@@ -228,6 +236,19 @@ class IndexingService:
 
         # Chunk the content
         chunks = self._chunker.chunk(cleaned)
+        chunk_metadata = {
+            'author_id': author_id or '',
+            'visibility': normalize_visibility(visibility),
+        }
+        chunks = [
+            TextChunk(
+                content=chunk.content,
+                chunk_index=chunk.chunk_index,
+                section_title=chunk.section_title,
+                metadata=dict(chunk_metadata),
+            )
+            for chunk in chunks
+        ]
 
         if not chunks:
             logger.warning(f"Article {post_id} produced no chunks")
@@ -303,9 +324,52 @@ class IndexingService:
         chunks = self._vector_store.get_post_chunks(post_id)
         return len(chunks) > 0
 
+    def rebuild_bm25_from_vector_store(self) -> int:
+        """Rebuild in-memory BM25 indices from persisted ChromaDB chunks.
+
+        Called at startup to restore BM25 state lost on restart.
+
+        Returns:
+            Number of posts whose BM25 index was rebuilt.
+        """
+        get_all_post_ids = getattr(self._vector_store, "get_all_post_ids", None)
+        if not callable(get_all_post_ids):
+            logger.warning("Vector store does not support get_all_post_ids, skipping BM25 rebuild")
+            return 0
+
+        post_ids = get_all_post_ids()
+        if not post_ids:
+            logger.info("No posts in vector store, BM25 rebuild skipped")
+            return 0
+
+        rebuilt = 0
+        for post_id in post_ids:
+            try:
+                chunks = self._vector_store.get_post_chunks(post_id)
+                if not chunks:
+                    continue
+
+                bm25_chunks = [
+                    {
+                        "content": c.content,
+                        "chunk_index": c.chunk_index,
+                        "section_title": c.section_title,
+                    }
+                    for c in chunks
+                ]
+                self._bm25.index_document(post_id, bm25_chunks)
+                rebuilt += 1
+            except Exception as e:
+                logger.warning(f"Failed to rebuild BM25 for post {post_id}: {e}")
+
+        logger.info(f"BM25 rebuild complete: {rebuilt}/{len(post_ids)} posts indexed")
+        return rebuilt
+
     def get_index_stats(self) -> dict:
         """Get indexing statistics."""
         return {
             "total_chunks": self._vector_store.get_total_count(),
             "status": "healthy"
         }
+
+

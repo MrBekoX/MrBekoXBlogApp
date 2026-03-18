@@ -1,5 +1,4 @@
 using BlogApp.BuildingBlocks.Messaging;
-using BlogApp.BuildingBlocks.Messaging.Abstractions;
 using BlogApp.BuildingBlocks.Messaging.Events.Ai;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -7,49 +6,47 @@ using MediatR;
 
 namespace BlogApp.Server.Application.Features.AiFeature.Commands.GenerateSeoDescriptionCommand;
 
-/// <summary>
-/// Handler for generating AI SEO description using RabbitMQ event-driven architecture.
-/// Publishes SEO description generation request to AI Agent via RabbitMQ.
-/// </summary>
 public class GenerateSeoDescriptionCommandHandler(
-    IEventBus eventBus) : IRequestHandler<GenerateSeoDescriptionCommandRequest, GenerateSeoDescriptionCommandResponse>
+    IAiGenerationRequestExecutor executor) : IRequestHandler<GenerateSeoDescriptionCommandRequest, GenerateSeoDescriptionCommandResponse>
 {
     public async Task<GenerateSeoDescriptionCommandResponse> Handle(
         GenerateSeoDescriptionCommandRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            // Generate correlation ID for tracking
-            var correlationId = Guid.NewGuid().ToString();
-
-            // Publish SEO description generation request to RabbitMQ
-            var seoGenerationEvent = new AiSeoDescriptionGenerationRequestedEvent
-            {
-                CorrelationId = correlationId,
-                Payload = new AiSeoDescriptionGenerationPayload
+        var execution = await executor.ExecuteAsync<AiSeoDescriptionGenerationRequestedEvent, string>(
+            new AiGenerationExecutionRequest<AiSeoDescriptionGenerationRequestedEvent>(
+                EndpointName: "ai.generate-seo",
+                OperationId: request.OperationId,
+                RequestPayload: request,
+                UserId: request.UserId,
+                ResourceId: null,
+                BuildEvent: (correlationId, operationId, causationId) => new AiSeoDescriptionGenerationRequestedEvent
                 {
-                    Content = request.Content,
-                    UserId = request.UserId,
-                    RequestedAt = DateTime.UtcNow,
-                    Language = "tr" // Default language
-                }
-            };
+                    OperationId = operationId,
+                    CorrelationId = correlationId,
+                    CausationId = causationId,
+                    Payload = new AiSeoDescriptionGenerationPayload
+                    {
+                        Content = request.Content,
+                        UserId = request.UserId,
+                        RequestedAt = DateTime.UtcNow
+                    }
+                },
+                RoutingKey: MessagingConstants.RoutingKeys.AiSeoGenerationRequested,
+                Timeout: TimeSpan.FromSeconds(120)),
+            cancellationToken);
 
-            await eventBus.PublishAsync(seoGenerationEvent, MessagingConstants.RoutingKeys.AiAnalysisRequested, cancellationToken);
-
-            return new GenerateSeoDescriptionCommandResponse
-            {
-                Data = Result.Success("AI tarafından oluşturulan SEO açıklaması") // Placeholder
-            };
-        }
-        catch (Exception ex)
+        return new GenerateSeoDescriptionCommandResponse
         {
-            return new GenerateSeoDescriptionCommandResponse
-            {
-                Data = Result.Failure<string>("SEO açıklaması oluşturulurken hata oluştu: " + ex.Message)
-            };
-        }
+            OperationId = execution.OperationId,
+            CorrelationId = execution.CorrelationId,
+            IsProcessing = execution.State == AiGenerationExecutionState.Processing,
+            ErrorCode = execution.ErrorCode,
+            ErrorMessage = execution.ErrorMessage,
+            Data = execution.State == AiGenerationExecutionState.Completed
+                ? Result.Success(execution.Result!)
+                : Result.Failure<string>(execution.ErrorMessage ?? "AI SEO generation is still processing.")
+        };
     }
 }
 

@@ -1,4 +1,4 @@
-namespace BlogApp.Server.Api.Extensions;
+﻿namespace BlogApp.Server.Api.Extensions;
 
 public static class CorsExtensions
 {
@@ -20,8 +20,8 @@ public static class CorsExtensions
             {
                 policy.WithOrigins(corsOrigins)
                     .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                    .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept", "X-SignalR-User-Agent", "X-CSRF-TOKEN")
-                    .WithExposedHeaders("Content-Disposition")
+                    .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept", "X-SignalR-User-Agent", "X-CSRF-TOKEN", "Idempotency-Key")
+                    .WithExposedHeaders("Content-Disposition", "X-CSRF-TOKEN")
                     .AllowCredentials()
                     .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
             });
@@ -30,3 +30,4 @@ public static class CorsExtensions
         return services;
     }
 }
+

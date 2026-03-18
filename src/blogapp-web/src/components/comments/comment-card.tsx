@@ -2,11 +2,8 @@
 
 import * as React from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { MessageSquare, Clock, CornerDownRight, Circle } from 'lucide-react';
 import { CommentForm } from './comment-form';
-import { MessageSquare, Clock } from 'lucide-react';
 import type { Comment, User } from '@/types';
 
 interface CommentCardProps {
@@ -28,15 +25,6 @@ export function CommentCard({
 }: CommentCardProps) {
   const [showReplyForm, setShowReplyForm] = React.useState(false);
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
   const handleReplyAdded = (reply: Comment) => {
     onReplyAdded(comment.id, reply);
     setShowReplyForm(false);
@@ -45,54 +33,52 @@ export function CommentCard({
   const timeAgo = formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true });
 
   return (
-    <div className={`space-y-4 ${isReply ? 'ml-8 pl-4 border-l-2 border-muted' : ''}`}>
-      <div className="flex gap-4">
-        <Avatar className="h-10 w-10">
-          <AvatarFallback className="bg-primary/10 text-primary">
-            {getInitials(comment.authorName)}
-          </AvatarFallback>
-        </Avatar>
-
-        <div className="flex-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{comment.authorName}</span>
-            {!comment.isApproved && (
-              <Badge variant="outline" className="text-xs">
-                Pending approval
-              </Badge>
-            )}
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Clock className="h-3 w-3" />
-              <time
-                dateTime={comment.createdAt}
-                title={format(new Date(comment.createdAt), 'PPpp')}
-              >
-                {timeAgo}
-              </time>
+    <div className={`font-mono ${isReply ? 'ml-6 pl-4 border-l-2 border-ide-border/40' : ''}`}>
+      {/* Comment entry */}
+      <div className="py-3 border-b border-ide-border/30">
+        {/* Header line */}
+        <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
+          <Circle className="w-2 h-2 fill-ide-primary/60 text-ide-primary/60" />
+          <span className="text-ide-primary">{comment.authorName}</span>
+          {!comment.isApproved && (
+            <span className="text-[10px] text-yellow-500 border border-yellow-500/30 px-1.5 py-0.5 rounded">
+              pending
             </span>
-          </div>
+          )}
+          <span className="flex items-center gap-1 text-gray-600">
+            <Clock className="w-2.5 h-2.5" />
+            <time
+              dateTime={comment.createdAt}
+              title={format(new Date(comment.createdAt), 'PPpp')}
+            >
+              {timeAgo}
+            </time>
+          </span>
+        </div>
 
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+        {/* Comment content */}
+        <div className="pl-4">
+          <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap">
+            <span className="text-gray-600 mr-2">&gt;</span>
             {comment.content}
           </p>
 
+          {/* Reply button */}
           {!isReply && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-muted-foreground hover:text-foreground"
+            <button
+              className="mt-2 flex items-center gap-1 text-[10px] text-gray-500 hover:text-ide-primary transition-colors"
               onClick={() => setShowReplyForm(!showReplyForm)}
             >
-              <MessageSquare className="mr-1 h-4 w-4" />
-              Reply
-            </Button>
+              <CornerDownRight className="w-3 h-3" />
+              <span>{showReplyForm ? 'iptal' : 'yanıtla'}</span>
+            </button>
           )}
         </div>
       </div>
 
       {/* Reply Form */}
       {showReplyForm && (
-        <div className="ml-14">
+        <div className="ml-4 mt-3">
           <CommentForm
             postId={postId}
             parentCommentId={comment.id}
@@ -107,7 +93,7 @@ export function CommentCard({
 
       {/* Nested Replies */}
       {comment.replies && comment.replies.length > 0 && (
-        <div className="space-y-4">
+        <div className="mt-1">
           {comment.replies.map((reply) => (
             <CommentCard
               key={reply.id}
@@ -124,4 +110,3 @@ export function CommentCard({
     </div>
   );
 }
-

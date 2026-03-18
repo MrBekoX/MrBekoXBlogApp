@@ -7,6 +7,7 @@ namespace BlogApp.BuildingBlocks.Messaging.Events.Ai;
 /// </summary>
 public record AiExcerptGenerationRequestedEvent : IntegrationEvent
 {
+    public override string EventType => "ai.excerpt.generation.requested";
     public AiExcerptGenerationPayload Payload { get; init; } = null!;
 }
 

@@ -1,6 +1,7 @@
 """Ollama LLM adapter - Concrete implementation of ILLMProvider."""
 
 import logging
+import re
 from typing import Any, AsyncGenerator
 
 from langchain_ollama import ChatOllama
@@ -8,6 +9,9 @@ from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk
 
 from app.domain.interfaces.i_llm_provider import ILLMProvider
 from app.core.config import settings
+
+# Regex to strip <think>...</think> blocks from reasoning model output
+_THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>\s*", re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +64,11 @@ class OllamaAdapter(ILLMProvider):
 
         Args:
             prompt: The input prompt (already formatted, should NOT contain {variables})
-            **kwargs: Additional options (temperature override, etc.)
+            **kwargs: Additional options:
+                - temperature: float override
+                - think: bool - enable/disable reasoning mode (default True).
+                  Set to False for simple tasks (summarization, keyword extraction)
+                  to dramatically reduce latency on reasoning models like qwen3.5.
 
         Returns:
             Generated text response
@@ -70,21 +78,31 @@ class OllamaAdapter(ILLMProvider):
         if not self._llm:
             raise RuntimeError("LLM not initialized")
 
-        # Allow temperature override per request
-        llm = self._llm
-        if 'temperature' in kwargs:
+        think = kwargs.pop("think", True)
+
+        # Build LLM instance with optional overrides
+        needs_custom = "temperature" in kwargs or not think
+        if needs_custom:
+            extra_kwargs: dict[str, Any] = {}
+            if not think:
+                extra_kwargs["extra_body"] = {"think": False}
             llm = ChatOllama(
                 model=self._model,
                 base_url=self._base_url,
-                temperature=kwargs['temperature'],
+                temperature=kwargs.get("temperature", self._temperature),
                 timeout=self._timeout,
                 num_ctx=self._num_ctx,
+                **extra_kwargs,
             )
+        else:
+            llm = self._llm
 
-        # Direct invocation - prompt is already formatted
-        from langchain_core.messages import HumanMessage
         result = await llm.ainvoke([HumanMessage(content=prompt)])
-        return result.content.strip()
+        text = result.content.strip() if result.content else ""
+
+        # Strip <think>...</think> blocks if present (safety net)
+        text = _THINK_BLOCK_RE.sub("", text).strip()
+        return text
 
     async def generate_json(
         self,
@@ -106,12 +124,49 @@ class OllamaAdapter(ILLMProvider):
         if not self._llm:
             raise RuntimeError("LLM not initialized")
 
-        from langchain_core.messages import HumanMessage
-        result = await self._llm.ainvoke([HumanMessage(content=prompt)])
-
-        # Parse JSON response
         import json
-        return json.loads(result.content)
+        import re
+        from langchain_core.messages import HumanMessage
+
+        # Use think=False for structured JSON output to reduce latency
+        llm = ChatOllama(
+            model=self._model,
+            base_url=self._base_url,
+            temperature=0.1,
+            timeout=self._timeout,
+            num_ctx=self._num_ctx,
+            extra_body={"think": False},
+        )
+        result = await llm.ainvoke([HumanMessage(content=prompt)])
+        raw_content = result.content.strip() if result.content else ""
+
+        # Strip thinking blocks if present
+        raw_content = _THINK_BLOCK_RE.sub("", raw_content).strip()
+
+        if not raw_content:
+            logger.warning("LLM returned empty response for JSON request")
+            return {}
+
+        # Try to extract JSON from response (handles markdown code blocks, etc.)
+        json_str = raw_content
+
+        # Check for markdown code block: ```json ... ```
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', raw_content)
+        if json_match:
+            json_str = json_match.group(1).strip()
+
+        # Try to find JSON object or array in the response
+        if not json_str.startswith(('{', '[')):
+            obj_match = re.search(r'\{[\s\S]*\}', raw_content)
+            if obj_match:
+                json_str = obj_match.group(0)
+
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse LLM response as JSON: {e}")
+            logger.debug(f"Raw response was: {raw_content[:500]}...")
+            return {}
 
     async def warmup(self) -> None:
         """
@@ -127,7 +182,7 @@ class OllamaAdapter(ILLMProvider):
 
         from langchain_core.messages import HumanMessage
         result = await self._llm.ainvoke([HumanMessage(content="Say 'ready' in one word.")])
-        logger.info(f"Warmup complete, model response: {result.content.strip()}")
+        logger.info(f"Warmup complete, model response: {result.content.strip() if result.content else ''}")
 
     def is_initialized(self) -> bool:
         """Check if the provider is initialized and ready."""

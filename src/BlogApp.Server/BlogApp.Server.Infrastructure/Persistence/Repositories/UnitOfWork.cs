@@ -5,7 +5,6 @@ using BlogApp.Server.Application.Common.Interfaces.Persistence.CommentRepository
 using BlogApp.Server.Application.Common.Interfaces.Persistence.RefreshTokenRepository;
 using BlogApp.Server.Application.Common.Interfaces.Persistence.TagRepository;
 using BlogApp.Server.Application.Common.Interfaces.Persistence.UserRepository;
-using BlogApp.Server.Domain.Entities;
 using BlogApp.Server.Infrastructure.Persistence;
 using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreBlogPostRepository;
 using BlogApp.Server.Infrastructure.Persistence.Repositories.EfCoreCategoryRepository;
@@ -18,14 +17,10 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BlogApp.Server.Infrastructure.Persistence.Repositories;
 
-/// <summary>
-/// Unit of Work pattern implementasyonu
-/// </summary>
 public class UnitOfWork(AppDbContext context) : Application.Common.Interfaces.Persistence.IUnitOfWork
 {
     private IDbContextTransaction? _transaction;
 
-    // Read Repositories
     private IBlogPostReadRepository? _postsRead;
     private ICategoryReadRepository? _categoriesRead;
     private ITagReadRepository? _tagsRead;
@@ -33,7 +28,6 @@ public class UnitOfWork(AppDbContext context) : Application.Common.Interfaces.Pe
     private ICommentReadRepository? _commentsRead;
     private IRefreshTokenReadRepository? _refreshTokensRead;
 
-    // Write Repositories
     private IBlogPostWriteRepository? _postsWrite;
     private ICategoryWriteRepository? _categoriesWrite;
     private ITagWriteRepository? _tagsWrite;
@@ -77,55 +71,65 @@ public class UnitOfWork(AppDbContext context) : Application.Common.Interfaces.Pe
     public IRefreshTokenWriteRepository RefreshTokensWrite =>
         _refreshTokensWrite ??= new EfCoreRefreshTokenWriteRepository(context);
 
-    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        return await context.SaveChangesAsync(cancellationToken);
+        return context.SaveChangesAsync(cancellationToken);
     }
 
     public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
-        _transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        _transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Belirtilen isolation level ile transaction başlatır ve ITransactionScope wrapper döner.
-    /// Race condition önleme gereken durumlarda (login, token refresh) Serializable kullanın.
-    /// </summary>
-    public async Task<Application.Common.Interfaces.Persistence.ITransactionScope> BeginTransactionAsync(IsolationLevel isolationLevel, CancellationToken cancellationToken = default)
+    public async Task<Application.Common.Interfaces.Persistence.ITransactionScope> BeginTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken = default)
     {
-        _transaction = await context.Database.BeginTransactionAsync(isolationLevel, cancellationToken);
+        _transaction = await context.Database.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
         return new TransactionWrapper(_transaction);
     }
 
     public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
     {
-        if (_transaction is not null)
+        if (_transaction is null)
         {
-            await _transaction.CommitAsync(cancellationToken);
-            await _transaction.DisposeAsync();
-            _transaction = null;
+            return;
         }
+
+        await _transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await _transaction.DisposeAsync().ConfigureAwait(false);
+        _transaction = null;
     }
 
     public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
     {
-        if (_transaction is not null)
+        if (_transaction is null)
         {
-            await _transaction.RollbackAsync(cancellationToken);
-            await _transaction.DisposeAsync();
-            _transaction = null;
+            return;
         }
+
+        await _transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        await _transaction.DisposeAsync().ConfigureAwait(false);
+        _transaction = null;
+    }
+
+    public Task<TResult> ExecuteResilientAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        var strategy = context.Database.CreateExecutionStrategy();
+        return strategy.ExecuteAsync(() => operation(cancellationToken));
     }
 
     public async ValueTask DisposeAsync()
     {
         if (_transaction is not null)
         {
-            await _transaction.DisposeAsync();
+            await _transaction.DisposeAsync().ConfigureAwait(false);
             _transaction = null;
         }
 
-        await context.DisposeAsync();
+        await context.DisposeAsync().ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -136,14 +140,12 @@ public class UnitOfWork(AppDbContext context) : Application.Common.Interfaces.Pe
     }
 }
 
-/// <summary>
-/// IDbContextTransaction için ITransactionScope wrapper.
-/// Transaction'ın using block'unda kullanılmasını sağlar.
-/// </summary>
 internal sealed class TransactionWrapper : Application.Common.Interfaces.Persistence.ITransactionScope
 {
     private readonly IDbContextTransaction _transaction;
     private bool _disposed;
+    private bool _committed;
+    private bool _rolledBack;
 
     public TransactionWrapper(IDbContextTransaction transaction)
     {
@@ -152,25 +154,91 @@ internal sealed class TransactionWrapper : Application.Common.Interfaces.Persist
 
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
-        await _transaction.CommitAsync(cancellationToken);
+        ThrowIfDisposed();
+
+        if (_rolledBack)
+        {
+            throw new InvalidOperationException("Transaction cannot be committed after rollback.");
+        }
+
+        if (_committed)
+        {
+            throw new InvalidOperationException("Transaction has already been committed.");
+        }
+
+        await _transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        _committed = true;
     }
 
     public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {
-        await _transaction.RollbackAsync(cancellationToken);
+        ThrowIfDisposed();
+
+        if (_committed)
+        {
+            throw new InvalidOperationException("Transaction cannot be rolled back after commit.");
+        }
+
+        if (_rolledBack)
+        {
+            return;
+        }
+
+        await _transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        _rolledBack = true;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(TransactionWrapper));
+        }
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
+
+        if (!_committed && !_rolledBack)
+        {
+            try
+            {
+                _transaction.Rollback();
+            }
+            catch
+            {
+            }
+        }
+
         _transaction.Dispose();
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
-        await _transaction.DisposeAsync();
+
+        if (!_committed && !_rolledBack)
+        {
+            try
+            {
+                await _transaction.RollbackAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+
+        await _transaction.DisposeAsync().ConfigureAwait(false);
     }
 }

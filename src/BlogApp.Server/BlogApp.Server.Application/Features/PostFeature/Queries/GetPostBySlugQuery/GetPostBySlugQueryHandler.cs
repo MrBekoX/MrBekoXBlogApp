@@ -35,10 +35,12 @@ public class GetPostBySlugQueryHandler(
         }
 
         var post = await unitOfWork.PostsRead.Query()
+            .AsNoTracking()
             .Include(p => p.Author)
             .Include(p => p.Category)
             .Include(p => p.Tags)
             .Include(p => p.Comments)
+            .AsSplitQuery()
             .Where(p => p.Slug == request.Slug && !p.IsDeleted && p.Status == PostStatus.Published)
             .FirstOrDefaultAsync(cancellationToken);
 

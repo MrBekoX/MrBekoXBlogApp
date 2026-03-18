@@ -1,3 +1,5 @@
+using BlogApp.Server.Application.Common.Interfaces.Services;
+using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.TagFeature.Commands.CreateTagCommand;
 using BlogApp.Server.Application.Features.TagFeature.Commands.DeleteTagCommand;
@@ -41,39 +43,75 @@ public static class TagsEndpoints
         group.MapPost("/", async (
             CreateTagCommandDto dto,
             IMediator mediator,
+            HttpContext httpContext,
+            IUnitOfWork unitOfWork,
+            IIdempotencyService idempotencyService,
+            ICurrentUserService currentUserService,
             CancellationToken cancellationToken) =>
         {
+            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
+                httpContext, "CreateTag", dto, unitOfWork, idempotencyService, currentUserService, cancellationToken,
+                requireIdempotencyKey: true);
+            if (!proceed) return earlyReturn!;
+            await using var scope = idempotencyScope;
+
             var response = await mediator.Send(new CreateTagCommandRequest
             {
                 CreateTagCommandRequestDto = dto
             }, cancellationToken);
 
             if (!response.Result.IsSuccess)
+            {
+                await scope.FailAndCommitAsync(
+                    "validation_error", response.Result.Error!, idempotencyService, cancellationToken);
                 return Results.BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
+            }
 
-            return Results.Created(
-                $"/api/tags/{response.Result.Value}",
-                ApiResponse<Guid>.SuccessResult(response.Result.Value!, "Tag created successfully"));
+            var result = ApiResponse<Guid>.SuccessResult(response.Result.Value!, "Tag created successfully");
+            await scope.CompleteAndCommitAsync(
+                StatusCodes.Status201Created, result, idempotencyService, cancellationToken);
+
+            return Results.Created($"/api/tags/{response.Result.Value}", result);
         })
         .WithName("CreateTag")
         .WithDescription("Create a new tag")
         .RequireAuthorization(policy => policy.RequireRole("Admin", "Editor"))
         .Produces<ApiResponse<Guid>>(201)
-        .Produces(400);
+        .Produces(400)
+        .Produces(StatusCodes.Status409Conflict);
 
         // DELETE /api/tags/{id}
         group.MapDelete("/{id:guid}", async (
             Guid id,
             IMediator mediator,
+            HttpContext httpContext,
+            IUnitOfWork unitOfWork,
+            IIdempotencyService idempotencyService,
+            ICurrentUserService currentUserService,
             CancellationToken cancellationToken) =>
         {
+            var requestPayload = new { Id = id };
+            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
+                httpContext, "DeleteTag", requestPayload, unitOfWork, idempotencyService, currentUserService, cancellationToken,
+                requireIdempotencyKey: true);
+            if (!proceed) return earlyReturn!;
+            await using var scope = idempotencyScope;
+
             var response = await mediator.Send(new DeleteTagCommandRequest
             {
                 Id = id
             }, cancellationToken);
 
             if (!response.Result.IsSuccess)
+            {
+                await scope.FailAndCommitAsync(
+                    "tag_not_found", response.Result.Error!, idempotencyService, cancellationToken);
                 return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
+            }
+
+            var result = ApiResponse<object>.SuccessResult(new { tagId = id }, "Tag deleted successfully");
+            await scope.CompleteAndCommitAsync(
+                StatusCodes.Status204NoContent, result, idempotencyService, cancellationToken);
 
             return Results.NoContent();
         })
@@ -86,4 +124,3 @@ public static class TagsEndpoints
         return app;
     }
 }
-

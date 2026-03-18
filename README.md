@@ -271,19 +271,3 @@ docker-compose ps redis
 # Test connection
 docker-compose exec redis redis-cli ping
 ```
-
-## Contributing
-
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## License
-
-This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
-
-## Security
-
-For security policies, please see [SECURITY.md](SECURITY.md).
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for version history.

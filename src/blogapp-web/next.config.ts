@@ -43,6 +43,32 @@ const nextConfig: NextConfig = {
   experimental: {
     // Optimize CSS chunking to reduce preload warnings
     cssChunking: 'strict',
+    // Disable client-side Router Cache so navigations always get fresh RSC payload
+    staleTimes: {
+      dynamic: 0,
+      static: 30,
+    },
+    // FIX: Increase page data bytes limit to prevent content truncation
+    largePageDataBytes: 128000, // 128KB - increase if needed for large content
+  },
+
+  // Proxy API/hub/uploads requests to backend (eliminates cross-origin cookie issues)
+  async rewrites() {
+    const backendUrl = process.env.REWRITE_URL || 'http://localhost:5116';
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
+      },
+      {
+        source: '/hubs/:path*',
+        destination: `${backendUrl}/hubs/:path*`,
+      },
+      {
+        source: '/uploads/:path*',
+        destination: `${backendUrl}/uploads/:path*`,
+      },
+    ];
   },
 };
 

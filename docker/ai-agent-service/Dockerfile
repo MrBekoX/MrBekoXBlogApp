@@ -1,22 +1,30 @@
-# Stage 1: Base image with Python
-FROM python:3.12-slim as base
+# Stage 1: Install Python dependencies (with build tools)
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Install system dependencies
+# Install build tools only in builder stage
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r requirements.txt
+
+# Stage 2: Production image (slim, no build tools)
+FROM python:3.12-slim AS production
+
+WORKDIR /app
+
+# Install only runtime dependencies (curl for healthcheck)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Stage 2: Install Python dependencies
-FROM base as dependencies
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Stage 3: Production image
-FROM dependencies as production
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
 
 # Create non-root user for security
 RUN groupadd -g 1001 appgroup && \

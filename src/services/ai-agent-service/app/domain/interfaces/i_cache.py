@@ -1,106 +1,109 @@
-"""Cache interface - Contract for caching and distributed locking."""
+"""Cache interface for distributed cache, locks, and operation inbox state."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
 
-class ICache(ABC):
-    """
-    Abstract interface for cache operations.
+@dataclass(frozen=True)
+class CacheLockLease:
+    """Opaque distributed lock lease returned by acquire_lock."""
 
-    Implementations can be Redis, Memcached, In-Memory, etc.
-    Supports both simple caching and distributed locking patterns.
-    """
+    resource_id: str
+    token: str
+
+
+class ICache(ABC):
+    """Abstract interface for cache operations."""
 
     @abstractmethod
     async def connect(self) -> None:
-        """Establish connection to the cache service."""
         pass
 
     @abstractmethod
     async def disconnect(self) -> None:
-        """Close the cache connection."""
         pass
-
-    # ==================== Basic Cache Operations ====================
 
     @abstractmethod
     async def get(self, key: str) -> str | None:
-        """Get a string value from cache."""
         pass
 
     @abstractmethod
-    async def set(
-        self,
-        key: str,
-        value: str,
-        ttl_seconds: int | None = None
-    ) -> None:
-        """Set a string value in cache with optional TTL."""
+    async def set(self, key: str, value: str, ttl_seconds: int | None = None) -> None:
         pass
 
     @abstractmethod
     async def get_json(self, key: str) -> Any | None:
-        """Get a JSON value from cache (deserialized)."""
         pass
 
     @abstractmethod
-    async def set_json(
-        self,
-        key: str,
-        value: Any,
-        ttl_seconds: int | None = None
-    ) -> None:
-        """Set a JSON value in cache (serialized)."""
+    async def set_json(self, key: str, value: Any, ttl_seconds: int | None = None) -> None:
         pass
 
     @abstractmethod
     async def delete(self, key: str) -> None:
-        """Delete a key from cache."""
         pass
 
     @abstractmethod
     async def exists(self, key: str) -> bool:
-        """Check if a key exists in cache."""
         pass
-
-    # ==================== Idempotency Pattern ====================
 
     @abstractmethod
     async def is_processed(self, message_id: str) -> bool:
-        """Check if a message has already been processed (idempotency)."""
         pass
 
     @abstractmethod
-    async def mark_processed(
+    async def mark_processed(self, message_id: str, ttl_seconds: int = 86400) -> None:
+        pass
+
+    @abstractmethod
+    async def acquire_lock(self, resource_id: str, ttl_seconds: int = 300) -> CacheLockLease | None:
+        """Try to acquire a distributed lock for a resource."""
+        pass
+
+    @abstractmethod
+    async def release_lock(self, lease: CacheLockLease) -> bool:
+        """Release the distributed lock only when the lock token still matches."""
+        pass
+
+    @abstractmethod
+    async def claim_operation(
         self,
+        consumer_name: str,
+        operation_id: str,
         message_id: str,
-        ttl_seconds: int = 86400
-    ) -> None:
-        """Mark a message as processed with TTL (default: 24 hours)."""
+        correlation_id: str | None = None,
+        lock_ttl_seconds: int = 300,
+    ) -> dict[str, Any]:
         pass
 
-    # ==================== Distributed Locking ====================
+    @abstractmethod
+    async def get_operation(self, consumer_name: str, operation_id: str) -> dict[str, Any] | None:
+        pass
 
     @abstractmethod
-    async def acquire_lock(
+    async def store_operation_response(
         self,
-        resource_id: str,
-        ttl_seconds: int = 300
-    ) -> bool:
-        """
-        Try to acquire a distributed lock for a resource.
-
-        Args:
-            resource_id: The resource identifier to lock
-            ttl_seconds: Lock timeout in seconds (default: 5 minutes)
-
-        Returns:
-            True if lock acquired, False if already locked
-        """
+        consumer_name: str,
+        operation_id: str,
+        response_payload: dict[str, Any],
+        routing_key: str,
+    ) -> None:
         pass
 
     @abstractmethod
-    async def release_lock(self, resource_id: str) -> None:
-        """Release the distributed lock for a resource."""
+    async def mark_operation_completed(self, consumer_name: str, operation_id: str) -> None:
+        pass
+
+    @abstractmethod
+    async def mark_operation_retryable(
+        self,
+        consumer_name: str,
+        operation_id: str,
+        error: str,
+    ) -> None:
+        pass
+
+    @abstractmethod
+    async def mark_operation_failed(self, consumer_name: str, operation_id: str, error: str) -> None:
         pass

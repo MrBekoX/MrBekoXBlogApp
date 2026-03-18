@@ -4,18 +4,19 @@ interface JsonLdProps {
   data: WithContext<Thing> | WithContext<Thing>[];
 }
 
-/**
- * Component for embedding JSON-LD structured data in the document head.
- * Supports single schema or array of schemas.
- * 
- * Note: JSON.stringify handles all necessary escaping for JSON content.
- * HTML escaping would break the JSON structure (e.g., " becomes &quot;).
- * The script tag with type="application/ld+json" is not executed as JavaScript,
- * so XSS through JSON-LD is not a concern.
- */
+function escapeJsonLd(value: string): string {
+  return value
+    .replace(/<\//g, '<\\/')
+    .replace(/</g, '\\u003C')
+    .replace(/>/g, '\\u003E')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 export function JsonLd({ data }: JsonLdProps) {
-  const jsonString = JSON.stringify(data, null, 0);
-  
+  const jsonString = escapeJsonLd(JSON.stringify(data));
+
   return (
     <script
       type="application/ld+json"

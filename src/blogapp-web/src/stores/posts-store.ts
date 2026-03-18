@@ -260,7 +260,6 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
     }
   },
 
-  // Missing unpublish method added for completeness based on context
   unpublishPost: async (id: string) => {
       set({ isLoading: true, error: null });
       try {
@@ -269,6 +268,18 @@ export const usePostsStore = create<PostsState>()((set, get) => ({
           get().invalidateCache();
           set({ currentPost: response.data, isLoading: false });
           await get().fetchPosts(undefined, true);
+
+          // Also refresh Next.js server cache for SSR pages
+          try {
+            const { revalidateCacheTag } = await import('@/app/actions/revalidate');
+            await revalidateCacheTag('posts');
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('posts-updated'));
+            }
+          } catch {
+            // revalidate error silenced
+          }
+
           return true;
         } else {
           set({ error: response.message || 'Failed to unpublish post', isLoading: false });

@@ -1,6 +1,5 @@
 using BlogApp.BuildingBlocks.Messaging;
-using BlogApp.BuildingBlocks.Messaging.Abstractions;
-using BlogApp.Server.Application.Common.Events;
+using BlogApp.BuildingBlocks.Messaging.Events.Ai;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -9,61 +8,76 @@ using MediatR;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.GenerateAiSummaryCommand;
 
-/// <summary>
-/// Handler for generating AI summary using RabbitMQ event-driven architecture.
-/// Publishes analysis request to AI Agent via RabbitMQ.
-/// Results are delivered via SignalR when AI Agent completes.
-/// </summary>
 public class GenerateAiSummaryCommandHandler(
     IUnitOfWork unitOfWork,
-    IEventBus eventBus) : IRequestHandler<GenerateAiSummaryCommandRequest, GenerateAiSummaryCommandResponse>
+    IAiGenerationRequestExecutor executor) : IRequestHandler<GenerateAiSummaryCommandRequest, GenerateAiSummaryCommandResponse>
 {
     public async Task<GenerateAiSummaryCommandResponse> Handle(
         GenerateAiSummaryCommandRequest request,
         CancellationToken cancellationToken)
     {
-        // 1. Get post
         var post = await unitOfWork.PostsRead.GetByIdAsync(request.PostId, cancellationToken);
         if (post is null)
         {
             return new GenerateAiSummaryCommandResponse
             {
-                Result = Result.Failure(PostBusinessRuleMessages.PostNotFoundGeneric)
+                OperationId = request.OperationId,
+                Result = Result.Failure(PostBusinessRuleMessages.PostNotFoundGeneric),
+                ErrorCode = "post_not_found",
+                ErrorMessage = PostBusinessRuleMessages.PostNotFoundGeneric
             };
         }
 
-        // 2. Generate correlation ID for tracking
-        var correlationId = Guid.NewGuid().ToString();
-
-        // 3. Publish analysis request to RabbitMQ
-        var analysisEvent = new ArticleAnalysisRequestedEvent
-        {
-            CorrelationId = correlationId,
-            Payload = new ArticlePayload
-            {
-                ArticleId = post.Id,
-                Title = post.Title,
-                Content = post.Content,
-                AuthorId = post.AuthorId,
-                Language = request.Language,
-                TargetRegion = "TR" // Default region
-            }
-        };
-
-        await eventBus.PublishAsync(
-            analysisEvent,
-            MessagingConstants.RoutingKeys.AiAnalysisRequested,
+        var execution = await executor.ExecuteAsync<AiSummarizeRequestedEvent, string>(
+            new AiGenerationExecutionRequest<AiSummarizeRequestedEvent>(
+                EndpointName: "posts.generate-ai-summary",
+                OperationId: request.OperationId,
+                RequestPayload: new
+                {
+                    request.PostId,
+                    request.MaxSentences,
+                    request.Language
+                },
+                UserId: post.AuthorId,
+                ResourceId: request.PostId.ToString(),
+                BuildEvent: (correlationId, operationId, causationId) => new AiSummarizeRequestedEvent
+                {
+                    OperationId = operationId,
+                    CorrelationId = correlationId,
+                    CausationId = causationId,
+                    Payload = new AiSummarizePayload
+                    {
+                        Content = post.Content,
+                        UserId = post.AuthorId,
+                        MaxSentences = request.MaxSentences,
+                        RequestedAt = DateTime.UtcNow,
+                        Language = request.Language
+                    }
+                },
+                RoutingKey: MessagingConstants.RoutingKeys.AiSummarizeRequested,
+                Timeout: TimeSpan.FromSeconds(120)),
             cancellationToken);
 
-        // 4. Return accepted response with correlation ID
-        // Actual results will be delivered via SignalR when AI Agent completes
         return new GenerateAiSummaryCommandResponse
         {
-            Result = Result.Success(),
-            Summary = null, // Will be delivered via SignalR
-            CorrelationId = correlationId,
+            OperationId = execution.OperationId,
+            CorrelationId = execution.CorrelationId,
+            IsProcessing = execution.State == AiGenerationExecutionState.Processing,
+            ErrorCode = execution.ErrorCode,
+            ErrorMessage = execution.ErrorMessage,
+            Result = execution.State == AiGenerationExecutionState.Completed
+                ? Result.Success()
+                : execution.State == AiGenerationExecutionState.Conflict
+                    ? Result.Failure(execution.ErrorMessage ?? "The same operationId was used with a different payload.")
+                    : Result.Failure(execution.ErrorMessage ?? "AI summary generation is still processing."),
+            Summary = execution.State == AiGenerationExecutionState.Completed ? execution.Result : null,
             WordCount = post.Content.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length,
-            Message = "AI analysis request submitted. Results will be delivered via SignalR."
+            Message = execution.State == AiGenerationExecutionState.Completed
+                ? "AI summary generated successfully."
+                : execution.State == AiGenerationExecutionState.Processing
+                    ? "AI summary request is still processing."
+                    : execution.ErrorMessage
         };
     }
 }
+

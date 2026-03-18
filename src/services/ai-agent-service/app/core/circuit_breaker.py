@@ -95,3 +95,58 @@ class CircuitBreaker:
             if not isinstance(e, CircuitOpenException):
                 self.record_failure()
             raise e
+
+
+class QueueAwareCircuitBreaker(CircuitBreaker):
+    """Circuit breaker that publishes state to Redis and provides
+    queue-specific degradation strategies.
+
+    Delegates state machine logic to parent CircuitBreaker.
+    Adds Redis sync and per-queue behavior on top.
+    """
+
+    def __init__(
+        self,
+        stats_publisher=None,
+        failure_threshold: int = 3,
+        recovery_timeout: int = 30,
+        chat_fallback_message: str = "AI asistanı şu an yoğun, lütfen biraz sonra tekrar deneyin.",
+    ):
+        super().__init__(failure_threshold, recovery_timeout)
+        self._stats_publisher = stats_publisher
+        self._chat_fallback_message = chat_fallback_message
+
+    async def record_success_async(self):
+        """Record success and sync state to Redis."""
+        self.record_success()
+        await self._publish_state()
+
+    async def record_failure_async(self):
+        """Record failure and sync state to Redis."""
+        self.record_failure()
+        await self._publish_state()
+
+    async def _publish_state(self):
+        """Publish current circuit state to Redis."""
+        if self._stats_publisher:
+            try:
+                await self._stats_publisher.publish_circuit_state(self._state.value.lower())
+            except Exception as e:
+                logger.warning(f"Failed to publish circuit state to Redis: {e}")
+
+    def get_degradation_action(self, queue_priority: str) -> str:
+        """Return action for given queue when circuit is open.
+
+        Returns: 'proceed' | 'fallback' | 'requeue'
+        """
+        if self._state != CircuitState.OPEN:
+            return "proceed"
+
+        if queue_priority == "chat":
+            return "fallback"
+        # authoring and background: requeue
+        return "requeue"
+
+    @property
+    def chat_fallback_message(self) -> str:
+        return self._chat_fallback_message

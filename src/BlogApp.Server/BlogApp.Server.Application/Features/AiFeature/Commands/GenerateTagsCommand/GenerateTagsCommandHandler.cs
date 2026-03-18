@@ -1,5 +1,4 @@
 using BlogApp.BuildingBlocks.Messaging;
-using BlogApp.BuildingBlocks.Messaging.Abstractions;
 using BlogApp.BuildingBlocks.Messaging.Events.Ai;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -7,49 +6,47 @@ using MediatR;
 
 namespace BlogApp.Server.Application.Features.AiFeature.Commands.GenerateTagsCommand;
 
-/// <summary>
-/// Handler for generating AI tags using RabbitMQ event-driven architecture.
-/// Publishes tags generation request to AI Agent via RabbitMQ.
-/// </summary>
 public class GenerateTagsCommandHandler(
-    IEventBus eventBus) : IRequestHandler<GenerateTagsCommandRequest, GenerateTagsCommandResponse>
+    IAiGenerationRequestExecutor executor) : IRequestHandler<GenerateTagsCommandRequest, GenerateTagsCommandResponse>
 {
     public async Task<GenerateTagsCommandResponse> Handle(
         GenerateTagsCommandRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            // Generate correlation ID for tracking
-            var correlationId = Guid.NewGuid().ToString();
-
-            // Publish tags generation request to RabbitMQ
-            var tagsGenerationEvent = new AiTagsGenerationRequestedEvent
-            {
-                CorrelationId = correlationId,
-                Payload = new AiTagsGenerationPayload
+        var execution = await executor.ExecuteAsync<AiTagsGenerationRequestedEvent, string[]>(
+            new AiGenerationExecutionRequest<AiTagsGenerationRequestedEvent>(
+                EndpointName: "ai.generate-tags",
+                OperationId: request.OperationId,
+                RequestPayload: request,
+                UserId: request.UserId,
+                ResourceId: null,
+                BuildEvent: (correlationId, operationId, causationId) => new AiTagsGenerationRequestedEvent
                 {
-                    Content = request.Content,
-                    UserId = request.UserId,
-                    RequestedAt = DateTime.UtcNow,
-                    Language = "tr" // Default language
-                }
-            };
+                    OperationId = operationId,
+                    CorrelationId = correlationId,
+                    CausationId = causationId,
+                    Payload = new AiTagsGenerationPayload
+                    {
+                        Content = request.Content,
+                        UserId = request.UserId,
+                        RequestedAt = DateTime.UtcNow
+                    }
+                },
+                RoutingKey: MessagingConstants.RoutingKeys.AiTagsGenerationRequested,
+                Timeout: TimeSpan.FromSeconds(120)),
+            cancellationToken);
 
-            await eventBus.PublishAsync(tagsGenerationEvent, MessagingConstants.RoutingKeys.AiAnalysisRequested, cancellationToken);
-
-            return new GenerateTagsCommandResponse
-            {
-                Data = Result.Success(new[] { "etiket1", "etiket2", "etiket3" }) // Placeholder
-            };
-        }
-        catch (Exception ex)
+        return new GenerateTagsCommandResponse
         {
-            return new GenerateTagsCommandResponse
-            {
-                Data = Result.Failure<string[]>("Etiketler oluşturulurken hata oluştu: " + ex.Message)
-            };
-        }
+            OperationId = execution.OperationId,
+            CorrelationId = execution.CorrelationId,
+            IsProcessing = execution.State == AiGenerationExecutionState.Processing,
+            ErrorCode = execution.ErrorCode,
+            ErrorMessage = execution.ErrorMessage,
+            Data = execution.State == AiGenerationExecutionState.Completed
+                ? Result.Success(execution.Result!)
+                : Result.Failure<string[]>(execution.ErrorMessage ?? "AI tags generation is still processing.")
+        };
     }
 }
 

@@ -1,9 +1,8 @@
 # Build stage
-# Pin to specific patch version in production (e.g., 10.0.1)
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Copy solution and project files
+# Copy solution and project files (layer cached until .csproj changes)
 COPY ["BlogApp.sln", "./"]
 COPY ["src/BlogApp.Server/BlogApp.Server.Domain/BlogApp.Server.Domain.csproj", "src/BlogApp.Server/BlogApp.Server.Domain/"]
 COPY ["src/BlogApp.Server/BlogApp.Server.Application/BlogApp.Server.Application.csproj", "src/BlogApp.Server/BlogApp.Server.Application/"]
@@ -12,19 +11,18 @@ COPY ["src/BlogApp.Server/BlogApp.Server.Api/BlogApp.Server.Api.csproj", "src/Bl
 COPY ["src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Caching/BlogApp.BuildingBlocks.Caching.csproj", "src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Caching/"]
 COPY ["src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Messaging/BlogApp.BuildingBlocks.Messaging.csproj", "src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Messaging/"]
 
-# Restore dependencies
+# Restore dependencies (cached until .csproj/.sln changes)
 RUN dotnet restore "src/BlogApp.Server/BlogApp.Server.Api/BlogApp.Server.Api.csproj"
 
-# Copy all source files
-COPY . .
+# Copy only backend + BuildingBlocks source (not frontend/ai-agent)
+COPY ["src/BlogApp.Server/", "src/BlogApp.Server/"]
+COPY ["src/BlogApp.BuildingBlocks/", "src/BlogApp.BuildingBlocks/"]
 
-# Build and publish
+# Publish directly (includes build - no need for separate dotnet build)
 WORKDIR "/src/src/BlogApp.Server/BlogApp.Server.Api"
-RUN dotnet build "BlogApp.Server.Api.csproj" -c Release -o /app/build
 RUN dotnet publish "BlogApp.Server.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage
-# Pin to specific patch version in production (e.g., 10.0.1)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 

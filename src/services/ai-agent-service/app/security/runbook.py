@@ -1,7 +1,13 @@
-from typing import Dict
+from typing import Dict, Optional
 import logging
 from app.security.kill_switch import kill_switch, KillSwitchState, KillSwitch
-from app.security.incident_tracker import incident_tracker, IncidentTracker, IncidentPhase
+from app.security.incident_tracker import (
+    incident_tracker,
+    IncidentTracker,
+    IncidentPhase,
+    IncidentSeverity,
+)
+from app.monitoring.metrics import record_runbook_hook
 
 logger = logging.getLogger(__name__)
 
@@ -103,3 +109,65 @@ class IncidentRunbook:
 
 # Singleton
 incident_runbook = IncidentRunbook(kill_switch, incident_tracker)
+
+
+async def trigger_poison_message_runbook(
+    taxonomy: str,
+    reason: str,
+    message_id: str,
+    correlation_id: Optional[str] = None,
+    routing_key: Optional[str] = None,
+    delivery_attempt: int = 0,
+) -> Optional[str]:
+    """
+    Minimal runbook hook for poison message quarantine events.
+
+    Creates an incident and records key actions for SRE/SecOps triage.
+    """
+    hook_name = "poison_message_quarantine"
+    try:
+        severity = IncidentSeverity.MEDIUM
+        taxonomy_lower = (taxonomy or "").lower()
+        if taxonomy_lower.startswith("poison."):
+            severity = IncidentSeverity.HIGH
+        if delivery_attempt >= 10:
+            severity = IncidentSeverity.CRITICAL
+
+        title = f"Poison message quarantined ({taxonomy})"
+        description = (
+            f"Message {message_id} was quarantined by broker policy. "
+            f"reason={reason}, routing_key={routing_key}, delivery_attempt={delivery_attempt}"
+        )
+        indicators = {
+            "taxonomy": taxonomy,
+            "reason": reason,
+            "message_id": message_id,
+            "correlation_id": correlation_id,
+            "routing_key": routing_key,
+            "delivery_attempt": delivery_attempt,
+        }
+
+        incident = await incident_tracker.create_incident(
+            title=title,
+            description=description,
+            severity=severity,
+            indicators=indicators,
+        )
+        await incident_tracker.add_action(
+            incident.id, "Message moved to quarantine queue for manual triage"
+        )
+        await incident_tracker.add_action(
+            incident.id, f"Correlation ID: {correlation_id or 'n/a'}"
+        )
+        await incident_tracker.update_phase(
+            incident.id,
+            IncidentPhase.DETECTION,
+            note="Automated poison-message runbook hook executed",
+        )
+        record_runbook_hook(hook_name, "success")
+        return incident.id
+
+    except Exception as e:
+        logger.error(f"Runbook hook failed for poison message {message_id}: {e}")
+        record_runbook_hook(hook_name, "failure")
+        return None

@@ -7,6 +7,7 @@ namespace BlogApp.BuildingBlocks.Messaging.Events.Ai;
 /// </summary>
 public record AiTitleGenerationRequestedEvent : IntegrationEvent
 {
+    public override string EventType => "ai.title.generation.requested";
     public AiTitleGenerationPayload Payload { get; init; } = null!;
 }
 

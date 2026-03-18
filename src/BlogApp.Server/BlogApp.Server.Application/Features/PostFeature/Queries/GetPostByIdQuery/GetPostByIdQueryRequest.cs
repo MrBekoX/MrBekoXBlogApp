@@ -8,12 +8,14 @@ public class GetPostByIdQueryRequest : IRequest<GetPostByIdQueryResponse>, ICach
 {
     public Guid Id { get; set; }
 
-    public string CacheKey => PostCacheKeys.ById(Id);
+    /// <summary>
+    /// When true, only returns published posts. Private reads bypass shared cache.
+    /// </summary>
+    public bool RequirePublishedStatus { get; set; }
 
-    // No group versioning for individual posts - they're invalidated directly
+    public string CacheKey => RequirePublishedStatus ? PostCacheKeys.ById(Id) : string.Empty;
+
     public string? CacheGroup => null;
 
-    // Individual posts can be cached longer since they're invalidated on update
     public TimeSpan? CacheDuration => TimeSpan.FromMinutes(10);
 }
-

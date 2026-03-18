@@ -1,5 +1,6 @@
 """SEO service - Search engine and GEO optimization."""
 
+import json
 import logging
 from typing import Any
 
@@ -11,6 +12,24 @@ from app.services.content_cleaner import ContentCleanerService
 logger = logging.getLogger(__name__)
 
 
+def _to_string(value: Any) -> str:
+    """Convert any value to string for Pydantic validation.
+
+    LLM may return dict/list instead of string, so we need to handle this.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        # Pretty-print complex types as JSON string
+        try:
+            return json.dumps(value, ensure_ascii=False, indent=2)
+        except (TypeError, ValueError):
+            return str(value)
+    return str(value)
+
+
 class SeoService:
     """
     Service for SEO and GEO optimization.
@@ -19,9 +38,13 @@ class SeoService:
     Uses Strategy Pattern for GEO optimization (OCP).
     """
 
-    def __init__(self, llm_provider: ILLMProvider):
+    def __init__(
+        self,
+        llm_provider: ILLMProvider,
+        content_cleaner: ContentCleanerService | None = None,
+    ):
         self._llm = llm_provider
-        self._cleaner = ContentCleanerService()
+        self._cleaner = content_cleaner or ContentCleanerService()
 
     async def generate_seo_description(
         self,
@@ -69,12 +92,9 @@ Meta Description (max {max_length} characters):"""
 
         cleaned = self._cleaner.strip_html_and_images(content)
         truncated = cleaned[:3000]
+        prompt = prompt_template.format(max_length=max_length, content=truncated)
 
-        result = await self._llm.generate_text(
-            prompt_template,
-            max_length=max_length,
-            content=truncated
-        )
+        result = await self._llm.generate_text(prompt)
 
         description = result.strip()
         if len(description) > max_length:
@@ -168,13 +188,14 @@ Optimization:"""
 
             result = await self._llm.generate_json(prompt)
 
+            # Use _to_string to handle LLM returning dict/list instead of string
             return GeoOptimizationResult(
-                optimized_title=result.get("optimized_title", ""),
-                meta_description=result.get("meta_description", ""),
-                geo_keywords=result.get("geo_keywords", []),
-                cultural_adaptations=result.get("cultural_adaptations", ""),
-                language_adjustments=result.get("language_adjustments", ""),
-                target_audience=result.get("target_audience", "")
+                optimized_title=_to_string(result.get("optimized_title")),
+                meta_description=_to_string(result.get("meta_description")),
+                geo_keywords=result.get("geo_keywords", []) if isinstance(result.get("geo_keywords"), list) else [],
+                cultural_adaptations=_to_string(result.get("cultural_adaptations")),
+                language_adjustments=_to_string(result.get("language_adjustments")),
+                target_audience=_to_string(result.get("target_audience"))
             )
 
         except Exception as e:

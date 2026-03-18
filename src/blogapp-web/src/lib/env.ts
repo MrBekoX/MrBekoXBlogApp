@@ -1,6 +1,9 @@
-// Backward-compatible re-export of client-safe environment variables.
-// New code should import directly from:
-//   '@/lib/env.client' for client components
-//   '@/lib/env.server' for server components (SERVER_API_URL)
-
-export { API_BASE_URL, BASE_URL, HUB_URL } from './env.client';
+export {
+  API_BASE_URL,
+  BASE_URL,
+  PUBLIC_CACHE_HUB_URL,
+  AUTHORING_EVENTS_HUB_URL,
+  CHAT_EVENTS_HUB_URL,
+  TURNSTILE_SITE_KEY,
+  HUB_URL,
+} from './env.client';

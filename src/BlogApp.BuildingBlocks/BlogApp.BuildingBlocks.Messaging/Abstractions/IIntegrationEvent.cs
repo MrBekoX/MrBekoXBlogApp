@@ -1,4 +1,4 @@
-namespace BlogApp.BuildingBlocks.Messaging.Abstractions;
+﻿namespace BlogApp.BuildingBlocks.Messaging.Abstractions;
 
 /// <summary>
 /// Base interface for all integration events.
@@ -7,22 +7,32 @@ namespace BlogApp.BuildingBlocks.Messaging.Abstractions;
 public interface IIntegrationEvent
 {
     /// <summary>
-    /// Unique message identifier for idempotency
+    /// Unique message identifier for transport-level idempotency.
     /// </summary>
     Guid MessageId { get; }
 
     /// <summary>
-    /// Correlation ID for distributed tracing
+    /// Business operation identifier propagated end-to-end.
+    /// </summary>
+    string? OperationId { get; }
+
+    /// <summary>
+    /// Correlation ID for distributed tracing.
     /// </summary>
     string? CorrelationId { get; }
 
     /// <summary>
-    /// Event timestamp in UTC
+    /// Causation ID for tracing the triggering request or message.
+    /// </summary>
+    string? CausationId { get; }
+
+    /// <summary>
+    /// Event timestamp in UTC.
     /// </summary>
     DateTime Timestamp { get; }
 
     /// <summary>
-    /// Event type identifier (e.g., "ArticlePublished")
+    /// Event type identifier (e.g., "ArticlePublished").
     /// </summary>
     string EventType { get; }
 }

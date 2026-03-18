@@ -3,8 +3,10 @@ using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Constants;
+using BlogApp.Server.Domain.Exceptions;
 using BlogApp.Server.Application.Features.PostFeature.Rules;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Commands.DeletePostCommand;
 
@@ -43,8 +45,15 @@ public class DeletePostCommandHandler(
         post.DeletedAt = DateTime.UtcNow;
         post.UpdatedBy = currentUserService.UserName;
 
-        await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently, ex);
+        }
 
         // Cache invalidation
         await cacheService.RemoveAsync(PostCacheKeys.ById(post.Id), cancellationToken);

@@ -13,7 +13,7 @@ public class EfCoreUserWriteRepository : EfCoreWriteRepository<User>, IUserWrite
 
     public async Task UpdateLastLoginAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var user = await _dbSet.FindAsync([userId], cancellationToken);
+        var user = await _dbSet.FindAsync([userId], cancellationToken).ConfigureAwait(false);
         if (user != null)
         {
             user.LastLoginAt = DateTime.UtcNow;
@@ -26,13 +26,14 @@ public class EfCoreUserWriteRepository : EfCoreWriteRepository<User>, IUserWrite
         await _dbSet
             .Where(u => u.Id == userId)
             .ExecuteUpdateAsync(setters => setters
-                .SetProperty(u => u.FailedLoginAttempts, u => u.FailedLoginAttempts + 1), 
-                cancellationToken);
+                .SetProperty(u => u.FailedLoginAttempts, u => u.FailedLoginAttempts + 1),
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task ResetFailedLoginAttemptsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var user = await _dbSet.FindAsync([userId], cancellationToken);
+        var user = await _dbSet.FindAsync([userId], cancellationToken).ConfigureAwait(false);
         if (user != null)
         {
             user.FailedLoginAttempts = 0;

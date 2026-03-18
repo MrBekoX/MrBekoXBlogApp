@@ -1,5 +1,4 @@
 using BlogApp.BuildingBlocks.Messaging;
-using BlogApp.BuildingBlocks.Messaging.Abstractions;
 using BlogApp.BuildingBlocks.Messaging.Events.Ai;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -7,52 +6,47 @@ using MediatR;
 
 namespace BlogApp.Server.Application.Features.AiFeature.Commands.GenerateTitleCommand;
 
-/// <summary>
-/// Handler for generating AI title using RabbitMQ event-driven architecture.
-/// Publishes title generation request to AI Agent via RabbitMQ.
-/// </summary>
 public class GenerateTitleCommandHandler(
-    IEventBus eventBus) : IRequestHandler<GenerateTitleCommandRequest, GenerateTitleCommandResponse>
+    IAiGenerationRequestExecutor executor) : IRequestHandler<GenerateTitleCommandRequest, GenerateTitleCommandResponse>
 {
     public async Task<GenerateTitleCommandResponse> Handle(
         GenerateTitleCommandRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            // Generate correlation ID for tracking
-            var correlationId = Guid.NewGuid().ToString();
-
-            // Publish title generation request to RabbitMQ
-            var titleGenerationEvent = new AiTitleGenerationRequestedEvent
-            {
-                CorrelationId = correlationId,
-                Payload = new AiTitleGenerationPayload
+        var execution = await executor.ExecuteAsync<AiTitleGenerationRequestedEvent, string>(
+            new AiGenerationExecutionRequest<AiTitleGenerationRequestedEvent>(
+                EndpointName: "ai.generate-title",
+                OperationId: request.OperationId,
+                RequestPayload: request,
+                UserId: request.UserId,
+                ResourceId: null,
+                BuildEvent: (correlationId, operationId, causationId) => new AiTitleGenerationRequestedEvent
                 {
-                    Content = request.Content,
-                    UserId = request.UserId,
-                    RequestedAt = DateTime.UtcNow,
-                    Language = "tr" // Default language
-                }
-            };
+                    OperationId = operationId,
+                    CorrelationId = correlationId,
+                    CausationId = causationId,
+                    Payload = new AiTitleGenerationPayload
+                    {
+                        Content = request.Content,
+                        UserId = request.UserId,
+                        RequestedAt = DateTime.UtcNow
+                    }
+                },
+                RoutingKey: MessagingConstants.RoutingKeys.AiTitleGenerationRequested,
+                Timeout: TimeSpan.FromSeconds(120)),
+            cancellationToken);
 
-            await eventBus.PublishAsync(titleGenerationEvent, MessagingConstants.RoutingKeys.AiAnalysisRequested, cancellationToken);
-
-            // For now, return a mock response - in real implementation, 
-            // we would wait for the response from AI Agent service
-            // This could be implemented with a temporary response or polling mechanism
-            
-            return new GenerateTitleCommandResponse
-            {
-                Data = Result.Success("AI tarafından oluşturulan başlık") // Placeholder
-            };
-        }
-        catch (Exception ex)
+        return new GenerateTitleCommandResponse
         {
-            return new GenerateTitleCommandResponse
-            {
-                Data = Result.Failure<string>("Başlık oluşturulurken hata oluştu: " + ex.Message)
-            };
-        }
+            OperationId = execution.OperationId,
+            CorrelationId = execution.CorrelationId,
+            IsProcessing = execution.State == AiGenerationExecutionState.Processing,
+            ErrorCode = execution.ErrorCode,
+            ErrorMessage = execution.ErrorMessage,
+            Data = execution.State == AiGenerationExecutionState.Completed
+                ? Result.Success(execution.Result!)
+                : Result.Failure<string>(execution.ErrorMessage ?? "AI title generation is still processing.")
+        };
     }
 }
+

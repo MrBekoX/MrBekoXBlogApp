@@ -6,7 +6,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod/v4';
 import { usePostsStore } from '@/stores/posts-store';
-import { categoriesApi, tagsApi, aiApi } from '@/lib/api';
+import { categoriesApi, tagsApi } from '@/lib/api';
+import { useAuthoringAiOperations } from '@/hooks/use-authoring-ai-operations';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,6 +60,7 @@ export default function NewPostPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
   const [aiLoading, setAiLoading] = useState<string | null>(null);
+  const { generateTitle, generateExcerpt, generateTags } = useAuthoringAiOperations();
 
   const {
     register,
@@ -76,12 +78,14 @@ export default function NewPostPage() {
   const content = watch('content');
 
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
       try {
         const [categoriesRes, tagsRes] = await Promise.all([
           categoriesApi.getAll(),
           tagsApi.getAll(),
         ]);
+        if (cancelled) return;
         if (categoriesRes.success && categoriesRes.data) {
           setCategories(categoriesRes.data);
         }
@@ -93,6 +97,7 @@ export default function NewPostPage() {
       }
     };
     fetchData();
+    return () => { cancelled = true; };
   }, []);
 
   const onInvalid = (errors: Record<string, unknown>) => {
@@ -146,8 +151,8 @@ export default function NewPostPage() {
     }
     setAiLoading('title');
     try {
-      const result = await aiApi.generateTitle(content);
-      setValue('title', result.title);
+      const generatedTitle = await generateTitle(content);
+      setValue('title', generatedTitle);
       toast.success('Başlık oluşturuldu!');
     } catch {
       toast.error('Başlık oluşturulamadı');
@@ -163,8 +168,8 @@ export default function NewPostPage() {
     }
     setAiLoading('excerpt');
     try {
-      const result = await aiApi.generateExcerpt(content);
-      setValue('excerpt', result.excerpt);
+      const generatedExcerpt = await generateExcerpt(content);
+      setValue('excerpt', generatedExcerpt);
       toast.success('Özet oluşturuldu!');
     } catch {
       toast.error('Özet oluşturulamadı');
@@ -180,8 +185,8 @@ export default function NewPostPage() {
     }
     setAiLoading('tags');
     try {
-      const result = await aiApi.generateTags(content);
-      setSelectedTags([...new Set([...selectedTags, ...result.tags])]);
+      const generatedTags = await generateTags(content);
+      setSelectedTags([...new Set([...selectedTags, ...generatedTags])]);
       toast.success('Etiketler oluşturuldu!');
     } catch {
       toast.error('Etiketler oluşturulamadı');
@@ -496,4 +501,8 @@ export default function NewPostPage() {
     </div>
   );
 }
+
+
+
+
 

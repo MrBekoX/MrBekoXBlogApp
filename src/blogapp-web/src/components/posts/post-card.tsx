@@ -1,120 +1,77 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { getImageUrl } from '@/lib/utils';
 import type { BlogPost } from '@/types';
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Calendar, Eye, ArrowRight, Clock } from 'lucide-react';
+import { Calendar, Eye, Clock, FileText, Tag } from 'lucide-react';
 
 interface PostCardProps {
   post: BlogPost;
 }
 
 export function PostCard({ post }: PostCardProps) {
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
   return (
-    <Card className="group overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 border-border/50 bg-card/80 backdrop-blur-sm hover:border-primary/30">
-      {post.featuredImageUrl && (
-        <Link href={`/posts/${post.slug}`} className="block overflow-hidden">
-          <div className="relative aspect-video overflow-hidden bg-muted">
-            <Image
-              src={getImageUrl(post.featuredImageUrl) ?? ''}
-              alt={post.title}
-              fill
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-              className="object-cover transition-transform duration-500 group-hover:scale-110"
-              loading="lazy"
-            />
-          </div>
-        </Link>
-      )}
+    <Link
+      href={`/posts/${post.slug}`}
+      className="group flex items-start gap-3 py-4 px-3 border-b border-ide-border/40 hover:border-ide-border hover:bg-white/[0.03] transition-all font-mono"
+    >
+      {/* File icon */}
+      <FileText className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
 
-      <CardHeader className="space-y-3 pb-2">
-        {/* Categories */}
-        {post.categories && post.categories.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {post.categories.slice(0, 2).map((category) => (
-              <Badge 
-                key={category.id}
-                variant="secondary" 
-                className="bg-primary/10 text-primary border-0 font-medium"
-              >
-                {category.name}
-              </Badge>
-            ))}
-          </div>
-        )}
+      <div className="min-w-0 flex-1 space-y-1.5">
+        {/* Filename + date row */}
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-[11px] text-gray-500 truncate">
+            {post.slug}.md
+          </span>
+          <span className="text-[10px] text-gray-600 shrink-0 flex items-center gap-1">
+            <Calendar className="w-2.5 h-2.5" />
+            {format(new Date(post.publishedAt || post.createdAt), 'd MMM yyyy', { locale: tr })}
+          </span>
+        </div>
 
         {/* Title */}
-        <Link href={`/posts/${post.slug}`} className="block group/title">
-          <h2 className="line-clamp-2 text-xl font-semibold font-serif tracking-tight transition-colors group-hover/title:text-primary">
-            {post.title}
-          </h2>
-        </Link>
-      </CardHeader>
+        <div className="text-sm text-gray-200 group-hover:text-white transition-colors leading-snug line-clamp-1">
+          {post.title}
+        </div>
 
-      <CardContent className="pb-4">
-        <p className="line-clamp-3 text-muted-foreground leading-relaxed">
-          {post.excerpt}
-        </p>
-      </CardContent>
-
-      <CardFooter className="flex items-center justify-between pt-4 border-t border-border/50">
-        {/* Author */}
-        {post.author && (
-          <div className="flex items-center gap-2">
-            <Avatar className="h-8 w-8 ring-2 ring-background">
-              <AvatarImage src={post.author.avatarUrl} alt={post.author.fullName} />
-              <AvatarFallback className="text-xs bg-primary/10 text-primary font-medium">
-                {getInitials(post.author.fullName || post.author.userName)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="text-sm font-medium">{post.author.fullName || post.author.userName}</span>
-          </div>
+        {/* Excerpt */}
+        {post.excerpt && (
+          <p className="text-[11px] text-gray-600 leading-relaxed line-clamp-2">
+            {post.excerpt}
+          </p>
         )}
 
-        {/* Meta */}
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Calendar className="h-3.5 w-3.5" />
-            <span>
-              {format(new Date(post.publishedAt || post.createdAt), 'd MMM yyyy', { locale: tr })}
+        {/* Meta row */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+          {post.author && (
+            <span className="text-[10px] text-gray-600">
+              @{post.author.userName}-MrBekoX
             </span>
-          </div>
-          {post.aiEstimatedReadingTime && (
-            <div className="flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5" />
-              <span>{post.aiEstimatedReadingTime} dk</span>
-            </div>
           )}
-          <div className="flex items-center gap-1">
-            <Eye className="h-3.5 w-3.5" />
-            <span>{post.viewCount}</span>
-          </div>
+          {post.aiEstimatedReadingTime && (
+            <span className="text-[10px] text-gray-600 flex items-center gap-1">
+              <Clock className="w-2.5 h-2.5" />
+              {post.aiEstimatedReadingTime}dk
+            </span>
+          )}
+          <span className="text-[10px] text-gray-600 flex items-center gap-1">
+            <Eye className="w-2.5 h-2.5" />
+            {post.viewCount}
+          </span>
+          {post.tags?.slice(0, 3).map((tag) => (
+            <span key={tag.id} className="text-[10px] text-ide-primary-dim flex items-center gap-0.5">
+              <Tag className="w-2 h-2" />
+              {tag.name}
+            </span>
+          ))}
+          {post.categories?.slice(0, 1).map((cat) => (
+            <span key={cat.id} className="text-[10px] text-gray-600 border border-ide-border/60 px-1.5 py-0.5 rounded">
+              {cat.name}
+            </span>
+          ))}
         </div>
-      </CardFooter>
-
-      {/* Read more indicator */}
-      <div className="absolute bottom-4 right-4 opacity-0 translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
-        <Link 
-          href={`/posts/${post.slug}`}
-          className="flex items-center gap-1 text-sm font-medium text-primary"
-        >
-          Devamını Oku
-          <ArrowRight className="h-4 w-4" />
-        </Link>
       </div>
-    </Card>
+    </Link>
   );
 }

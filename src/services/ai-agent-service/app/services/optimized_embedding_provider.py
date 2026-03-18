@@ -21,23 +21,32 @@ class OptimizedEmbeddingProvider(IEmbeddingProvider):
         self.provider = base_provider
         self.cache = cache
         self._dimensions = base_provider.dimensions
+        self._initialized = False
 
     async def initialize(self) -> None:
         """Initialize base provider."""
         await self.provider.initialize()
+        self._initialized = True
+
+    async def warmup(self) -> None:
+        """Warm up the base provider by generating a test embedding."""
+        await self.provider.warmup()
 
     async def shutdown(self) -> None:
         """Shutdown base provider."""
         await self.provider.shutdown()
+        self._initialized = False
 
     @property
     def dimensions(self) -> int:
         return self._dimensions
 
     def _get_cache_key(self, text: str) -> str:
-        """Generate cache key from text hash."""
+        """Generate cache key from text hash including model name."""
         text_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
-        return f"emb:{self.provider.__class__.__name__}:{text_hash}"
+        # Include dimensions in cache key to avoid mismatch when model changes
+        model_name = getattr(self.provider, '_model', 'unknown')
+        return f"emb:{self.provider.__class__.__name__}:{model_name}:{self._dimensions}:{text_hash}"
 
     async def embed(self, text: str) -> List[float]:
         """Get embedding with cache check."""
@@ -81,14 +90,22 @@ class OptimizedEmbeddingProvider(IEmbeddingProvider):
             logger.info(f"Computing embeddings for {len(missing_texts)}/{len(texts)} missing items")
             new_embeddings = await self.provider.embed_batch(missing_texts)
             
-            # 3. Store new items in Cache
+            # 3. Store new items in Cache (using consistent key format)
             for i, emb in enumerate(new_embeddings):
                 orig_index = missing_indices[i]
                 cached_embeddings[orig_index] = emb
-                
-                text_hash = hashlib.sha256(missing_texts[i].encode('utf-8')).hexdigest()
-                cache_key = f"emb:{self.provider.__class__.__name__}:{text_hash}"
+
+                cache_key = self._get_cache_key(missing_texts[i])
                 await self.cache.set_json(cache_key, emb, ttl_seconds=604800)
 
         # 4. Reconstruct Order
         return [cached_embeddings[i] for i in range(len(texts))]
+
+    def is_initialized(self) -> bool:
+        """Return initialization state for readiness checks."""
+        if not self._initialized:
+            return False
+        attr = getattr(self.provider, "is_initialized", None)
+        if callable(attr):
+            return bool(attr())
+        return True

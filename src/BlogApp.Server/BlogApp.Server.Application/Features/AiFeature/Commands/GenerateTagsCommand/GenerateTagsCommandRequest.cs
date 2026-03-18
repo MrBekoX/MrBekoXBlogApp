@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 
 namespace BlogApp.Server.Application.Features.AiFeature.Commands.GenerateTagsCommand;
 
@@ -9,4 +9,8 @@ public class GenerateTagsCommandRequest : IRequest<GenerateTagsCommandResponse>
 {
     public string Content { get; set; } = string.Empty;
     public Guid UserId { get; set; }
+    
+    public string OperationId { get; set; } = string.Empty;
 }
+
+

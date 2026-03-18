@@ -18,7 +18,7 @@ deploy/.env
 deploy/
 
 #docs files
-docs/
+codebase_docs/
 
 # Chroma vector database
 chroma_data/
@@ -175,4 +175,8 @@ coverage/
 htmlcov/
 .coverage
 .coverage.*
+
+# .NET CLI global configuration
+.dotnet-home/
+.dotnet/
 

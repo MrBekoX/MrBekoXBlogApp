@@ -3,13 +3,16 @@
 import asyncio
 import logging
 import re
-from typing import Set, AsyncGenerator
+from collections import Counter
+from typing import Any, Set, AsyncGenerator
 
 from app.domain.interfaces.i_llm_provider import ILLMProvider
 from app.domain.interfaces.i_web_search import IWebSearchProvider
 from app.domain.entities.chat import ChatMessage, ChatResponse
 from app.services.rag_service import RagService
 from app.services.analysis_service import AnalysisService
+from app.security.content_guardrails import ContentGuardrails
+from app.monitoring.anomaly_detector import AnomalyDetector
 
 logger = logging.getLogger(__name__)
 
@@ -75,17 +78,52 @@ class ChatService:
         llm_provider: ILLMProvider,
         rag_service: RagService,
         web_search_provider: IWebSearchProvider | None = None,
-        analysis_service: AnalysisService | None = None
+        analysis_service: AnalysisService | None = None,
+        anomaly_detector: AnomalyDetector | None = None
     ):
         self._llm = llm_provider
         self._rag = rag_service
         self._web_search = web_search_provider
         self._analysis = analysis_service
+        self._guardrails = ContentGuardrails()
+        self._anomaly_detector = anomaly_detector
+
+    @staticmethod
+    def _extract_keywords(text: str, max_words: int = 5, min_len: int = 4) -> list[str]:
+        """
+        Extract meaningful keywords from text using frequency-based filtering.
+
+        Language-agnostic: short words (articles, prepositions, conjunctions) and
+        overly common words are filtered out automatically — no hardcoded stopword list.
+        """
+        clean = re.sub(r'[^\w\s]', ' ', text)
+        words = [w for w in clean.lower().split() if len(w) >= min_len and w.isalpha()]
+
+        if not words:
+            return []
+
+        freq = Counter(words)
+
+        # Words appearing too frequently are likely functional/stop words
+        # (e.g. "this", "olan", "with" repeat heavily in natural text)
+        high_freq_threshold = max(len(words) * 0.05, 3)
+        candidates = [
+            w for w, count in freq.most_common()
+            if count <= high_freq_threshold
+        ]
+
+        # Among remaining candidates, prefer mid-frequency words (not too rare, not too common)
+        # Sort by frequency descending — most repeated technical terms rise to the top
+        candidate_freq = {w: freq[w] for w in candidates}
+        sorted_candidates = sorted(candidate_freq, key=candidate_freq.get, reverse=True)
+
+        return sorted_candidates[:max_words]
 
     async def chat(
         self,
         post_id: str,
         user_message: str,
+        auth_context: Any,
         conversation_history: list[ChatMessage] | None = None,
         language: str = "tr",
         k: int = 5
@@ -96,6 +134,7 @@ class ChatService:
         Args:
             post_id: Article ID to search within
             user_message: User's question
+            auth_context: Authorization context for access control
             conversation_history: Previous messages
             language: Response language
             k: Number of chunks to retrieve
@@ -173,7 +212,35 @@ class ChatService:
 
 assistant:"""
 
-        response = await self._llm.generate_text(prompt)
+        # Generate response with timeout to prevent infinite hangs
+        try:
+            response = await asyncio.wait_for(
+                self._llm.generate_text(prompt),
+                timeout=120,  # 2 minute timeout
+            )
+        except asyncio.TimeoutError:
+            logger.warning("[chat] LLM timed out after 120s, returning out-of-scope response")
+            return ChatResponse(
+                response=self._get_out_of_scope_response(language),
+                sources_used=0,
+                is_rag_response=False,
+            )
+
+        # Apply content guardrails to LLM response
+        guardrail_result = self._guardrails.check_response(response, original_query=user_message)
+        if not guardrail_result.is_safe:
+            logger.warning(f"Response blocked by guardrails: {guardrail_result.violations}")
+            response = guardrail_result.sanitized_response or self._get_out_of_scope_response(language)
+
+        # Record request for anomaly detection
+        if self._anomaly_detector:
+            user_id = getattr(auth_context, "subject_id", "anonymous") if auth_context else "anonymous"
+            await self._anomaly_detector.record_request(
+                user_id=user_id,
+                success=True,
+                token_count=len(response.split()),
+                ip_address=getattr(auth_context, "fingerprint", None)
+            )
 
         return ChatResponse(
             response=response.strip(),
@@ -251,6 +318,7 @@ assistant:"""
         post_id: str,
         user_message: str,
         article_title: str,
+        auth_context: Any,
         article_content: str = "",
         language: str = "tr"
     ) -> ChatResponse:
@@ -261,6 +329,7 @@ assistant:"""
             post_id: Article ID
             user_message: User's question
             article_title: Article title
+            auth_context: Authorization context for access control
             article_content: Article content for keyword extraction
             language: Response language
 
@@ -268,91 +337,239 @@ assistant:"""
             ChatResponse with web search results
         """
         if not self._web_search:
-            return await self.chat(post_id, user_message, language=language)
+            return await self.chat(post_id, user_message, auth_context, language=language)
 
         logger.info(f"Processing hybrid search for: {user_message[:50]}...")
 
-        # Generate smart search query
-        search_query = await self._generate_search_query(
-            article_title, user_message, article_content, language
+        # Start RAG retrieval immediately — does not depend on the search query
+        rag_task = asyncio.create_task(
+            self._rag.retrieve_with_context(query=user_message, post_id=post_id, k=5)
         )
+
+        # Generate search query with hard timeout (LLM can be very slow on low VRAM)
+        try:
+            search_query = await asyncio.wait_for(
+                self._generate_search_query(article_title, user_message, article_content, language),
+                timeout=15,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Search query generation timed out, falling back to keyword extraction")
+            search_query = self._keyword_query(article_title, user_message)
 
         # Determine region
         region = "tr-tr" if language.lower() == "tr" else "us-en"
 
-        # Parallel: RAG + Web Search
-        rag_task = self._rag.retrieve_with_context(
-            query=user_message, post_id=post_id, k=5
-        )
-        web_task = self._web_search.search(
-            query=search_query, max_results=10, region=region
-        )
+        # Web search with timeout protection (RAG is already running in the background)
+        try:
+            web_result = await asyncio.wait_for(
+                self._web_search.search(query=search_query, max_results=10, region=region),
+                timeout=30  # 30 second timeout for web search
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Web search timed out after 30s, falling back to RAG only")
+            web_result = None
+        except Exception as e:
+            logger.error(f"Web search failed: {e}, falling back to RAG only")
+            web_result = None
+        
+        rag_result = await rag_task  # likely already done by now
 
-        rag_result, web_result = await asyncio.gather(rag_task, web_task)
+        if not web_result or not web_result.has_results:
+            logger.warning("Web search yielded no results or failed, using RAG only")
+            # Reuse the already-retrieved rag_result — avoids a duplicate RAG + LLM round-trip
+            return await self._respond_from_rag(user_message, rag_result, auth_context, language)
 
-        if not web_result.has_results:
-            logger.warning("Web search yielded no results, using RAG only")
-            return await self.chat(post_id, user_message, language=language)
+        logger.info(f"[chat_with_web_search] Web search successful with {len(web_result.results)} results, building hybrid prompt...")
 
-        # Format web results - only snippets, no titles or links
+        # Format web results — top 3 only, snippets capped at 250 chars each
+        # (keeps the hybrid prompt under ~4000 chars so the LLM finishes in time)
+        # Strip URLs from snippets to prevent small LLMs from hallucinating more URLs
         web_context = "\n\n".join([
-            r.snippet
-            for r in web_result.results
+            re.sub(r'https?://\S+', '', r.snippet[:250]).strip()
+            for r in web_result.results[:3]
         ])
 
+        # Cap RAG context to keep total prompt manageable on low-VRAM hardware
+        rag_context_for_prompt = rag_result.context[:3000]
+
         # Build hybrid prompt
+        # IMPORTANT: Instructions go BEFORE context to prevent small LLMs (phi4-mini)
+        # from echoing them as part of the answer (prompt leakage).
+        # The prompt ends with "CEVAP:" so the model generates the answer directly.
         if language == "tr":
-            prompt = f""""{article_title}" hakkındaki soruyu cevapla.
+            prompt = f"""Sen "{article_title}" hakkında sorulara cevap veren bir asistansın.
+Cevabını makale bağlamı ve web arama sonuçlarını kullanarak yaz.
+Link, URL veya kaynak listesi ekleme. "[1]", "https://" gibi kaynak belirtileri kullanma.
+Kod sorusu sorulursa kısa ve anlaşılır örnek kod yaz.
 
 MAKALE BAGLAMI:
-{rag_result.context}
+{rag_context_for_prompt}
 
 WEB ARAMA SONUCLARI:
 {web_context}
 
 SORU: {user_message}
 
-CEVAP KURALLARI:
-- ONCELIKLE makale içeriğini ve web arama sonuçlarını kullanarak cevap ver
-- KESİNLİKLE link, URL veya kaynak listesi EKLEME
-- Hiçbir şekilde "[1]", "https://" veya kaynak belirtileri kullanma
-
-OZEL DURUM - Kod Iste:
-- Eger soru "kod", "ornek", "goster", "implementasyon" iceriyorsa:
-  * Konuyla ilgili kendi teknik bilginizi kullanarak ORNEK KOD yazin
-  * Web arama sonuclarinda da ornek kod varsa onlardan ilham alin
-  * Kodun kisa ve anlasilir olmasina dikkat edin
-  * Ilgili programlama dilini kullanin (C#, JavaScript, Python vb.)"""
+CEVAP:"""
         else:
-            prompt = f"""Answer the question about "{article_title}".
+            prompt = f"""You are an assistant answering questions about "{article_title}".
+Use the article context and web search results to write your answer.
+Do not include links, URLs, or source lists. Do not use citations like [1] or "https://".
+If asked for code, write short and clear example code.
 
 ARTICLE CONTEXT:
-{rag_result.context}
+{rag_context_for_prompt}
 
 WEB SEARCH RESULTS:
 {web_context}
 
 QUESTION: {user_message}
 
-ANSWER RULES:
-- PRIMARILY use the article content and web search results to answer
-- DO NOT include links, URLs, or source list
-- DO NOT use citations like [1], [2], or mention sources
+ANSWER:"""
 
-SPECIAL CASE - Code Request:
-- If question asks for "code", "example", "show me", "implementation":
-  * Use your own technical knowledge to write EXAMPLE CODE relevant to the topic
-  * Take inspiration from code examples in web search results
-  * Keep code short and understandable
-  * Use relevant programming language (C#, JavaScript, Python, etc.)"""
+        logger.info(f"[chat_with_web_search] Calling LLM with prompt length {len(prompt)} chars...")
+        
+        try:
+            response = await asyncio.wait_for(
+                self._llm.generate_text(prompt),
+                timeout=120,
+            )
+            logger.info(f"[chat_with_web_search] LLM response received, length: {len(response)} chars")
+        except asyncio.TimeoutError:
+            logger.warning("[chat_with_web_search] LLM timed out after 120s, falling back to RAG only")
+            return await self._respond_from_rag(user_message, rag_result, auth_context, language)
 
-        response = await self._llm.generate_text(prompt)
+        # Strip any URLs the LLM hallucinated despite instructions
+        original_len = len(response)
+        response = self._strip_hallucinated_urls(response)
+        stripped_len = len(response)
 
+        # If >30% of the response was URLs, the LLM likely hallucinated heavily — fall back to RAG
+        if original_len > 0 and (original_len - stripped_len) / original_len > 0.30:
+            logger.warning(
+                f"[chat_with_web_search] {original_len - stripped_len}/{original_len} chars were "
+                f"hallucinated URLs ({(original_len - stripped_len) / original_len:.0%}), falling back to RAG"
+            )
+            return await self._respond_from_rag(user_message, rag_result, auth_context, language)
+
+        # Apply content guardrails to web search response
+        guardrail_result = self._guardrails.check_response(response, original_query=user_message)
+        if not guardrail_result.is_safe:
+            logger.warning(f"Web search response blocked by guardrails: {guardrail_result.violations}")
+            response = guardrail_result.sanitized_response or self._get_out_of_scope_response(language)
+
+        # Record request for anomaly detection
+        if self._anomaly_detector:
+            user_id = getattr(auth_context, "subject_id", "anonymous") if auth_context else "anonymous"
+            await self._anomaly_detector.record_request(
+                user_id=user_id,
+                success=True,
+                token_count=len(response.split()),
+                ip_address=getattr(auth_context, "fingerprint", None)
+            )
+
+        logger.info(f"[chat_with_web_search] Returning hybrid response with {len(web_result.results)} sources")
+        
         return ChatResponse(
             response=response.strip(),
             sources_used=len(web_result.results),
             is_rag_response=False,
             sources=[r.to_dict() for r in web_result.results]
+        )
+
+    @staticmethod
+    def _strip_hallucinated_urls(text: str) -> str:
+        """Remove URLs and markdown links that small LLMs hallucinate despite instructions."""
+        # Remove markdown links: [text](url) → text
+        text = re.sub(r'\[([^\]]+)\]\(https?://[^)]+\)', r'\1', text)
+        # Remove bare URLs
+        text = re.sub(r'https?://\S+', '', text)
+        # Clean up leftover empty lines from removed URLs
+        text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
+        return text.strip()
+
+    def _keyword_query(self, article_title: str, user_message: str) -> str:
+        """Sync keyword-based query (used when LLM search-query generation times out)."""
+        title_keywords = self._extract_keywords(article_title, max_words=4, min_len=3)
+        question_keywords = self._extract_keywords(user_message, max_words=2, min_len=3)
+        query = " ".join(title_keywords)
+        if question_keywords:
+            query += " " + " ".join(question_keywords)
+        return query + " -wordpress -blogspot"
+
+    async def _respond_from_rag(
+        self,
+        user_message: str,
+        rag_result: Any,
+        auth_context: Any,
+        language: str,
+    ) -> "ChatResponse":
+        """Build a chat response from a pre-retrieved RAG result (skips re-retrieval)."""
+        if not rag_result.has_results or not rag_result.context.strip():
+            return ChatResponse(
+                response=self._get_out_of_scope_response(language),
+                sources_used=0,
+                is_rag_response=False,
+            )
+
+        is_relevant, rejection_reason = await self._check_relevance_multi_signal(
+            user_message=user_message,
+            context=rag_result.context,
+            similarity_score=rag_result.average_similarity,
+            language=language,
+        )
+        if not is_relevant:
+            logger.warning(f"Query '{user_message[:30]}...' rejected: {rejection_reason}")
+            return ChatResponse(
+                response=self._get_out_of_scope_response(language),
+                sources_used=0,
+                is_rag_response=False,
+            )
+
+        logger.info(
+            f"Query '{user_message[:30]}...' passed relevance check "
+            f"(similarity={rag_result.average_similarity:.3f}, chunks={len(rag_result.chunks)})"
+        )
+
+        system_prompt = RAG_SYSTEM_PROMPT_TR if language == "tr" else RAG_SYSTEM_PROMPT_EN
+        prompt = f"""{system_prompt.format(context=rag_result.context)}
+
+user: {user_message}
+
+A:"""
+        
+        # Add timeout for LLM generation to prevent infinite hangs
+        try:
+            response = await asyncio.wait_for(
+                self._llm.generate_text(prompt),
+                timeout=120,  # 2 minute timeout
+            )
+        except asyncio.TimeoutError:
+            logger.warning("[_respond_from_rag] LLM timed out after 120s, returning out-of-scope response")
+            return ChatResponse(
+                response=self._get_out_of_scope_response(language),
+                sources_used=0,
+                is_rag_response=False,
+            )
+
+        guardrail_result = self._guardrails.check_response(response, original_query=user_message)
+        if not guardrail_result.is_safe:
+            response = guardrail_result.sanitized_response or self._get_out_of_scope_response(language)
+
+        if self._anomaly_detector:
+            user_id = getattr(auth_context, "subject_id", "anonymous") if auth_context else "anonymous"
+            await self._anomaly_detector.record_request(
+                user_id=user_id,
+                success=True,
+                token_count=len(response.split()),
+                ip_address=getattr(auth_context, "fingerprint", None),
+            )
+
+        return ChatResponse(
+            response=response.strip(),
+            sources_used=0,
+            is_rag_response=True,
+            context_preview=rag_result.context[:200],
         )
 
     async def _generate_search_query(
@@ -365,19 +582,23 @@ SPECIAL CASE - Code Request:
         """Generate optimized search query using LLM for better relevance."""
 
         # 1. Use LLM to analyze intent and generate query (universal approach)
+        content_preview = article_content[:500] if article_content else ""
+
         prompt = f"""Analyze the user's question about the article and generate an optimized search query.
 
-Article: {article_title}
+Article Title: {article_title}
+Article Content Preview: {content_preview}
 User Question: {user_question}
 
 Task:
 1. Determine if this is a general question about the article (asking for overview/summary/explanation) OR a specific technical question
 2. Generate a 3-5 word technical search query accordingly
 
-For general questions (what is this about, summarize, explain):
-- Extract core technical concepts from the article title
-- Add relevant programming context (languages, frameworks, tools)
+For general questions (what is this about, summarize, explain, detail):
+- Extract the PRIMARY technical topic from the article title AND content
+- Include the most specific technical terms from the article (e.g. "dependency inversion", "hexagonal architecture")
 - Add resource type: tutorial OR guide OR examples OR best practices
+- IMPORTANT: Use the article content to make the query more specific, not just the title
 
 For specific technical questions (how does X work, error with Y, comparison):
 - Combine the article topic with the specific technical keywords from the question
@@ -393,8 +614,10 @@ Output only the search query text, lowercase, no additional formatting or explan
             query = re.sub(r'["\'`]', '', query)
             query = re.sub(r'\s+', ' ', query)
 
-            # Add negative filters to avoid low-quality content
-            query += " -wordpress -blogspot -wix -squarespace"
+            # Add negative filters to avoid low-quality content (only for non-technical queries)
+            # Note: DuckDuckGo doesn't always handle negative filters well, use sparingly
+            if len(query.split()) > 2:
+                query += " -wordpress -blogspot"
 
             logger.info(f"LLM-generated query: {query}")
             return query
@@ -402,23 +625,23 @@ Output only the search query text, lowercase, no additional formatting or explan
         except Exception as e:
             logger.warning(f"LLM query generation failed: {e}, falling back to keyword extraction")
 
-        # 2. Fallback: Keyword extraction
-        clean_title = re.sub(r'[^\w\s]', ' ', article_title)
-        title_keywords = [w for w in clean_title.split() if len(w) > 3][:5]
+        # 2. Fallback: Keyword extraction from title + content (language-agnostic)
+        title_keywords = self._extract_keywords(article_title, max_words=3, min_len=3)
+        content_keywords = self._extract_keywords(article_content[:1000], max_words=3, min_len=5) if article_content else []
+        question_keywords = self._extract_keywords(user_question, max_words=2, min_len=3)
 
-        # Combine with question keywords (remove stopwords)
-        stopwords = ["nedir", "nasil", "niye", "ne", "what", "how", "why", "is", "the", "a", "an", "için", "about"]
-        question_keywords = [
-            w for w in user_question.lower().split()
-            if len(w) > 2 and w not in stopwords
-        ][:2]
-
-        query = " ".join(title_keywords[:4])
+        query = " ".join(title_keywords)
+        if content_keywords:
+            # Avoid duplicating title keywords
+            extra = [w for w in content_keywords if w not in title_keywords][:2]
+            if extra:
+                query += " " + " ".join(extra)
         if question_keywords:
-            query += " " + " ".join(question_keywords)
+            query += " " + " ".join(question_keywords[:1])
 
-        # Add negative filters
-        query += " -wordpress -blogspot"
+        # Add minimal negative filters for keyword-based queries
+        if len(query.split()) > 2:
+            query += " -wordpress"
 
         logger.info(f"Keyword-based query: {query}")
         return query

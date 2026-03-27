@@ -21,6 +21,9 @@ deploy/
 docs/
 codebase_docs/
 
+# Tests
+tests/
+
 # Chroma vector database
 chroma_data/
 **/chroma.sqlite3

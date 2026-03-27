@@ -18,6 +18,7 @@ deploy/.env
 deploy/
 
 #docs files
+docs/
 codebase_docs/
 
 # Chroma vector database

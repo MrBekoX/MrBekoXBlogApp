@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PenSquare, LogOut, LayoutDashboard, Menu, X, Home, BookOpen, FolderOpen, ChevronDown, Github, Linkedin } from 'lucide-react';
+import { GITHUB_URL, LINKEDIN_URL, SITE_NAME, SITE_TAGLINE } from '@/lib/site-config';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { SearchCommand } from '@/components/search-command';
 
@@ -37,7 +38,7 @@ export function Header() {
 
   const handleLogout = async () => {
     await logout();
-    router.push('/');
+    router.replace('/mrbekox-console');
   };
 
   const getInitials = (name: string) => {
@@ -92,9 +93,8 @@ export function Header() {
   ];
 
   const socialLinks = [
-    { href: 'https://github.com/MrBekoX', icon: Github, label: 'GitHub' },
-    { href: 'https://x.com/mrbeko_', icon: X, label: 'X' },
-    { href: 'https://www.linkedin.com/in/berkay-kaplan-133b35245/', icon: Linkedin, label: 'LinkedIn' },
+    { href: GITHUB_URL, icon: Github, label: 'GitHub' },
+    { href: LINKEDIN_URL, icon: Linkedin, label: 'LinkedIn' },
   ];
 
   return (
@@ -107,9 +107,9 @@ export function Header() {
           </div>
           <div className="hidden sm:block">
             <span className="text-xl font-bold font-serif tracking-tight">
-              MrBekoX
+              {SITE_NAME}
             </span>
-            <span className="text-xs text-muted-foreground block -mt-1">Software Developer</span>
+            <span className="text-xs text-muted-foreground block -mt-1">{SITE_TAGLINE}</span>
           </div>
         </Link>
 

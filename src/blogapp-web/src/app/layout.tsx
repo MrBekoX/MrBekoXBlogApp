@@ -8,6 +8,17 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { OrganizationSchema } from '@/components/seo/organization-schema';
 import { WebsiteSchema } from '@/components/seo/website-schema';
 import { PersonSchema } from '@/components/seo/person-schema';
+import {
+  SITE_URL,
+  SITE_TITLE,
+  SITE_TITLE_TEMPLATE,
+  SITE_DESCRIPTION,
+  SITE_KEYWORDS,
+  SITE_NAME,
+  SITE_LOCALE,
+  AUTHOR_NAME,
+  TWITTER_HANDLE,
+} from '@/lib/site-config';
 import './globals.css';
 
 // IDE fonts
@@ -54,46 +65,17 @@ const crimsonText = Crimson_Text({
   display: 'swap',
 });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
-
-// Enable SignalR debug logging in development
-const isDev = process.env.NODE_ENV === 'development';
-
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'MrBekoX - Software Developer',
-    template: '%s | MrBekoX Blog',
+    default: SITE_TITLE,
+    template: SITE_TITLE_TEMPLATE,
   },
-  description: 'Yazılım geliştirme yolculuğumda öğrendiklerimi, aldığım teknik notları ve proje deneyimlerimi paylaştığım kişisel blog.',
-  keywords: [
-    'Berkay Kaplan',
-    'MrBekoX',
-    'backend development',
-    'yazılım mimarisi',
-    'software architecture',
-    'AI agent',
-    'artificial intelligence',
-    'mikroservis',
-    'microservices',
-    'sistem tasarımı',
-    'system design',
-    'machine learning',
-    '.NET',
-    'ASP.NET Core',
-    'C#',
-    'Python',
-    'onion architecture',
-    'clean architecture',
-    'CQRS',
-    'domain driven design',
-    'backend blog',
-    'teknik blog',
-    'software developer turkey',
-  ],
-  authors: [{ name: 'Berkay Kaplan', url: SITE_URL }],
-  creator: 'Berkay Kaplan',
-  publisher: 'Berkay Kaplan',
+  description: SITE_DESCRIPTION,
+  keywords: SITE_KEYWORDS,
+  authors: [{ name: AUTHOR_NAME, url: SITE_URL }],
+  creator: AUTHOR_NAME,
+  publisher: AUTHOR_NAME,
   formatDetection: {
     email: false,
     address: false,
@@ -101,25 +83,25 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    locale: 'tr_TR',
+    locale: SITE_LOCALE,
     url: SITE_URL,
-    title: 'MrBekoX - Software Developer',
-    description: 'Yazılım geliştirme yolculuğumda öğrendiklerimi, aldığım teknik notları ve proje deneyimlerimi paylaştığım kişisel blog.',
-    siteName: 'MrBekoX Blog',
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    siteName: `${SITE_NAME} Blog`,
     images: [
       {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'MrBekoX Blog',
+        alt: `${SITE_NAME} Blog`,
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'MrBekoX | Software Developer',
-    description: 'Yazılım geliştirme yolculuğumda öğrendiklerimi, aldığım teknik notları ve proje deneyimlerimi paylaştığım kişisel blog.',
-    creator: '@mrbeko_',
+    title: `${SITE_NAME} | ${AUTHOR_NAME}`,
+    description: SITE_DESCRIPTION,
+    creator: TWITTER_HANDLE,
     images: ['/opengraph-image'],
   },
   robots: {
@@ -169,7 +151,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <ErrorBoundary>
-            <CacheSyncProvider debug={isDev}>
+            <CacheSyncProvider debug={process.env.NODE_ENV === 'development'}>
               <AuthSyncProvider>
                 {children}
               </AuthSyncProvider>

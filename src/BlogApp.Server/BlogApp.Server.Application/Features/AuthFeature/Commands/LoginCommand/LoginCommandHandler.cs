@@ -4,12 +4,14 @@ using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.AuthFeature.Constants;
 using BlogApp.Server.Application.Features.AuthFeature.DTOs;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace BlogApp.Server.Application.Features.AuthFeature.Commands.LoginCommand;
 
 public class LoginCommandHandler(
     IUnitOfWork unitOfWork,
-    IJwtTokenService jwtTokenService) : IRequestHandler<LoginCommandRequest, LoginCommandResponse>
+    IJwtTokenService jwtTokenService,
+    ILogger<LoginCommandHandler> logger) : IRequestHandler<LoginCommandRequest, LoginCommandResponse>
 {
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -25,6 +27,8 @@ public class LoginCommandHandler(
 
         if (user is null)
         {
+            // Dummy BCrypt verify to equalize timing (prevents email enumeration via timing)
+            BCrypt.Net.BCrypt.Verify("dummy-password", "$2a$11$K4GByMz0K3mFQoOBdVcHj.ZGZxYKYfblvP9OhNt7E.XzMnH4x1AEK");
             return new LoginCommandResponse
             {
                 Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidCredentials)
@@ -50,8 +54,7 @@ public class LoginCommandHandler(
         }
         catch (Exception ex)
         {
-            // Log the error but treat as invalid password to avoid information leakage
-            // Consider adding proper logging here
+            logger.LogWarning(ex, "BCrypt verification failed for user {UserId}", user.Id);
             passwordValid = false;
         }
 
@@ -84,11 +87,9 @@ public class LoginCommandHandler(
 
             // Not: IncrementFailedLoginAttemptsAsync zaten veritabanına yazdığı için tekrar Update/Save çağırmaya gerek yok
 
-            var currentAttempts = finalUser?.FailedLoginAttempts ?? 0;
-            var remainingAttempts = MaxFailedAttempts - currentAttempts;
             return new LoginCommandResponse
             {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.RemainingAttempts(remainingAttempts))
+                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidCredentials)
             };
         }
 

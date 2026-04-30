@@ -24,10 +24,7 @@ public static class CsrfEndpoints
             // Also expose token in response header for SPA to read
             context.Response.Headers.Append("X-CSRF-TOKEN", tokens.RequestToken!);
             
-            return Results.Ok(ApiResponse<object>.SuccessResult(new
-            {
-                token = tokens.RequestToken
-            }, "CSRF token generated"));
+            return Results.Ok(ApiResponse<object>.SuccessResult(new { }, "CSRF token generated"));
         })
         .WithName("GetCsrfToken")
         .WithDescription("Get CSRF token for subsequent state-changing requests")

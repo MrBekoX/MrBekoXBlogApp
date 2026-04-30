@@ -158,4 +158,19 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
             return DateTime.MinValue;
         }
     }
+
+    public string? GetTokenJti(string token)
+    {
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var jwtToken = tokenHandler.ReadJwtToken(token);
+            return jwtToken.Id;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to get token JTI");
+            return null;
+        }
+    }
 }

@@ -1,14 +1,14 @@
 import Link from 'next/link';
-import { Github, X, Linkedin } from 'lucide-react';
+import { Github, Linkedin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { GITHUB_URL, LINKEDIN_URL, SITE_NAME, SITE_TAGLINE } from '@/lib/site-config';
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
 
   const socialLinks = [
-    { href: 'https://github.com/MrBekoX', icon: Github, label: 'GitHub' },
-    { href: 'https://x.com/mrbeko_', icon: X, label: 'X' },
-    { href: 'https://www.linkedin.com/in/berkay-kaplan-133b35245/', icon: Linkedin, label: 'LinkedIn' },
+    { href: GITHUB_URL, icon: Github, label: 'GitHub' },
+    { href: LINKEDIN_URL, icon: Linkedin, label: 'LinkedIn' },
   ];
 
   const navigationLinks = [
@@ -36,9 +36,9 @@ export function Footer() {
             </div>
             <div className="text-left">
               <span className="text-2xl font-bold font-serif tracking-tight">
-                MrBekoX
+                {SITE_NAME}
               </span>
-              <span className="text-sm text-muted-foreground block">Software Developer</span>
+              <span className="text-sm text-muted-foreground block">{SITE_TAGLINE}</span>
             </div>
           </Link>
 
@@ -80,7 +80,7 @@ export function Footer() {
         <div className="mt-12 pt-8 border-t">
           <div className="flex justify-center items-center text-center">
             <p className="text-sm text-muted-foreground">
-              © {currentYear} MrBekoX. Tüm hakları saklıdır.
+              © {currentYear} {SITE_NAME}. Tüm hakları saklıdır.
             </p>
           </div>
         </div>

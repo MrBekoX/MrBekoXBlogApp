@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace BlogApp.Server.Application.Common.Options;
 
 /// <summary>
@@ -9,17 +11,17 @@ public sealed class JwtSettings
 
     private string _secret = string.Empty;
 
-    public string Secret 
-    { 
+    public string Secret
+    {
         get => _secret;
         init
         {
             if (string.IsNullOrWhiteSpace(value))
                 throw new ArgumentException("JWT Secret cannot be null or empty", nameof(value));
-            
-            if (value.Length < 32)
-                throw new ArgumentException("JWT Secret must be at least 32 characters long for security", nameof(value));
-            
+
+            if (Encoding.UTF8.GetBytes(value).Length < 32)
+                throw new ArgumentException("JWT Secret must be at least 256 bits (32 bytes) for security", nameof(value));
+
             _secret = value;
         }
     }

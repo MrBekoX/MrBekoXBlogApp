@@ -70,6 +70,15 @@ public class CachingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, 
             return await next();
         }
 
+        // SWR background refresh: skip cache to let the handler produce fresh data.
+        // Deliberately placed before group version lookup — no cache interaction needed.
+        // Other behaviors (logging, validation) still execute normally in the pipeline.
+        if (SwrRefreshContext.IsBackgroundRefresh)
+        {
+            _logger.LogDebug("SWR background refresh for {RequestType}, bypassing cache", typeof(TRequest).Name);
+            return await next();
+        }
+
         // Build versioned cache key if using group versioning
         if (!string.IsNullOrWhiteSpace(request.CacheGroup))
         {

@@ -86,17 +86,7 @@ public class SignalRConnectionLimitMiddleware
 
     private static string GetClientIpAddress(HttpContext context)
     {
-        // Check X-Forwarded-For header (proxy/load balancer)
-        if (context.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor))
-        {
-            var firstIp = forwardedFor.FirstOrDefault()?.Split(',')[0].Trim();
-            if (!string.IsNullOrEmpty(firstIp))
-            {
-                return firstIp;
-            }
-        }
-
-        // Fallback to remote IP
+        // Use RemoteIpAddress which is already set correctly by ForwardedHeaders middleware
         return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
     }
 

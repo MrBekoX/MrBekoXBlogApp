@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -16,6 +16,7 @@ import { loginSchema, type LoginFormData } from '@/lib/validations';
 export default function AdminLoginPage() {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
+  const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const error = useAuthStore((state) => state.error);
   const clearError = useAuthStore((state) => state.clearError);
@@ -32,32 +33,43 @@ export default function AdminLoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
-  // Mark as mounted after hydration
+  // Wait for both component mount AND Zustand store hydration from sessionStorage.
+  // This prevents redirect decisions before persisted state is restored.
   useEffect(() => {
-    setHasMounted(true);
+    if (useAuthStore.persist.hasHydrated()) {
+      setHasMounted(true);
+      return;
+    }
+    const unsub = useAuthStore.persist.onFinishHydration(() => {
+      setHasMounted(true);
+    });
+    return unsub;
   }, []);
 
-  // If already authenticated (from persisted state), redirect to dashboard
-  // This is the ONLY auth check we need on login page
+  // If already authenticated (e.g. navigating back to login page or after hydration),
+  // redirect to dashboard. Only fires once via redirectedRef to prevent loops.
+  // Both this effect AND onSubmit coordinate via redirectedRef to prevent double navigation.
+  const redirectedRef = useRef(false);
   useEffect(() => {
-    // Wait for hydration to complete
-    if (!hasMounted) return;
+    if (!hasMounted || redirectedRef.current) return;
 
-    // Only redirect if we have a confirmed authenticated state
-    // (from persisted sessionStorage, not from a fresh check)
-    if (authStatus === 'authenticated') {
+    if (authStatus === 'authenticated' && user) {
+      redirectedRef.current = true;
       router.replace('/mrbekox-console/dashboard');
     }
-  }, [hasMounted, authStatus, router]);
+  }, [hasMounted, authStatus, user, router]);
 
   const onSubmit = async (data: LoginFormData) => {
     clearError();
     const success = await login(data.email, data.password);
     if (success) {
+      // redirectedRef ile effect'in ayni anda navigate etmesini onle
+      redirectedRef.current = true;
       toast.success('Hos geldiniz!');
-      router.push('/mrbekox-console/dashboard');
+      router.replace('/mrbekox-console/dashboard');
     } else {
-      toast.error(error || 'Giris basarisiz');
+      const currentError = useAuthStore.getState().error;
+      toast.error(currentError || 'Giris basarisiz');
     }
   };
 
@@ -73,8 +85,8 @@ export default function AdminLoginPage() {
     );
   }
 
-  // If authenticated, show loading (redirect is happening)
-  if (authStatus === 'authenticated') {
+  // If authenticated with valid user, show loading (redirect is happening)
+  if (authStatus === 'authenticated' && user) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
         <div className="text-center">

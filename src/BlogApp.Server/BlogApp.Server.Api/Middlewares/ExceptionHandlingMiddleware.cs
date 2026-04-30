@@ -75,6 +75,12 @@ public class ExceptionHandlingMiddleware
                 _logger.LogWarning(exception, "Domain error: {Message}", domainEx.Message);
                 break;
 
+            case BadHttpRequestException badRequestEx:
+                statusCode = (HttpStatusCode)badRequestEx.StatusCode;
+                errors.Add(badRequestEx.InnerException?.Message ?? badRequestEx.Message);
+                _logger.LogWarning(exception, "Bad request: {Message}", badRequestEx.Message);
+                break;
+
             default:
                 errors.Add("An unexpected error occurred. Please try again later.");
                 _logger.LogError(exception, "Unhandled exception occurred");

@@ -6,151 +6,95 @@ This directory contains all Docker-related configuration files for the BlogApp p
 
 ```
 docker/
+├── .env.example            # Environment variables template
 ├── backend/
-│   ├── Dockerfile          # .NET Backend API Dockerfile
-│   └── .dockerignore       # Files to exclude from backend build
+│   └── Dockerfile          # .NET Backend API Dockerfile
 ├── frontend/
-│   ├── Dockerfile          # Next.js Frontend Dockerfile
-│   └── .dockerignore       # Files to exclude from frontend build
-├── ai-agent-service/
-│   ├── Dockerfile          # Python AI Agent Service Dockerfile
-│   └── .dockerignore       # Files to exclude from AI service build
+│   └── Dockerfile          # Next.js Frontend Dockerfile
+├── docker-compose.yml      # Service orchestration
 └── README.md               # This file
 ```
 
 ## Services
 
-### Backend
-- **Technology:** .NET 10.0 (ASP.NET Core)
-- **Port:** 8080
-- **Build:** Multi-stage build with SDK and runtime images
-- **Features:**
-  - Non-root user for security
-  - Health check endpoint
-  - Optimized image size
+| Service | Technology | Port | Description |
+|---|---|---|---|
+| **postgres** | PostgreSQL 18 Alpine | 5432 | Primary database |
+| **redis** | Redis 8 Alpine | 6379 | Cache (L1/L2 hybrid) |
+| **backend** | .NET 10 (ASP.NET Core) | 8080 | REST API + SignalR hubs |
+| **frontend** | Next.js 16 (standalone) | 3000 | SSR frontend |
 
-### Frontend
-- **Technology:** Next.js 16 (React)
-- **Port:** 3000
-- **Build:** Multi-stage build with production-optimized image
-- **Features:**
-  - pnpm for dependency management
-  - Non-root user for security
-  - Static asset optimization
+## Quick Start
 
-### AI Agent Service
-- **Technology:** Python 3.12 (FastAPI)
-- **Port:** 8000
-- **Build:** Multi-stage build with dependency caching
-- **Features:**
-  - LangChain for AI/LLM integration
-  - RabbitMQ messaging
-  - Redis caching
-  - ChromaDB for vector storage
-
-## Usage
-
-### Build All Services
 ```bash
-docker-compose build
-```
+# 1. Configure environment
+cp .env.example .env
+# Edit .env with your values
 
-### Build Specific Service
-```bash
-docker-compose build backend
-docker-compose build frontend
-docker-compose build ai-agent-service
-```
+# 2. Build and run
+docker compose up -d --build
 
-### Run All Services
-```bash
-docker-compose up -d
-```
-
-### Run Specific Service
-```bash
-docker-compose up backend
-```
-
-### Stop All Services
-```bash
-docker-compose down
-```
-
-### View Logs
-```bash
-docker-compose logs -f
-docker-compose logs -f backend
+# 3. Check status
+docker compose ps
 ```
 
 ## Environment Variables
 
-Before running, make sure to copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env` and configure:
+
+| Variable | Required | Description |
+|---|---|---|
+| `POSTGRES_USER` | Yes | PostgreSQL username |
+| `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
+| `POSTGRES_DB` | No | Database name (default: `blogdb`) |
+| `REDIS_PASSWORD` | Yes | Redis password |
+| `JwtSettings__Secret` | Yes | JWT secret (min 32 chars) |
+| `ADMIN_EMAIL` | No | Initial admin email |
+| `ADMIN_USERNAME` | No | Initial admin username |
+| `ADMIN_PASSWORD` | No | Initial admin password |
+| `ALLOWED_HOSTS` | Yes | Host header validation |
+| `CORS_ORIGIN_0` | No | Frontend URL for CORS |
+| `PUBLIC_SIGNALR_URL` | No | SignalR URL for browser |
+| `TURNSTILE_SITE_KEY` | No | Cloudflare Turnstile key |
+
+## Commands
 
 ```bash
-cp .env.example .env
-```
+# Build specific service
+docker compose build backend
+docker compose build frontend
 
-Required variables:
-- `POSTGRES_USER` - PostgreSQL username
-- `POSTGRES_PASSWORD` - PostgreSQL password
-- `JwtSettings__Secret` - JWT token secret
+# View logs
+docker compose logs -f
+docker compose logs -f backend
+
+# Stop all
+docker compose down
+
+# Clean rebuild
+docker compose down -v
+docker compose up -d --build
+```
 
 ## Health Checks
 
-All services include health checks:
-- **Backend:** `http://localhost:8080/health`
+- **Backend:** `http://localhost:8080/health` (PostgreSQL + Redis)
 - **Frontend:** `http://localhost:3000`
-- **AI Service:** `http://localhost:8000/health`
 
-Check service health:
-```bash
-docker-compose ps
+## Architecture
+
+```
+Browser → frontend:3000 → (next.config.ts rewrites) → backend:8080
+                                                          ├── postgres:5432
+                                                          └── redis:6379
 ```
 
-## Development
+Frontend proxies `/api/*`, `/hubs/*`, `/uploads/*` to the backend via Next.js rewrites.
 
-### Hot Reloading
-For development with hot reloading, mount volumes:
-```yaml
-volumes:
-  - ./src/BlogApp.Server:/app/src
-```
+## Production Notes
 
-### Debugging
-Attach to running container:
-```bash
-docker-compose exec backend bash
-docker-compose exec frontend sh
-docker-compose exec ai-agent-service bash
-```
-
-## Production Considerations
-
-1. **Security:** All services run as non-root users
-2. **Image Size:** Multi-stage builds minimize final image size
-3. **Health Checks:** Automated health monitoring
-4. **Resource Limits:** Configure in docker-compose.yml if needed
-5. **Secrets:** Use Docker secrets or external vault for production
-
-## Troubleshooting
-
-### Build Failures
-- Clear Docker cache: `docker system prune -a`
-- Check disk space: `docker system df`
-
-### Service Not Starting
-- Check logs: `docker-compose logs [service]`
-- Verify environment variables
-- Check port conflicts
-
-### Permission Issues
-- All services run as non-root users
-- Ensure proper file permissions on mounted volumes
-
-## Additional Resources
-
-- [Docker Documentation](https://docs.docker.com/)
-- [Docker Compose Documentation](https://docs.docker.com/compose/)
-- [.NET Docker Samples](https://github.com/dotnet/dotnet-docker)
-- [Next.js Deployment](https://nextjs.org/docs/deployment)
+1. All services run as non-root users
+2. Multi-stage builds minimize image size
+3. Health checks enable automated monitoring
+4. `Database__RunMigrationsOnStartup=true` runs EF Core migrations on backend start
+5. Use strong passwords — generate with `openssl rand -base64 32`

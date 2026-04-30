@@ -6,9 +6,7 @@ public enum PostAuthorizationAction
 {
     ViewPublished,
     ViewUnpublished,
-    Edit,
-    TriggerAi,
-    ReceiveAiEvents
+    Edit
 }
 
 public sealed record PostAuthorizationSubject(

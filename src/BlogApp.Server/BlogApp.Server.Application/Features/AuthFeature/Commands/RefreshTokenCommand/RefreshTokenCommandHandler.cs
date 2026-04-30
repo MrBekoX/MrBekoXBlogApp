@@ -16,10 +16,9 @@ public class RefreshTokenCommandHandler(
     {
         var dto = request.RefreshTokenCommandRequestDto!;
 
-        // Find refresh token (single atomic SaveChanges replaces explicit transaction
-        // to avoid conflict with NpgsqlRetryingExecutionStrategy)
         var storedToken = await unitOfWork.RefreshTokensRead.Query()
             .Include(t => t.User)
+            .AsTracking()
             .FirstOrDefaultAsync(t => t.Token == dto.RefreshToken, cancellationToken);
 
         if (storedToken is null)
@@ -30,7 +29,19 @@ public class RefreshTokenCommandHandler(
             };
         }
 
-        if (!storedToken.IsActive)
+        // Token reuse detection: if already revoked, someone is reusing a stolen token
+        if (storedToken.IsRevoked)
+        {
+            // Revoke ALL tokens for this user as a security measure
+            await unitOfWork.RefreshTokensWrite.RevokeAllUserTokensAsync(storedToken.UserId, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            return new RefreshTokenCommandResponse
+            {
+                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidRefreshToken)
+            };
+        }
+
+        if (storedToken.IsExpired)
         {
             return new RefreshTokenCommandResponse
             {
@@ -47,29 +58,25 @@ public class RefreshTokenCommandHandler(
             };
         }
 
-        // Atomically revoke the old token only if not yet revoked.
-        // Eliminates the race window where two concurrent requests could both
-        // see the token as active and each issue a new token pair.
+        // Atomically revoke the old token
         var revoked = await unitOfWork.RefreshTokensWrite.TryRevokeAsync(
-            dto.RefreshToken,
-            dto.IpAddress,
-            "Replaced by new token",
-            cancellationToken);
+            dto.RefreshToken, dto.IpAddress, "Replaced by new token", cancellationToken);
 
         if (!revoked)
         {
-            // Another concurrent request already consumed this token.
             return new RefreshTokenCommandResponse
             {
                 Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidRefreshToken)
             };
         }
 
-        // Yeni tokenlar oluştur
+        // Generate new tokens
         var newAccessToken = jwtTokenService.GenerateAccessToken(user);
         var newRefreshToken = jwtTokenService.GenerateRefreshToken();
 
-        // Yeni refresh token kaydet
+        // Link old -> new for family chain tracking
+        storedToken.ReplacedByToken = newRefreshToken;
+
         var refreshTokenEntity = new Domain.Entities.RefreshToken
         {
             Id = Guid.NewGuid(),

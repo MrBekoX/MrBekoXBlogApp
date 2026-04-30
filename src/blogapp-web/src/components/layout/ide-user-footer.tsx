@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { LayoutDashboard, LogOut } from 'lucide-react';
+import { SITE_NAME } from '@/lib/site-config';
 
 export function IdeUserFooter() {
   const router = useRouter();
@@ -16,8 +17,7 @@ export function IdeUserFooter() {
 
   const handleLogout = async () => {
     await logout();
-    router.push('/');
-    router.refresh();
+    router.replace('/mrbekox-console');
   };
 
   return (
@@ -26,7 +26,7 @@ export function IdeUserFooter() {
         {/* Avatar */}
         <img
           src="/images/avatar.jpg"
-          alt="MrBekoX"
+          alt={SITE_NAME}
           className="w-8 h-8 rounded border border-gray-700 grayscale object-cover shrink-0"
           style={{ imageRendering: 'pixelated' }}
         />
@@ -34,7 +34,7 @@ export function IdeUserFooter() {
         {/* Info + actions */}
         <div className="flex-1 min-w-0 text-[10px] font-mono">
           <p className="text-white font-bold leading-none mb-0.5 truncate">
-            {isAuthenticated ? (user.fullName || user.userName) : 'MrBekoX'}
+            {isAuthenticated ? (user.fullName || user.userName) : SITE_NAME}
           </p>
 
           {isAuthenticated ? (

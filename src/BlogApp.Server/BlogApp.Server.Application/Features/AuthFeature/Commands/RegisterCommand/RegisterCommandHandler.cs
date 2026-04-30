@@ -39,7 +39,7 @@ public class RegisterCommandHandler(
             Id = Guid.NewGuid(),
             UserName = dto.UserName,
             Email = dto.Email.ToLower(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, workFactor: 12),
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             Role = UserRole.Reader,

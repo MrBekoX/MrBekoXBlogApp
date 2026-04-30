@@ -2,13 +2,9 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { API_BASE_URL } from '@/lib/env';
 import type {
   ApiResponse,
-  AIAnalysisRequestResponse,
-  AiOperationAcceptedResponse,
   AuthResponse,
   BlogPost,
   Category,
-  ChatRequest,
-  ChatResponse,
   Comment,
   CreateCategoryRequest,
   CreateCommentRequest,
@@ -155,9 +151,11 @@ async function fetchCsrfToken(): Promise<string> {
 }
 
 /**
- * Invalidates the cached CSRF token (e.g., on 400 bad request from CSRF validation)
+ * Invalidates the cached CSRF token.
+ * Must be called after auth state changes (login/register/logout)
+ * because antiforgery tokens are tied to the current claims identity.
  */
-function invalidateCsrfToken(): void {
+export function invalidateCsrfToken(): void {
   csrfToken = null;
   csrfTokenPromise = null;
 }
@@ -268,15 +266,18 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean; _csrfRetry?: boolean };
 
-    // Handle CSRF token errors (400 with antiforgery message)
+    // Handle CSRF token errors (400 or 500 with antiforgery message)
     if (
-      error.response?.status === 400 &&
+      (error.response?.status === 400 || error.response?.status === 500) &&
       originalRequest &&
       !originalRequest._csrfRetry &&
       !originalRequest.url?.includes('/csrf-token')
     ) {
-      const errorMessage = (error.response?.data as { message?: string })?.message || '';
-      if (errorMessage.toLowerCase().includes('antiforgery') || errorMessage.toLowerCase().includes('csrf')) {
+      const rawData = error.response?.data;
+      const errorMessage = typeof rawData === 'string'
+        ? rawData
+        : (rawData as { message?: string })?.message || '';
+      if (errorMessage.toLowerCase().includes('antiforgery') || errorMessage.toLowerCase().includes('csrf') || errorMessage.toLowerCase().includes('anti-forgery')) {
         originalRequest._csrfRetry = true;
         invalidateCsrfToken();
 
@@ -298,7 +299,6 @@ apiClient.interceptors.response.use(
       !originalRequest.url?.includes('/auth/login') &&
       !originalRequest.url?.includes('/auth/register') &&
       !originalRequest.url?.includes('/auth/refresh-token') &&
-      !originalRequest.url?.includes('/chat/') &&
       !isRedirecting
     ) {
       originalRequest._retry = true;
@@ -308,6 +308,8 @@ apiClient.interceptors.response.use(
         try {
           const success = await refreshPromise;
           if (success) {
+            // Auth identity changed after refresh — old CSRF token is invalid
+            invalidateCsrfToken();
             return apiClient(originalRequest);
           }
         } catch {
@@ -334,6 +336,8 @@ apiClient.interceptors.response.use(
         try {
           const success = await refreshPromise;
           if (success) {
+            // Auth identity changed after refresh — old CSRF token is invalid
+            invalidateCsrfToken();
             return apiClient(originalRequest);
           }
         } catch {
@@ -488,40 +492,6 @@ export const postsApi = {
     return response.data;
   },
 
-  generateAiSummary: async (id: string, maxSentences?: number, language?: string, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
-    return executeWithOperationRetry(async (resolvedOperationId) => {
-      const params: { maxSentences?: number; language?: string; operationId: string } = {
-        operationId: resolvedOperationId,
-      };
-      if (maxSentences !== undefined) params.maxSentences = maxSentences;
-      if (language !== undefined) params.language = language;
-
-      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
-        `/posts/${id}/generate-ai-summary`,
-        null,
-        withIdempotencyHeader(resolvedOperationId, { params })
-      );
-      return response.data;
-    }, operationId);
-  },
-
-  requestAiAnalysis: async (
-    id: string,
-    data: { language?: string; targetRegion?: string; operationId?: string } = {}
-  ): Promise<ApiResponse<AIAnalysisRequestResponse>> => {
-    return executeWithOperationRetry(async (resolvedOperationId) => {
-      const response = await apiClient.post<ApiResponse<AIAnalysisRequestResponse>>(
-        `/posts/${id}/request-ai-analysis`,
-        {
-          language: data.language,
-          targetRegion: data.targetRegion,
-          operationId: resolvedOperationId,
-        },
-        withIdempotencyHeader(resolvedOperationId)
-      );
-      return response.data;
-    }, data.operationId);
-  },
 };
 
 // Categories API
@@ -633,80 +603,6 @@ export const commentsApi = {
   delete: async (id: string): Promise<ApiResponse<void>> => {
     const response = await apiClient.delete<ApiResponse<void>>(`/comments/${id}`);
     return response.data;
-  },
-};
-
-// AI API - Backend uzerinden yonlendiriliyor
-export const aiApi = {
-  generateTitle: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
-    return executeWithOperationRetry(async (resolvedOperationId) => {
-      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
-        '/ai/generate-title',
-        { content, operationId: resolvedOperationId },
-        withIdempotencyHeader(resolvedOperationId, { signal })
-      );
-      return response.data;
-    }, operationId);
-  },
-
-  generateExcerpt: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
-    return executeWithOperationRetry(async (resolvedOperationId) => {
-      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
-        '/ai/generate-excerpt',
-        { content, operationId: resolvedOperationId },
-        withIdempotencyHeader(resolvedOperationId, { signal })
-      );
-      return response.data;
-    }, operationId);
-  },
-
-  generateTags: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
-    return executeWithOperationRetry(async (resolvedOperationId) => {
-      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
-        '/ai/generate-tags',
-        { content, operationId: resolvedOperationId },
-        withIdempotencyHeader(resolvedOperationId, { signal })
-      );
-      return response.data;
-    }, operationId);
-  },
-
-  generateSeoDescription: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
-    return executeWithOperationRetry(async (resolvedOperationId) => {
-      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
-        '/ai/generate-seo',
-        { content, operationId: resolvedOperationId },
-        withIdempotencyHeader(resolvedOperationId, { signal })
-      );
-      return response.data;
-    }, operationId);
-  },
-
-  improveContent: async (content: string, signal?: AbortSignal, operationId?: string): Promise<ApiResponse<AiOperationAcceptedResponse>> => {
-    return executeWithOperationRetry(async (resolvedOperationId) => {
-      const response = await apiClient.post<ApiResponse<AiOperationAcceptedResponse>>(
-        '/ai/improve-content',
-        { content, operationId: resolvedOperationId },
-        withIdempotencyHeader(resolvedOperationId, { signal })
-      );
-      return response.data;
-    }, operationId);
-  },
-};
-// Chat API
-export const chatApi = {
-  sendMessage: async (data: ChatRequest): Promise<ApiResponse<ChatResponse>> => {
-    return executeWithOperationRetry(async (resolvedOperationId) => {
-      const response = await apiClient.post<ApiResponse<ChatResponse>>(
-        '/chat/message',
-        {
-          ...data,
-          operationId: resolvedOperationId,
-        },
-        withIdempotencyHeader(resolvedOperationId)
-      );
-      return response.data;
-    }, data.operationId);
   },
 };
 

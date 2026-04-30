@@ -1,27 +1,33 @@
 'use server';
 
-import { revalidatePath, refresh } from 'next/cache';
+import { revalidateTag, revalidatePath } from 'next/cache';
+
+// Per-tag cooldown tracking
+const lastRevalidations = new Map<string, number>();
+const REVALIDATION_COOLDOWN_MS = 2000; // 2 seconds per tag
 
 /**
- * Server action to revalidate Next.js cache.
+ * Server action to revalidate Next.js Data Cache by tag.
  * Called from client when SignalR cache invalidation events are received.
  *
- * With cache:'no-store' on fetches, there is no Data Cache to purge.
- * revalidatePath purges the Full Route Cache so the next navigation
- * triggers a fresh server render. refresh() signals the current client
- * to re-fetch the RSC payload immediately.
+ * Uses revalidateTag() to directly invalidate the Data Cache entries
+ * that server-api.ts fetches tag with (e.g. 'posts', 'categories', 'tags').
+ * Also invalidates the Full Route Cache via revalidatePath so the next
+ * navigation triggers a fresh server render.
  */
-export async function revalidateCacheTag(_tag: string): Promise<{ success: boolean }> {
+export async function revalidateCacheTag(tag: string): Promise<{ success: boolean }> {
+  const now = Date.now();
+  const lastTime = lastRevalidations.get(tag) ?? 0;
+  if (now - lastTime < REVALIDATION_COOLDOWN_MS) {
+    return { success: false };
+  }
+  lastRevalidations.set(tag, now);
+
   try {
+    revalidateTag(tag, 'max');
     revalidatePath('/', 'layout');
   } catch {
     // Ignore revalidation errors
-  }
-
-  try {
-    refresh();
-  } catch {
-    // Ignore refresh errors
   }
 
   return { success: true };
@@ -32,15 +38,12 @@ export async function revalidateCacheTag(_tag: string): Promise<{ success: boole
  */
 export async function revalidateAllContent(): Promise<{ success: boolean }> {
   try {
+    revalidateTag('posts', 'max');
+    revalidateTag('categories', 'max');
+    revalidateTag('tags', 'max');
     revalidatePath('/', 'layout');
   } catch {
     // Ignore revalidation errors
-  }
-
-  try {
-    refresh();
-  } catch {
-    // Ignore refresh errors
   }
 
   return { success: true };

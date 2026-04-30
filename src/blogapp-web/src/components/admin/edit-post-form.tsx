@@ -24,7 +24,6 @@ import { toast } from 'sonner';
 import { Loader2, X, Save, Send, ArrowLeft } from 'lucide-react';
 import { MarkdownEditor } from '@/components/markdown-editor';
 import { ImageUpload } from '@/components/image-upload';
-import { AIAnalysisCard } from '@/components/admin/ai-analysis-card';
 import type { Category, Tag, PostStatus, BlogPost } from '@/types';
 import Link from 'next/link';
 
@@ -440,8 +439,6 @@ export function EditPostForm({ postId }: EditPostFormProps) {
           </div>
         </div>
 
-        {/* AI Analysis Section */}
-        <AIAnalysisCard postId={postId} />
       </form>
     </div>
   );

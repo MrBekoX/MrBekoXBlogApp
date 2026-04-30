@@ -1,7 +1,6 @@
 import { BreadcrumbList, WithContext } from 'schema-dts';
 import { JsonLd } from './json-ld';
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
+import { SITE_URL } from '@/lib/site-config';
 
 interface BreadcrumbItem {
   name: string;

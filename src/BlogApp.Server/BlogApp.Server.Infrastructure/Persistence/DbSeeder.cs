@@ -69,7 +69,7 @@ public class DbSeeder(
             
             if (!passwordMatches)
             {
-                existingAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword);
+                existingAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword, workFactor: 12);
                 existingAdmin.UpdatedAt = DateTime.UtcNow;
                 await context.SaveChangesAsync();
                 logger.LogInformation("Admin password synced from environment variables.");
@@ -103,7 +103,7 @@ public class DbSeeder(
             Id = Guid.NewGuid(),
             UserName = adminUserName,
             Email = adminEmail.ToLower(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword, workFactor: 12),
             FirstName = _adminSettings.FirstName,
             LastName = "User",
             Role = UserRole.Admin,

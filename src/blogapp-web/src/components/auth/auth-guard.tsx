@@ -48,38 +48,52 @@ export function AuthGuard({
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const authStatus = useAuthStore((state) => state.authStatus);
+  const lastAuthCheck = useAuthStore((state) => state.lastAuthCheck);
   const checkAuth = useAuthStore((state) => state.checkAuth);
   const [hasMounted, setHasMounted] = useState(false);
   const hasCheckedAuth = useRef(false);
   const hasRedirected = useRef(false);
+  const hasTriggeredRevalidation = useRef(false);
 
-  // Mark as mounted after hydration
+  // Wait for both component mount AND Zustand store hydration from sessionStorage.
+  // This prevents auth decisions before persisted state is restored.
   useEffect(() => {
-    setHasMounted(true);
+    if (useAuthStore.persist.hasHydrated()) {
+      setHasMounted(true);
+      return;
+    }
+    const unsub = useAuthStore.persist.onFinishHydration(() => {
+      setHasMounted(true);
+    });
+    return unsub;
   }, []);
 
-  // Check auth status only once per mount
-  // Trust persisted state from sessionStorage
+  // Check auth status on mount
+  // Trust persisted state for immediate render, but verify with backend
   useEffect(() => {
     if (!hasMounted || hasCheckedAuth.current) return;
+    hasCheckedAuth.current = true;
 
-    // If we have a persisted authenticated state, trust it
     if (authStatus === 'authenticated' && user) {
-      hasCheckedAuth.current = true;
+      // Trust persisted state for immediate render to avoid flash,
+      // but verify with backend in background if session is stale.
+      const REVALIDATION_INTERVAL = 5 * 60 * 1000; // 5 minutes
+      if (
+        !hasTriggeredRevalidation.current &&
+        (!lastAuthCheck || Date.now() - lastAuthCheck > REVALIDATION_INTERVAL)
+      ) {
+        hasTriggeredRevalidation.current = true;
+        checkAuth().catch(() => {});
+      }
       return;
     }
 
-    // If we have a persisted unauthenticated state, trust it
     if (authStatus === 'unauthenticated') {
-      hasCheckedAuth.current = true;
       return;
     }
 
-    // Only check auth if we're in 'idle' state (no persisted state)
-    if (authStatus === 'idle') {
-      hasCheckedAuth.current = true;
-      checkAuth();
-    }
+    // Idle state — no persisted data, check with backend
+    checkAuth();
   }, [hasMounted, authStatus, user, checkAuth]);
 
   // Handle redirects with circuit breaker

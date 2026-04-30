@@ -27,18 +27,6 @@ public record IdempotencyStartResult(
     IdempotencyStartState State,
     IdempotencyRecord Record);
 
-public enum ConsumerClaimState
-{
-    Claimed = 0,
-    DuplicateProcessing = 1,
-    DuplicateCompleted = 2,
-    Failed = 3
-}
-
-public record ConsumerClaimResult(
-    ConsumerClaimState State,
-    ConsumerInboxMessage Record);
-
 public record StoredHttpResponse(
     int StatusCode,
     string Json,

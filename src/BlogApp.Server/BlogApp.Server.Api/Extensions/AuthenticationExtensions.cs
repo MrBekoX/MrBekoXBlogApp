@@ -1,7 +1,8 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Options;
-using BlogApp.Server.Application.Common.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -34,44 +35,31 @@ public static class AuthenticationExtensions
                         context.Token = context.Request.Cookies["accessToken"];
                     }
                     return Task.CompletedTask;
-                }
-            };
-        })
-        .AddJwtBearer(ChatSessionTokenDefaults.SchemeName, options =>
-        {
-            options.TokenValidationParameters = new TokenValidationParameters
-            {
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
-                ValidateIssuer = true,
-                ValidIssuer = ChatSessionTokenDefaults.Issuer,
-                ValidateAudience = true,
-                ValidAudience = ChatSessionTokenDefaults.Audience,
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.FromSeconds(15),
-                NameClaimType = ChatSessionTokenDefaults.SessionIdClaim,
-                RoleClaimType = ClaimTypes.Role
-            };
-            options.Events = new JwtBearerEvents
-            {
-                OnMessageReceived = context =>
+                },
+                OnTokenValidated = async context =>
                 {
-                    if (!context.Request.Path.StartsWithSegments("/hubs/chat-events"))
+                    var blacklist = context.HttpContext.RequestServices.GetService<ITokenBlacklistService>();
+                    if (blacklist is null) return;
+
+                    var jti = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
+                    if (!string.IsNullOrEmpty(jti) && await blacklist.IsTokenBlacklistedAsync(jti))
                     {
-                        return Task.CompletedTask;
+                        context.Fail("Token has been revoked.");
+                        return;
                     }
 
-                    context.Token = context.Request.Query["access_token"];
-                    if (string.IsNullOrWhiteSpace(context.Token))
+                    var userIdClaim = context.Principal?.FindFirstValue("UserId");
+                    var iatClaim = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Iat);
+                    if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId)
+                        && !string.IsNullOrEmpty(iatClaim) && long.TryParse(iatClaim, out var iatUnix))
                     {
-                        var authorization = context.Request.Headers.Authorization.ToString();
-                        if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                        var issuedAt = DateTimeOffset.FromUnixTimeSeconds(iatUnix).UtcDateTime;
+                        if (await blacklist.AreUserTokensInvalidatedAsync(userId, issuedAt))
                         {
-                            context.Token = authorization[7..].Trim();
+                            context.Fail("All user tokens have been invalidated.");
+                            return;
                         }
                     }
-
-                    return Task.CompletedTask;
                 }
             };
         });

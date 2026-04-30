@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Minus } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/env.client';
+import { GITHUB_URL, LINKEDIN_URL, SITE_NAME, AUTHOR_NAME, SITE_URL } from '@/lib/site-config';
 
 /* ─── Output line types ─────────────────────────────────────── */
 type LineKind = 'cmd' | 'out' | 'err' | 'blank';
@@ -38,7 +39,7 @@ const HELP_LINES: OutLine[] = [
 ];
 
 const WHOAMI_LINES: OutLine[] = [
-  line('out', 'Berkay Kaplan', 'text-white'),
+  line('out', AUTHOR_NAME, 'text-white'),
   line('out', 'Backend Developer & AI Enthusiast'),
   line('blank', ''),
   line('out', '  role      →  Software Developer'),
@@ -83,15 +84,14 @@ const SKILLS_LINES: OutLine[] = [
 const CONTACT_LINES: OutLine[] = [
   line('out', 'Sosyal Linkler', 'text-ide-primary'),
   line('blank', ''),
-  line('out', '  GitHub    →  github.com/MrBekoX', 'text-blue-400', 'https://github.com/MrBekoX'),
-  line('out', '  X         →  x.com/mrbeko_', 'text-blue-400', 'https://x.com/mrbeko_'),
-  line('out', '  LinkedIn  →  linkedin.com/in/berkay-kaplan-133b35245', 'text-blue-400', 'https://www.linkedin.com/in/berkay-kaplan-133b35245/'),
+  line('out', `  GitHub    →  ${GITHUB_URL.replace('https://', '')}`, 'text-blue-400', GITHUB_URL),
+  line('out', `  LinkedIn  →  ${LINKEDIN_URL.replace('https://www.', '')}`, 'text-blue-400', LINKEDIN_URL),
   line('blank', ''),
 ];
 
 /* ─── Welcome banner ─────────────────────────────────────────── */
 const WELCOME: OutLine[] = [
-  line('out', 'MrBekoX IDE v2.0.4 — terminal.sh', 'text-green-500'),
+  line('out', `${SITE_NAME} IDE v2.0.4 — terminal.sh`, 'text-green-500'),
   line('out', "Type 'help' for available commands.", 'text-gray-600'),
   line('blank', ''),
 ];
@@ -181,7 +181,7 @@ export function IdeTerminal({ onClose }: IdeTerminalProps) {
         line('blank', ''),
         line('out', `  total_posts   →  ${total}`),
         line('out', `  status        →  ● ONLINE`, 'text-green-500'),
-        line('out', `  domain        →  mrbekox.dev`),
+        line('out', `  domain        →  ${SITE_URL.replace(/^https?:\/\//, '')}`),
         line('blank', ''),
       ]);
     } catch {

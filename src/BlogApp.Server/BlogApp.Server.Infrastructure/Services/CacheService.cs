@@ -3,6 +3,7 @@ using BlogApp.BuildingBlocks.Caching.Extensions;
 using BlogApp.BuildingBlocks.Caching.Metrics;
 using BlogApp.BuildingBlocks.Caching.Options;
 using BlogApp.BuildingBlocks.Caching.Services;
+using BlogApp.Server.Application.Common;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using MediatR;
 using Microsoft.Extensions.Caching.Distributed;
@@ -101,6 +102,21 @@ public class CacheService : HybridCacheServiceBase, ICacheService
 
     #endregion
 
+    /// <summary>
+    /// No-op: CacheService handles SWR background refresh via its own MediatR-scoped
+    /// mechanism in GetOrSetWithSwrAsync. The base class's captured-factory approach
+    /// would use a potentially disposed request scope.
+    /// </summary>
+    protected override Task OnSwrBackgroundRefreshNeededAsync<T>(
+        string key,
+        Func<Task<T>> factory,
+        TimeSpan softExpiration,
+        TimeSpan hardExpiration,
+        string keyPrefix)
+    {
+        return Task.CompletedTask;
+    }
+
     #region MediatR-Scoped SWR Implementation
 
     /// <summary>
@@ -148,21 +164,30 @@ public class CacheService : HybridCacheServiceBase, ICacheService
                                 return;
                             }
 
-                            using var backgroundScope = _serviceScopeFactory.CreateScope();
-                            var mediator = backgroundScope.ServiceProvider.GetRequiredService<IMediator>();
+                            // Signal CachingBehavior to skip cache so the handler produces fresh data
+                            SwrRefreshContext.IsBackgroundRefresh = true;
+                            try
+                            {
+                                using var backgroundScope = _serviceScopeFactory.CreateScope();
+                                var mediator = backgroundScope.ServiceProvider.GetRequiredService<IMediator>();
 
-                            var freshValue = await mediator.Send(request, CancellationToken.None);
-                            await SetWithSoftExpirationAsync(key, freshValue, softExpiration, actualHardExpiration, CancellationToken.None);
-                            Logger.LogDebug("SWR: Background refresh completed for {Key}", key);
+                                var freshValue = await mediator.Send(request, CancellationToken.None);
+                                await SetWithSoftExpirationAsync(key, freshValue, softExpiration, actualHardExpiration, CancellationToken.None);
+                                Logger.LogDebug("SWR: Background refresh completed for {Key}", key);
+                            }
+                            finally
+                            {
+                                SwrRefreshContext.IsBackgroundRefresh = false;
+                            }
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogWarning(ex, "SWR: Background refresh failed for {Key}", key);
+                            Logger.LogWarning(ex, "SWR: Background refresh failed for {Key} (request: {RequestType})", key, typeof(TRequest).Name);
                             Metrics.RecordSwrBackgroundRefreshError(keyPrefix);
                         }
                         finally
                         {
-                            _ongoingRefreshes.TryRemove(refreshKey, out Lazy<Task> _);
+                            _ongoingRefreshes.TryRemove(refreshKey, out Lazy<Task>? _);
                         }
                     }, CancellationToken.None)));
 

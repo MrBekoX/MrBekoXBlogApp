@@ -1,23 +1,30 @@
 import { Person, WithContext } from 'schema-dts';
 import { JsonLd } from './json-ld';
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
+import {
+  SITE_URL,
+  SITE_NAME,
+  AUTHOR_NAME,
+  AUTHOR_JOB_TITLE,
+  AUTHOR_DESCRIPTION,
+  SOCIAL_URLS,
+} from '@/lib/site-config';
 
 export function PersonSchema() {
   const personSchema: WithContext<Person> = {
     '@context': 'https://schema.org',
     '@type': 'Person',
-    name: 'Berkay Kaplan',
-    alternateName: 'MrBekoX',
+    '@id': `${SITE_URL}/#author`,
+    name: AUTHOR_NAME,
+    alternateName: SITE_NAME,
     url: SITE_URL,
     image: `${SITE_URL}/images/avatar.jpg`,
-    jobTitle: 'Software Developer',
-    description: 'Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine uzmanlaşmış yazılım geliştirici.',
-    sameAs: [
-      'https://github.com/MrBekoX',
-      'https://x.com/mrbeko_',
-      'https://www.linkedin.com/in/berkay-kaplan-133b35245/',
-    ],
+    jobTitle: AUTHOR_JOB_TITLE,
+    description: AUTHOR_DESCRIPTION,
+    sameAs: SOCIAL_URLS,
+    worksFor: {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+    },
     knowsAbout: [
       'Backend Development',
       'Software Architecture',
@@ -29,7 +36,7 @@ export function PersonSchema() {
       'Clean Architecture',
       'CQRS',
     ],
-  };
+  } as WithContext<Person>;
 
   return <JsonLd data={personSchema} />;
 }

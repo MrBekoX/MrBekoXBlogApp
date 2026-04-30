@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Validators;
 using BlogApp.Server.Application.Features.CategoryFeature.Commands.UpdateCategoryCommand;
 using BlogApp.Server.Application.Features.CategoryFeature.Constants;
 using FluentValidation;
@@ -35,6 +36,11 @@ public class UpdateCategoryCommandRequestValidator : AbstractValidator<UpdateCat
                 .WithMessage(CategoryValidationMessages.DescriptionTooLong)
                 .WithErrorCode(CategoryValidationMessages.DescriptionTooLongCode)
                 .When(x => x.UpdateCategoryCommandRequestDto!.Description != null);
+
+            RuleFor(x => x.UpdateCategoryCommandRequestDto!.ImageUrl)
+                .Must(url => string.IsNullOrEmpty(url) || UrlValidationHelper.BeAValidAndSafeUrl(url))
+                .WithMessage("Gecersiz veya guvensiz URL.")
+                .When(x => !string.IsNullOrEmpty(x.UpdateCategoryCommandRequestDto!.ImageUrl));
         });
     }
 }

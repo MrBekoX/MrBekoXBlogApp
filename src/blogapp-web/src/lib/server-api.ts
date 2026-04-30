@@ -27,30 +27,22 @@ function buildQueryString(params?: Record<string, unknown>): string {
   return queryString ? `?${queryString}` : '';
 }
 
-async function serverFetch<T>(
-  endpoint: string,
-  options?: {
-    revalidate?: number | false;
-    tags?: string[];
-  }
-): Promise<T | null> {
+async function serverFetch<T>(endpoint: string): Promise<T | null> {
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, options?.revalidate === false
-      ? { cache: 'no-store' }
-      : {
-          next: {
-            revalidate: options?.revalidate ?? 60,
-            tags: options?.tags,
-          },
-        });
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    });
 
     if (!response.ok) {
+      console.error(`[SSR] ${endpoint} failed: ${response.status}`);
       return null;
     }
 
     const data: ApiResponse<T> = await response.json();
     return data.data ?? null;
-  } catch {
+  } catch (error) {
+    console.error(`[SSR] ${endpoint} error:`, error instanceof Error ? error.message : 'Unknown');
     return null;
   }
 }
@@ -75,24 +67,15 @@ export async function fetchPosts(
 
   const queryString = buildQueryString(apiParams);
 
-  return serverFetch<PaginatedResult<BlogPost>>(`/posts${queryString}`, {
-    revalidate: 60,
-    tags: ['posts'],
-  });
+  return serverFetch<PaginatedResult<BlogPost>>(`/posts${queryString}`);
 }
 
 export async function fetchPostBySlug(slug: string): Promise<BlogPost | null> {
-  return serverFetch<BlogPost>(`/posts/slug/${encodeURIComponent(slug)}`, {
-    revalidate: 300,
-    tags: ['posts', `post-${slug}`],
-  });
+  return serverFetch<BlogPost>(`/posts/slug/${encodeURIComponent(slug)}`);
 }
 
 export async function fetchPostById(id: string): Promise<BlogPost | null> {
-  return serverFetch<BlogPost>(`/posts/${encodeURIComponent(id)}`, {
-    revalidate: 300,
-    tags: ['posts', `post-${id}`],
-  });
+  return serverFetch<BlogPost>(`/posts/${encodeURIComponent(id)}`);
 }
 
 export async function fetchCategories(
@@ -100,31 +83,19 @@ export async function fetchCategories(
 ): Promise<Category[] | null> {
   const queryString = buildQueryString({ excludeEmptyCategories });
 
-  return serverFetch<Category[]>(`/categories${queryString}`, {
-    revalidate: 300,
-    tags: ['categories'],
-  });
+  return serverFetch<Category[]>(`/categories${queryString}`);
 }
 
 export async function fetchCategoryById(id: string): Promise<Category | null> {
-  return serverFetch<Category>(`/categories/${encodeURIComponent(id)}`, {
-    revalidate: 300,
-    tags: ['categories', `category-${id}`],
-  });
+  return serverFetch<Category>(`/categories/${encodeURIComponent(id)}`);
 }
 
 export async function fetchTags(includeEmpty?: boolean): Promise<Tag[] | null> {
   const queryString = buildQueryString({ includeEmpty });
 
-  return serverFetch<Tag[]>(`/tags${queryString}`, {
-    revalidate: 300,
-    tags: ['tags'],
-  });
+  return serverFetch<Tag[]>(`/tags${queryString}`);
 }
 
 export async function fetchTagById(id: string): Promise<Tag | null> {
-  return serverFetch<Tag>(`/tags/${encodeURIComponent(id)}`, {
-    revalidate: 300,
-    tags: ['tags', `tag-${id}`],
-  });
+  return serverFetch<Tag>(`/tags/${encodeURIComponent(id)}`);
 }

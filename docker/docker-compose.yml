@@ -1,19 +1,19 @@
-# IMPORTANT: Copy .env.example to .env and set your passwords before running!
-# Never commit .env file to git.
-# Usage: cd docker && docker-compose up -d
-
 name: MrBekoXBlogApp
 
 services:
+
+  # ==========================================
+  # PostgreSQL 18 — Primary Database
+  # ==========================================
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18.0-alpine
     container_name: blogapp-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-blogdb_dev}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,38 +22,31 @@ services:
       timeout: 5s
       retries: 20
       start_period: 60s
+    networks:
+      - backend-net
 
+  # ==========================================
+  # Redis 8 — L1/L2 Hybrid Cache
+  # ==========================================
   redis:
-    image: redis:8-alpine
+    image: redis:8.0-alpine
     container_name: blogapp-redis
-    command: redis-server ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$REDIS_PASSWORD redis-cli ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - backend-net
 
-  rabbitmq:
-    image: rabbitmq:4-management-alpine
-    container_name: blogapp-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?RABBITMQ_PASS is required}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: rabbitmq-diagnostics check_port_connectivity
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+  # ==========================================
+  # .NET 10 Backend — REST API + SignalR Hubs
+  # ==========================================
   backend:
     build:
       context: ..
@@ -62,36 +55,34 @@ services:
     pull_policy: never
     container_name: blogapp-backend
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      # ASP.NET Core
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Development}
+      # Database
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB:-blogdb_dev};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
-      - ConnectionStrings__Redis=redis:6379
-      - RabbitMQ__HostName=rabbitmq
-      - RabbitMQ__Port=5672
-      - RabbitMQ__UserName=${RABBITMQ_USER:?RABBITMQ_USER is required}
-      - RabbitMQ__Password=${RABBITMQ_PASS:?RABBITMQ_PASS is required}
-      - RabbitMQ__Enabled=true
-      - InternalServiceAuth__ServiceKey=${INTERNAL_SERVICE_AUTH_KEY:?INTERNAL_SERVICE_AUTH_KEY is required}
+      - ConnectionStrings__Redis=redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      # JWT
       - JwtSettings__Secret=${JwtSettings__Secret:?JwtSettings__Secret is required}
       - JwtSettings__Issuer=BlogApp
       - JwtSettings__Audience=BlogApp
-      - CorsOrigins__0=http://localhost:3000
-      - CorsOrigins__1=http://localhost:8080
-      - CorsOrigins__2=http://localhost:5173
-      - CorsOrigins__3=http://127.0.0.1:3000
-      - CorsOrigins__4=http://127.0.0.1:8080
-      - Turnstile__SiteKey=${TURNSTILE_SITE_KEY:-}
-      - Turnstile__SecretKey=${TURNSTILE_SECRET_KEY:-}
-
+      - JwtSettings__ExpirationMinutes=20
+      # Admin Seed
+      - AdminUser__Email=${ADMIN_EMAIL:-admin@example.com}
+      - AdminUser__UserName=${ADMIN_USERNAME:-admin}
+      - AdminUser__Password=${ADMIN_PASSWORD:-CHANGE_ME_strong_password}
+      # Hosting
+      - AllowedHosts=${ALLOWED_HOSTS:?ALLOWED_HOSTS is required}
+      - CorsOrigins__0=${CORS_ORIGIN_0:-http://localhost:3000}
+      # EF Core Migrations
+      - Database__RunMigrationsOnStartup=true
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     volumes:
-      - ../src/BlogApp.Server/BlogApp.Server.Api/uploads:/app/uploads
+      - backend_uploads:/app/uploads
+      - backend_keys:/app/keys
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -100,14 +91,20 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - frontend-net
+      - backend-net
 
+  # ==========================================
+  # Next.js 16 Frontend — SSR Standalone
+  # ==========================================
   frontend:
     build:
       context: ../src/blogapp-web
       dockerfile: ../../docker/frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: /api/v1
-        NEXT_PUBLIC_SIGNALR_URL: http://localhost:8080
+        NEXT_PUBLIC_SIGNALR_URL: ${PUBLIC_SIGNALR_URL:-http://localhost:8080}
         NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
         API_URL: http://backend:8080/api/v1
         REWRITE_URL: http://backend:8080
@@ -117,12 +114,12 @@ services:
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=/api/v1
-      - NEXT_PUBLIC_SIGNALR_URL=http://localhost:8080
+      - NEXT_PUBLIC_SIGNALR_URL=${PUBLIC_SIGNALR_URL:-http://localhost:8080}
       - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${TURNSTILE_SITE_KEY:-}
       - API_URL=http://backend:8080/api/v1
       - REWRITE_URL=http://backend:8080
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       backend:
         condition: service_healthy
@@ -133,59 +130,23 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - frontend-net
 
-  ai-agent-service:
-    build:
-      context: ../src/services/ai-agent-service
-      dockerfile: ../../../docker/ai-agent-service/Dockerfile
-    image: blogapp-ai-agent:latest
-    pull_policy: never
-    container_name: blogapp-ai-agent
-    ports:
-      - "8000:8000"
-    environment:
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-phi4-mini}
-      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
-      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120}
-      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-4096}
-      - OLLAMA_TEMPERATURE=${OLLAMA_TEMPERATURE:-0.7}
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=${RABBITMQ_USER:?RABBITMQ_USER is required}
-      - RABBITMQ_PASS=${RABBITMQ_PASS:?RABBITMQ_PASS is required}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - BACKEND_API_URL=http://backend:8080/api/v1
-      - DEBUG=false
-      - CHROMA_PERSIST_DIR=/app/chroma_data
-      - INTERNAL_SERVICE_AUTH_HEADER_NAME=X-Service-Key
-      - INTERNAL_SERVICE_AUTH_KEY=${INTERNAL_SERVICE_AUTH_KEY:?INTERNAL_SERVICE_AUTH_KEY is required}
-      # Idle shutdown configuration (cost optimization)
-      - IDLE_SHUTDOWN_ENABLED=${IDLE_SHUTDOWN_ENABLED:-true}
-      - IDLE_TIMEOUT_SECONDS=${IDLE_TIMEOUT_SECONDS:-1800}  # 30 minutes
-    volumes:
-      - chroma_data:/app/chroma_data:rw
-      - ./logs:/app/logs:rw
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+# ==========================================
+# Networks
+# ==========================================
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
 
-
+# ==========================================
+# Volumes
+# ==========================================
 volumes:
   postgres_data:
   redis_data:
-  rabbitmq_data:
-  chroma_data:
-
-
-
-
+  backend_uploads:
+  backend_keys:

@@ -59,19 +59,11 @@ public class IdempotencyCleanupService : BackgroundService
             .Where(r => r.CompletedAt != null && r.CompletedAt < cutoff)
             .ExecuteDeleteAsync(cancellationToken);
 
-        var deletedConsumerInboxMessages = await context.ConsumerInboxMessages
-            .IgnoreQueryFilters()
-            .Where(r => !r.IsDeleted)
-            .Where(r => r.Status != ConsumerInboxStatus.Processing)
-            .Where(r => r.ProcessedAt != null && r.ProcessedAt < cutoff)
-            .ExecuteDeleteAsync(cancellationToken);
-
-        if (deletedIdempotencyRecords > 0 || deletedConsumerInboxMessages > 0)
+        if (deletedIdempotencyRecords > 0)
         {
             _logger.LogInformation(
-                "Cleaned up {IdempotencyCount} idempotency records and {ConsumerInboxCount} consumer inbox rows older than {Cutoff}",
+                "Cleaned up {IdempotencyCount} idempotency records older than {Cutoff}",
                 deletedIdempotencyRecords,
-                deletedConsumerInboxMessages,
                 cutoff);
         }
         else

@@ -19,9 +19,7 @@ public class GetPostsListQueryHandler(
 
         // Base query - Include'lar ProjectTo ile otomatik yönetilir
         var query = unitOfWork.PostsRead.Query()
-            .AsNoTracking()
-            .IgnoreQueryFilters()
-            .Where(p => !p.IsDeleted);
+            .AsNoTracking();
 
         // Status filtresi
         if (request.Status.HasValue)

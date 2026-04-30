@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { getImageUrl } from '@/lib/utils';
 import type { BlogPost } from '@/types';
-import { Calendar, Eye, Clock, FileText, Tag } from 'lucide-react';
+import { Calendar, Eye, FileText, Tag } from 'lucide-react';
 
 interface PostCardProps {
   post: BlogPost;
@@ -47,12 +47,6 @@ export function PostCard({ post }: PostCardProps) {
           {post.author && (
             <span className="text-[10px] text-gray-600">
               @{post.author.userName}-MrBekoX
-            </span>
-          )}
-          {post.aiEstimatedReadingTime && (
-            <span className="text-[10px] text-gray-600 flex items-center gap-1">
-              <Clock className="w-2.5 h-2.5" />
-              {post.aiEstimatedReadingTime}dk
             </span>
           )}
           <span className="text-[10px] text-gray-600 flex items-center gap-1">

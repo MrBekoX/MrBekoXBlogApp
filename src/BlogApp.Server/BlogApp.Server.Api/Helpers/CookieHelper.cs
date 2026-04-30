@@ -12,7 +12,7 @@ public static class CookieHelper
         var accessCookieOptions = new CookieOptions
         {
             HttpOnly = true,
-            Secure = isProduction,
+            Secure = true,
             SameSite = SameSiteMode.Lax,
             Path = "/",
             Expires = accessTokenExpiry,
@@ -22,7 +22,7 @@ public static class CookieHelper
         var refreshCookieOptions = new CookieOptions
         {
             HttpOnly = true,
-            Secure = isProduction,
+            Secure = true,
             SameSite = SameSiteMode.Lax,
             Path = "/",
             Expires = DateTime.UtcNow.AddDays(7),
@@ -39,7 +39,7 @@ public static class CookieHelper
         response.Cookies.Delete("accessToken", new CookieOptions
         {
             HttpOnly = true,
-            Secure = isProduction,
+            Secure = true,
             SameSite = SameSiteMode.Lax,
             Path = "/"
         });
@@ -47,7 +47,7 @@ public static class CookieHelper
         response.Cookies.Delete("refreshToken", new CookieOptions
         {
             HttpOnly = true,
-            Secure = isProduction,
+            Secure = true,
             SameSite = SameSiteMode.Lax,
             Path = "/"
         });
@@ -55,9 +55,7 @@ public static class CookieHelper
 
     public static string? GetIpAddress(HttpContext context)
     {
-        if (context.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor))
-            return forwardedFor.FirstOrDefault();
-
+        // Use RemoteIpAddress which is already set correctly by ForwardedHeaders middleware
         return context.Connection.RemoteIpAddress?.MapToIPv4().ToString();
     }
 }

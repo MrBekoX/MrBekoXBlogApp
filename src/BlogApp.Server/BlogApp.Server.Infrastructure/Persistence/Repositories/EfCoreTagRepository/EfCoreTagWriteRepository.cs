@@ -22,14 +22,18 @@ public class EfCoreTagWriteRepository : EfCoreWriteRepository<Tag>, ITagWriteRep
         // application-level locking or retry loops.
         await _context.Database.ExecuteSqlAsync(
             $"""
-            INSERT INTO "Tags" ("Id", "Name", "Slug", "CreatedAt")
-            VALUES ({id}, {name}, {slug}, {now})
-            ON CONFLICT ("Name") DO NOTHING
+            INSERT INTO "tags" ("Id", "Name", "Slug", "CreatedAt", "IsDeleted")
+            VALUES ({id}, {name}, {slug}, {now}, false)
+            ON CONFLICT ("Name") WHERE "IsDeleted" = false DO NOTHING
             """,
             cancellationToken);
 
+        // Must return a TRACKED entity: callers add this Tag to BlogPost.Tags before
+        // SaveChanges. If we returned a detached entity, EF Core's graph traversal in
+        // AddAsync(post) would mark the tag as Added and try to INSERT it again,
+        // causing "duplicate key value violates unique constraint PK_tags" because
+        // the raw SQL above is invisible to the ChangeTracker.
         return await _dbSet
-            .AsNoTracking()
             .FirstAsync(t => t.Name == name, cancellationToken);
     }
 }

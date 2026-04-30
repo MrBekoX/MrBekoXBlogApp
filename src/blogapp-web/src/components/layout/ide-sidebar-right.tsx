@@ -1,15 +1,7 @@
 import Link from 'next/link';
 import { fetchTags } from '@/lib/server-api';
 import { Github, Linkedin } from 'lucide-react';
-
-// X (Twitter) Logo SVG
-function XIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  );
-}
+import { GITHUB_URL, LINKEDIN_URL } from '@/lib/site-config';
 
 const TAG_COLORS = [
   'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -63,7 +55,7 @@ export async function IdeSidebarRight() {
           </div>
           <div className="grid grid-cols-1 gap-2">
             <a
-              href="https://example.invalid/author"
+              href={GITHUB_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-3 p-2 rounded bg-white/5 hover:bg-white/10 text-xs transition-colors border border-ide-border/50 text-gray-400 hover:text-white font-mono"
@@ -72,16 +64,7 @@ export async function IdeSidebarRight() {
               Github Repos
             </a>
             <a
-              href="https://example.invalid/social"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 p-2 rounded bg-white/5 hover:bg-white/10 text-xs transition-colors border border-ide-border/50 text-gray-400 hover:text-white font-mono"
-            >
-              <XIcon className="w-4 h-4 text-gray-500 shrink-0" />
-              X Profile
-            </a>
-            <a
-              href="https://example.invalid/author"
+              href={LINKEDIN_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-3 p-2 rounded bg-white/5 hover:bg-white/10 text-xs transition-colors border border-ide-border/50 text-gray-400 hover:text-white font-mono"

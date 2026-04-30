@@ -2,9 +2,10 @@ using BlogApp.Server.Api.Extensions;
 using BlogApp.Server.Api.Hubs;
 using BlogApp.Server.Api.Middlewares;
 using BlogApp.Server.Application;
-using BlogApp.Server.Application.Common.Security;
+using BlogApp.Server.Application.Common.Options;
 using BlogApp.Server.Infrastructure;
 using BlogApp.Server.Infrastructure.Persistence;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -12,30 +13,49 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Bind ServerLimits configuration
+var serverLimits = builder.Configuration
+    .GetSection(ServerLimitsSettings.SectionName)
+    .Get<ServerLimitsSettings>() ?? new ServerLimitsSettings();
+builder.Services.Configure<ServerLimitsSettings>(
+    builder.Configuration.GetSection(ServerLimitsSettings.SectionName));
+
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = 50_000_000;
+    options.Limits.MaxRequestBodySize = serverLimits.MaxRequestBodySizeBytes;
 });
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 50_000_000;
-    options.ValueLengthLimit = int.MaxValue;
-    options.MultipartHeadersLengthLimit = int.MaxValue;
+    options.MultipartBodyLengthLimit = serverLimits.MultipartBodyLengthLimit;
+    options.ValueLengthLimit = serverLimits.FormValueLengthLimit;
+    options.MultipartHeadersLengthLimit = serverLimits.MultipartHeadersLengthLimit;
 });
 
 builder.AddSerilogLogging();
 builder.Services.AddSwaggerServices();
-builder.Services.AddOutputCachePolicies();
+builder.Services.AddOutputCachePolicies(builder.Configuration);
 builder.Services.AddResponseCompressionServices();
-builder.Services.AddSecurityServices(builder.Configuration);
+builder.Services.AddSecurityServices(builder.Configuration, builder.Environment);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddCorsPolicy(builder.Configuration, builder.Environment);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
-builder.Services.AddMessagingAndSignalR(builder.Configuration);
+builder.Services.AddSignalR(options =>
+{
+    options.KeepAliveInterval = TimeSpan.FromSeconds(serverLimits.SignalRKeepAliveIntervalSeconds);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(serverLimits.SignalRClientTimeoutSeconds);
+    options.HandshakeTimeout = TimeSpan.FromSeconds(serverLimits.SignalRHandshakeTimeoutSeconds);
+});
 builder.Services.AddObservabilityServices(builder.Configuration);
+
+// DataProtection — persist keys so cookies survive container restarts
+var keysPath = Path.Combine(builder.Environment.ContentRootPath, "keys");
+if (!Directory.Exists(keysPath)) Directory.CreateDirectory(keysPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
+    .SetApplicationName("BlogApp");
 
 var app = builder.Build();
 
@@ -44,8 +64,11 @@ app.UseSwaggerInDevelopment();
 var forwardedHeaderOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-    ForwardLimit = 1
+    ForwardLimit = serverLimits.ForwardedHeadersForwardLimit
 };
+// Trust Docker network proxies — ForwardLimit=2 covers ALB + nginx
+forwardedHeaderOptions.KnownIPNetworks.Clear();
+forwardedHeaderOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeaderOptions);
 
 app.UseSecurityHeaders();
@@ -56,10 +79,11 @@ app.UseMiddleware<SignalRConnectionLimitMiddleware>();
 
 if (!app.Environment.IsDevelopment())
 {
+    // HSTS header — nginx de set eder ama defense-in-depth
     app.UseHsts();
 }
-
-app.UseHttpsRedirection();
+// UseHttpsRedirection kaldirildi — ALB/nginx SSL termination yapiyor,
+// backend'de HTTPS port yok. Redirect infrastructure katmaninda hallediliyor.
 
 var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");
 if (!Directory.Exists(uploadsPath)) Directory.CreateDirectory(uploadsPath);
@@ -78,16 +102,11 @@ app.UseOutputCache();
 app.UseAntiforgery();
 
 app.RegisterAllEndpoints();
-app.MapHealthChecks("/health");
+
+var internalHosts = builder.Configuration.GetSection("InternalHosts").Get<string[]>() ?? ["localhost", "127.0.0.1"];
+app.MapHealthChecks("/health").RequireHost(internalHosts);
 app.MapHub<PublicCacheHub>("/hubs/public-cache").AllowAnonymous();
-app.MapHub<AuthoringEventsHub>("/hubs/authoring-events").RequireAuthorization();
-app.MapHub<ChatEventsHub>("/hubs/chat-events").RequireAuthorization(policy =>
-{
-    policy.AddAuthenticationSchemes(ChatSessionTokenDefaults.SchemeName);
-    policy.RequireAuthenticatedUser();
-    policy.RequireClaim(ChatSessionTokenDefaults.TokenUseClaim, ChatSessionTokenDefaults.TokenUseValue);
-});
-app.MapPrometheusScrapingEndpoint("/metrics");
+app.MapPrometheusScrapingEndpoint("/metrics").RequireHost(internalHosts);
 
 // Run migrations and seeding based on configuration
 // Production: automatic (no EF Core CLI needed in container)

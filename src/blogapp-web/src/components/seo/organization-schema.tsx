@@ -1,23 +1,26 @@
 import { Organization, WithContext } from 'schema-dts';
 import { JsonLd } from './json-ld';
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
+import {
+  SITE_URL,
+  SITE_NAME,
+  SITE_DESCRIPTION,
+  SOCIAL_URLS,
+} from '@/lib/site-config';
 
 export function OrganizationSchema() {
   const organizationSchema: WithContext<Organization> = {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: 'MrBekoX',
+    '@id': `${SITE_URL}/#organization`,
+    name: SITE_NAME,
     url: SITE_URL,
-    logo: `${SITE_URL}/images/avatar.jpg`,
-    sameAs: [
-      'https://example.invalid/author',
-      'https://example.invalid/social',
-      'https://example.invalid/author',
-    ],
-    description:
-      'Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine teknik içerikler paylaşan blog platformu.',
-  };
+    logo: {
+      '@type': 'ImageObject',
+      url: `${SITE_URL}/images/avatar.jpg`,
+    },
+    sameAs: SOCIAL_URLS,
+    description: SITE_DESCRIPTION,
+  } as WithContext<Organization>;
 
   return <JsonLd data={organizationSchema} />;
 }

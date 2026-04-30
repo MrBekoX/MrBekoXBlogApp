@@ -13,7 +13,7 @@ export default async function ViewRedirectPage({ searchParams }: ViewPageProps) 
   const slug = params.slug;
 
   if (slug) {
-    redirect(`/posts/${slug}`);
+    redirect(`/posts/${encodeURIComponent(slug)}`);
   }
 
   redirect('/posts');

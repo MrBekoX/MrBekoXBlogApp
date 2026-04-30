@@ -9,8 +9,6 @@ export interface User {
 }
 
 export interface AuthResponse {
-  accessToken: string;
-  refreshToken: string;
   expiresAt: string;
   user: User;
 }
@@ -46,30 +44,6 @@ export interface BlogPost {
   category?: Category;
   categories?: Category[];
   tags: Tag[];
-  // AI-generated fields
-  aiSummary?: string;
-  aiKeywords?: string;
-  aiEstimatedReadingTime?: number;
-  aiSeoDescription?: string;
-  aiProcessedAt?: string;
-  aiGeoOptimization?: string;
-}
-
-// AI Summary Response
-export interface AISummaryResponse {
-  summary?: string;
-  wordCount?: number;
-  operationId?: string;
-  correlationId?: string;
-  status?: string;
-}
-
-export interface AIAnalysisRequestResponse {
-  postId?: string;
-  operationId: string;
-  correlationId?: string;
-  message?: string;
-  status?: string;
 }
 
 export interface Author {
@@ -93,12 +67,6 @@ export interface CreatePostRequest {
 
 export interface UpdatePostRequest extends CreatePostRequest {
   id: string;
-  // AI-generated fields
-  aiSummary?: string;
-  aiKeywords?: string;
-  aiEstimatedReadingTime?: number;
-  aiSeoDescription?: string;
-  aiGeoOptimization?: string;
 }
 
 // Category types
@@ -174,19 +142,6 @@ export interface ApiResponse<T> {
   errors?: string[];
 }
 
-// AI types
-export interface AISuggestion {
-  title?: string;
-  excerpt?: string;
-  tags?: string[];
-  seoDescription?: string;
-}
-
-export interface AIGenerateRequest {
-  content: string;
-  type: 'title' | 'excerpt' | 'tags' | 'seo';
-}
-
 // Media types
 export interface ImageUploadResult {
   url: string;
@@ -197,78 +152,3 @@ export interface ImageUploadResult {
   contentType: string;
 }
 
-// Chat types
-export type AgentType = 'normal' | 'summary' | 'web-search';
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  operationId?: string;
-  agentType?: AgentType;
-  isWebSearchResult?: boolean;
-  sources?: WebSearchSource[];
-  timestamp: Date;
-}
-
-export interface WebSearchSource {
-  title: string;
-  url: string;
-  snippet: string;
-}
-
-export interface ChatRequest {
-  postId: string;
-  message: string;
-  operationId?: string;
-  sessionId?: string;
-  conversationHistory?: ChatHistoryItem[];
-  language?: string;
-  enableWebSearch?: boolean;
-  clientFingerprint?: string;
-  turnstileToken?: string;
-}
-
-export interface ChatHistoryItem {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-export interface ChatResponse {
-  correlationId?: string;
-  operationId?: string;
-  sessionId?: string;
-  sessionToken?: string;
-  sessionTokenExpiresAt?: string;
-  message?: string;
-  status?: string;
-}
-
-export interface ChatMessageReceivedEvent {
-  sessionId: string;
-  correlationId: string;
-  operationId?: string;
-  response: string;
-  isWebSearchResult: boolean;
-  sources?: WebSearchSource[];
-  timestamp: string;
-}
-
-
-
-
-export interface AiOperationAcceptedResponse {
-  operationId: string;
-  correlationId?: string;
-  status?: string;
-  message?: string;
-}
-
-export interface AiOperationCompletedEvent {
-  operationId: string;
-  correlationId: string;
-  operationType: string;
-  resourceId?: string;
-  result: unknown;
-  timestamp: string;
-}

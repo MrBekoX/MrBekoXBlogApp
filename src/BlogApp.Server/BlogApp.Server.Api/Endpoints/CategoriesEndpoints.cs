@@ -1,5 +1,3 @@
-using BlogApp.Server.Application.Common.Interfaces.Services;
-using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.CategoryFeature.Commands.CreateCategoryCommand;
 using BlogApp.Server.Application.Features.CategoryFeature.Commands.DeleteCategoryCommand;
@@ -7,6 +5,7 @@ using BlogApp.Server.Application.Features.CategoryFeature.Commands.UpdateCategor
 using BlogApp.Server.Application.Features.CategoryFeature.DTOs;
 using BlogApp.Server.Application.Features.CategoryFeature.Queries.GetAllCategoryQuery;
 using BlogApp.Server.Application.Features.CategoryFeature.Queries.GetByIdCategoryQuery;
+using BlogApp.Server.Api.Filters;
 using MediatR;
 
 namespace BlogApp.Server.Api.Endpoints;
@@ -70,41 +69,26 @@ public static class CategoriesEndpoints
             CreateCategoryCommandDto dto,
             IMediator mediator,
             HttpContext httpContext,
-            IUnitOfWork unitOfWork,
-            IIdempotencyService idempotencyService,
-            ICurrentUserService currentUserService,
             CancellationToken cancellationToken) =>
         {
-            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
-                httpContext, "CreateCategory", dto, unitOfWork, idempotencyService, currentUserService, cancellationToken,
-                requireIdempotencyKey: true);
-            if (!proceed) return earlyReturn!;
-            await using var scope = idempotencyScope;
-
             var response = await mediator.Send(new CreateCategoryCommandRequest
             {
-                CreateCategoryCommandRequestDto = dto
+                CreateCategoryCommandRequestDto = dto,
+                OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
             if (!response.Result.IsSuccess)
-            {
-                await scope.FailAndCommitAsync(
-                    "validation_error", response.Result.Error!, idempotencyService, cancellationToken);
                 return Results.BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
-            }
 
-            var result = ApiResponse<Guid>.SuccessResult(response.Result.Value!, "Category created successfully");
-            await scope.CompleteAndCommitAsync(
-                StatusCodes.Status201Created, result, idempotencyService, cancellationToken);
-
-            return Results.Created($"/api/categories/{response.Result.Value}", result);
+            return Results.Created($"/api/categories/{response.Result.Value}",
+                ApiResponse<Guid>.SuccessResult(response.Result.Value!, "Category created successfully"));
         })
         .WithName("CreateCategory")
         .WithDescription("Create a new category")
         .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .ValidateAntiforgery()
         .Produces<ApiResponse<Guid>>(201)
-        .Produces(400)
-        .Produces(StatusCodes.Status409Conflict);
+        .Produces(400);
 
         // PUT /api/categories/{id}
         group.MapPut("/{id:guid}", async (
@@ -112,83 +96,51 @@ public static class CategoriesEndpoints
             UpdateCategoryCommandDto dto,
             IMediator mediator,
             HttpContext httpContext,
-            IUnitOfWork unitOfWork,
-            IIdempotencyService idempotencyService,
-            ICurrentUserService currentUserService,
             CancellationToken cancellationToken) =>
         {
             dto.Id = id;
 
-            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
-                httpContext, "UpdateCategory", dto, unitOfWork, idempotencyService, currentUserService, cancellationToken,
-                requireIdempotencyKey: true);
-            if (!proceed) return earlyReturn!;
-            await using var scope = idempotencyScope;
-
             var response = await mediator.Send(new UpdateCategoryCommandRequest
             {
-                UpdateCategoryCommandRequestDto = dto
+                UpdateCategoryCommandRequestDto = dto,
+                OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
             if (!response.Result.IsSuccess)
-            {
-                await scope.FailAndCommitAsync(
-                    "validation_error", response.Result.Error!, idempotencyService, cancellationToken);
                 return Results.BadRequest(ApiResponse<object>.FailureResult(response.Result.Error!));
-            }
-
-            await scope.CompleteAndCommitAsync(
-                StatusCodes.Status204NoContent,
-                new { success = true }, idempotencyService, cancellationToken);
 
             return Results.NoContent();
         })
         .WithName("UpdateCategory")
         .WithDescription("Update an existing category")
         .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .ValidateAntiforgery()
         .Produces(204)
         .Produces(400)
-        .Produces(404)
-        .Produces(StatusCodes.Status409Conflict);
+        .Produces(404);
 
         // DELETE /api/categories/{id}
         group.MapDelete("/{id:guid}", async (
             Guid id,
             IMediator mediator,
             HttpContext httpContext,
-            IUnitOfWork unitOfWork,
-            IIdempotencyService idempotencyService,
-            ICurrentUserService currentUserService,
             CancellationToken cancellationToken) =>
         {
-            var requestPayload = new { Id = id };
-            var (proceed, earlyReturn, idempotencyScope) = await IdempotencyEndpointHelper.TryBeginTransactionalSyncRequest(
-                httpContext, "DeleteCategory", requestPayload, unitOfWork, idempotencyService, currentUserService, cancellationToken,
-                requireIdempotencyKey: true);
-            if (!proceed) return earlyReturn!;
-            await using var scope = idempotencyScope;
-
             var response = await mediator.Send(new DeleteCategoryCommandRequest
             {
-                Id = id
+                Id = id,
+                OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
             if (!response.Result.IsSuccess)
-            {
-                await scope.FailAndCommitAsync(
-                    "category_not_found", response.Result.Error!, idempotencyService, cancellationToken);
                 return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
-            }
-
-            var result = ApiResponse<object>.SuccessResult(new { categoryId = id }, "Category deleted successfully");
-            await scope.CompleteAndCommitAsync(
-                StatusCodes.Status204NoContent, result, idempotencyService, cancellationToken);
 
             return Results.NoContent();
         })
         .WithName("DeleteCategory")
         .WithDescription("Delete a category")
         .RequireAuthorization(policy => policy.RequireRole("Admin"))
+        .ValidateAntiforgery()
         .Produces(204)
         .Produces(404);
 

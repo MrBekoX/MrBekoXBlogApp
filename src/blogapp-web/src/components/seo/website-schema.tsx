@@ -1,16 +1,14 @@
 import { WebSite, WithContext } from 'schema-dts';
 import { JsonLd } from './json-ld';
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
+import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from '@/lib/site-config';
 
 export function WebsiteSchema() {
   const websiteSchema: WithContext<WebSite> = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'MrBekoX Blog',
+    name: `${SITE_NAME} Blog`,
     url: SITE_URL,
-    description:
-      'Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine teknik içerikler.',
+    description: SITE_DESCRIPTION,
     potentialAction: {
       '@type': 'SearchAction',
       target: {

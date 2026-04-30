@@ -1,10 +1,14 @@
+using BlogApp.Server.Application.Common.Interfaces;
 using BlogApp.Server.Application.Features.CategoryFeature.DTOs;
 using MediatR;
 
 namespace BlogApp.Server.Application.Features.CategoryFeature.Commands.UpdateCategoryCommand;
 
-public class UpdateCategoryCommandRequest : IRequest<UpdateCategoryCommandResponse>
+public class UpdateCategoryCommandRequest : IRequest<UpdateCategoryCommandResponse>, IIdempotentCommand
 {
     public UpdateCategoryCommandDto? UpdateCategoryCommandRequestDto { get; set; }
+
+    public string OperationId { get; set; } = string.Empty;
+    public string IdempotencyEndpointName => "categories.update";
 }
 

@@ -156,6 +156,9 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
+      // StrictMode double-mount'ta ref persist eder — reset et ki
+      // ikinci mount'ta false "reconnection" tetiklenmesin
+      hasBeenConnectedRef.current = false;
       void disconnect();
     };
   }, [connect, disconnect]);

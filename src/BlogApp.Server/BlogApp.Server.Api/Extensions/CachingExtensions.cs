@@ -1,36 +1,44 @@
 using System.IO.Compression;
+using BlogApp.Server.Application.Common.Options;
 using Microsoft.AspNetCore.ResponseCompression;
 
 namespace BlogApp.Server.Api.Extensions;
 
 public static class CachingExtensions
 {
-    public static IServiceCollection AddOutputCachePolicies(this IServiceCollection services)
+    public static IServiceCollection AddOutputCachePolicies(this IServiceCollection services, IConfiguration configuration)
     {
+        var limits = configuration.GetSection(ServerLimitsSettings.SectionName)
+            .Get<ServerLimitsSettings>() ?? new ServerLimitsSettings();
+
         services.AddOutputCache(options =>
         {
-            // Default policy: 60 seconds
-            options.AddBasePolicy(policy => policy.Expire(TimeSpan.FromSeconds(60)));
+            // NO base policy — only explicitly opted-in endpoints are output-cached.
+            // Posts do NOT use Output Cache — SWR (CachingBehavior) handles caching with
+            // reliable group-versioned invalidation via RotateGroupVersionAsync.
+            // Output Cache's EvictByTagAsync proved unreliable for posts publish/unpublish.
 
-            // Short cache for lists (affected by new posts)
-            options.AddPolicy("PostsList", policy =>
-                policy.Expire(TimeSpan.FromMinutes(1))
-                      .Tag("posts"));
-
-            // Medium cache for individual posts
-            options.AddPolicy("PostDetail", policy =>
-                policy.Expire(TimeSpan.FromMinutes(5))
-                      .SetVaryByRouteValue("slug", "id")
-                      .Tag("posts"));
-
-            // Longer cache for static-ish content
+            // Static-ish content — changes infrequently, no SWR layer
             options.AddPolicy("Categories", policy =>
-                policy.Expire(TimeSpan.FromMinutes(10))
+                policy.Expire(TimeSpan.FromMinutes(limits.CategoriesCacheMinutes))
                       .Tag("categories"));
 
             options.AddPolicy("Tags", policy =>
-                policy.Expire(TimeSpan.FromMinutes(10))
+                policy.Expire(TimeSpan.FromMinutes(limits.TagsCacheMinutes))
                       .Tag("tags"));
+
+            // SEO endpoint caches
+            options.AddPolicy("SitemapCache", policy =>
+                policy.Expire(TimeSpan.FromMinutes(limits.SitemapCacheMinutes)));
+
+            options.AddPolicy("RobotsCache", policy =>
+                policy.Expire(TimeSpan.FromMinutes(limits.RobotsCacheMinutes)));
+
+            options.AddPolicy("LlmsTxtCache", policy =>
+                policy.Expire(TimeSpan.FromMinutes(limits.LlmsTxtCacheMinutes)));
+
+            options.AddPolicy("RssFeedCache", policy =>
+                policy.Expire(TimeSpan.FromMinutes(limits.RssFeedCacheMinutes)));
         });
 
         return services;
@@ -40,7 +48,7 @@ public static class CachingExtensions
     {
         services.AddResponseCompression(options =>
         {
-            options.EnableForHttps = true;
+            options.EnableForHttps = false;
             options.Providers.Add<BrotliCompressionProvider>();
             options.Providers.Add<GzipCompressionProvider>();
             options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(

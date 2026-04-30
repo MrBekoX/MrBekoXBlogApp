@@ -1,5 +1,4 @@
 using BlogApp.BuildingBlocks.Caching.Options;
-using BlogApp.BuildingBlocks.Messaging.Options;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Serilog;
@@ -44,10 +43,10 @@ public static class ObservabilityExtensions
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddEntityFrameworkCoreInstrumentation()
-                    .AddSource("BlogApp.Messaging");
+                    .AddSource("BlogApp");
             });
 
-        // Health checks for PostgreSQL, Redis, and RabbitMQ
+        // Health checks for PostgreSQL and Redis
         var healthChecks = services.AddHealthChecks();
 
         var connectionString = configuration.GetConnectionString("DefaultConnection");
@@ -68,13 +67,6 @@ public static class ObservabilityExtensions
                 redisConnectionString,
                 name: "redis",
                 tags: new[] { "cache", "ready" });
-        }
-
-        var rabbitMqSettings = configuration.GetSection(RabbitMqSettings.SectionName).Get<RabbitMqSettings>();
-        if (rabbitMqSettings?.Enabled == true)
-        {
-            // Note: RabbitMQ healthcheck removed in v9 due to API breaking changes
-            // Connection validation is handled by RabbitMqConnection instead
         }
 
         return services;

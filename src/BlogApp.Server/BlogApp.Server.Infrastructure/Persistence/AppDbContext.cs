@@ -23,8 +23,6 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
-    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
-    public DbSet<ConsumerInboxMessage> ConsumerInboxMessages => Set<ConsumerInboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,8 +39,6 @@ public class AppDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<Comment>().HasQueryFilter(c => !c.IsDeleted);
         modelBuilder.Entity<RefreshToken>().HasQueryFilter(r => r.User != null && !r.User.IsDeleted);
         modelBuilder.Entity<IdempotencyRecord>().HasQueryFilter(r => !r.IsDeleted);
-        modelBuilder.Entity<OutboxMessage>().HasQueryFilter(m => !m.IsDeleted);
-        modelBuilder.Entity<ConsumerInboxMessage>().HasQueryFilter(m => !m.IsDeleted);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

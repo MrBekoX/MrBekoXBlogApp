@@ -1,10 +1,11 @@
 import { MetadataRoute } from 'next';
+import { SITE_URL } from '@/lib/site-config';
+import { API_BASE_URL } from '@/lib/env.client';
 
 // Dynamic sitemap for SSR mode
 export const dynamic = 'force-dynamic';
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://mrbekox.dev/api/v1';
+const API_URL = API_BASE_URL;
 
 interface Post {
   slug: string;

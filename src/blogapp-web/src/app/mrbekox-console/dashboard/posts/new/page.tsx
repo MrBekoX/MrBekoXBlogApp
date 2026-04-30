@@ -7,7 +7,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod/v4';
 import { usePostsStore } from '@/stores/posts-store';
 import { categoriesApi, tagsApi } from '@/lib/api';
-import { useAuthoringAiOperations } from '@/hooks/use-authoring-ai-operations';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Loader2, Sparkles, X, Save, Send } from 'lucide-react';
+import { Loader2, X, Save, Send } from 'lucide-react';
 import { MarkdownEditor } from '@/components/markdown-editor';
 import { ImageUpload } from '@/components/image-upload';
 import type { Category, Tag, PostStatus } from '@/types';
@@ -59,9 +58,6 @@ export default function NewPostPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
-  const [aiLoading, setAiLoading] = useState<string | null>(null);
-  const { generateTitle, generateExcerpt, generateTags } = useAuthoringAiOperations();
-
   const {
     register,
     handleSubmit,
@@ -144,57 +140,6 @@ export default function NewPostPage() {
     setSelectedTags(selectedTags.filter((t) => t !== tag));
   };
 
-  const handleAiGenerateTitle = async () => {
-    if (!content) {
-      toast.error('Önce içerik yazın');
-      return;
-    }
-    setAiLoading('title');
-    try {
-      const generatedTitle = await generateTitle(content);
-      setValue('title', generatedTitle);
-      toast.success('Başlık oluşturuldu!');
-    } catch {
-      toast.error('Başlık oluşturulamadı');
-    } finally {
-      setAiLoading(null);
-    }
-  };
-
-  const handleAiGenerateExcerpt = async () => {
-    if (!content) {
-      toast.error('Önce içerik yazın');
-      return;
-    }
-    setAiLoading('excerpt');
-    try {
-      const generatedExcerpt = await generateExcerpt(content);
-      setValue('excerpt', generatedExcerpt);
-      toast.success('Özet oluşturuldu!');
-    } catch {
-      toast.error('Özet oluşturulamadı');
-    } finally {
-      setAiLoading(null);
-    }
-  };
-
-  const handleAiGenerateTags = async () => {
-    if (!content) {
-      toast.error('Önce içerik yazın');
-      return;
-    }
-    setAiLoading('tags');
-    try {
-      const generatedTags = await generateTags(content);
-      setSelectedTags([...new Set([...selectedTags, ...generatedTags])]);
-      toast.success('Etiketler oluşturuldu!');
-    } catch {
-      toast.error('Etiketler oluşturulamadı');
-    } finally {
-      setAiLoading(null);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -211,23 +156,7 @@ export default function NewPostPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="title">Başlık</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleAiGenerateTitle}
-                      disabled={!!aiLoading}
-                    >
-                      {aiLoading === 'title' ? (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      ) : (
-                        <Sparkles className="mr-1 h-3 w-3" />
-                      )}
-                      AI ile Oluştur
-                    </Button>
-                  </div>
+                  <Label htmlFor="title">Başlık</Label>
                   <Input
                     id="title"
                     placeholder="Yazınızın başlığını girin"
@@ -252,23 +181,7 @@ export default function NewPostPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="excerpt">Özet</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleAiGenerateExcerpt}
-                      disabled={!!aiLoading}
-                    >
-                      {aiLoading === 'excerpt' ? (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      ) : (
-                        <Sparkles className="mr-1 h-3 w-3" />
-                      )}
-                      AI ile Oluştur
-                    </Button>
-                  </div>
+                  <Label htmlFor="excerpt">Özet</Label>
                   <Textarea
                     id="excerpt"
                     placeholder="Yazınızın kısa açıklaması"
@@ -419,23 +332,7 @@ export default function NewPostPage() {
 
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Etiketler</CardTitle>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleAiGenerateTags}
-                    disabled={!!aiLoading}
-                  >
-                    {aiLoading === 'tags' ? (
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    ) : (
-                      <Sparkles className="mr-1 h-3 w-3" />
-                    )}
-                    AI Öner
-                  </Button>
-                </div>
+                <CardTitle>Etiketler</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">

@@ -3,6 +3,8 @@ import { fetchPosts, fetchTags } from '@/lib/server-api';
 import { format } from 'date-fns';
 import { Calendar, Clock, Eye, FileText, Tag } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default async function HomePage() {
   const [postsData, tagsData] = await Promise.all([
     fetchPosts({ pageSize: 5, status: 'Published', sortBy: 'publishedat', sortDescending: true }),
@@ -20,7 +22,6 @@ export default async function HomePage() {
           className="text-4xl md:text-5xl text-white mb-4 glow-text uppercase tracking-tight leading-tight"
           style={{ fontFamily: "'VT323', monospace" }}
         >
-          Merhaba, ben{' '}
           <span className="text-ide-primary">MrBekoX</span>
         </h1>
 

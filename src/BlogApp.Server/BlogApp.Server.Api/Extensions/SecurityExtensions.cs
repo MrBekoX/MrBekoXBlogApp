@@ -5,7 +5,7 @@ namespace BlogApp.Server.Api.Extensions;
 
 public static class SecurityExtensions
 {
-    public static IServiceCollection AddSecurityServices(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddSecurityServices(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         // CSRF/Antiforgery configuration for SPA
         services.AddAntiforgery(options =>
@@ -13,7 +13,9 @@ public static class SecurityExtensions
             options.HeaderName = "X-CSRF-TOKEN";
             options.Cookie.Name = "BlogApp.CSRF";
             options.Cookie.HttpOnly = true;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            options.Cookie.SecurePolicy = environment.IsProduction()
+                ? CookieSecurePolicy.Always
+                : CookieSecurePolicy.SameAsRequest;
             options.Cookie.SameSite = SameSiteMode.Strict;
         });
 

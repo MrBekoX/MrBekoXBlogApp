@@ -9,12 +9,11 @@ COPY ["src/BlogApp.Server/BlogApp.Server.Application/BlogApp.Server.Application.
 COPY ["src/BlogApp.Server/BlogApp.Server.Infrastructure/BlogApp.Server.Infrastructure.csproj", "src/BlogApp.Server/BlogApp.Server.Infrastructure/"]
 COPY ["src/BlogApp.Server/BlogApp.Server.Api/BlogApp.Server.Api.csproj", "src/BlogApp.Server/BlogApp.Server.Api/"]
 COPY ["src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Caching/BlogApp.BuildingBlocks.Caching.csproj", "src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Caching/"]
-COPY ["src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Messaging/BlogApp.BuildingBlocks.Messaging.csproj", "src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Messaging/"]
 
 # Restore dependencies (cached until .csproj/.sln changes)
 RUN dotnet restore "src/BlogApp.Server/BlogApp.Server.Api/BlogApp.Server.Api.csproj"
 
-# Copy only backend + BuildingBlocks source (not frontend/ai-agent)
+# Copy only backend + BuildingBlocks source (not frontend)
 COPY ["src/BlogApp.Server/", "src/BlogApp.Server/"]
 COPY ["src/BlogApp.BuildingBlocks/", "src/BlogApp.BuildingBlocks/"]
 
@@ -38,9 +37,9 @@ RUN groupadd -g 1001 appgroup && \
 # Copy published app
 COPY --from=build /app/publish .
 
-# Create uploads directory for file storage
-RUN mkdir -p /app/uploads && \
-    chown -R appuser:appgroup /app
+# Create uploads and DataProtection keys directories with proper ownership
+RUN mkdir -p /app/uploads/images /app/keys && \
+    chown -R appuser:appgroup /app /app/uploads /app/keys
 
 # Switch to non-root user
 USER appuser

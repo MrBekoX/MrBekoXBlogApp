@@ -154,18 +154,6 @@ public class UpdatePostCommandHandler(
         post.UpdatedAt = DateTime.UtcNow;
         post.UpdatedBy = currentUserService.UserName;
 
-        // AI-generated fields (only update if provided)
-        if (dto.AiSummary != null)
-            post.AiSummary = htmlSanitizer.Sanitize(dto.AiSummary);
-        if (dto.AiKeywords != null)
-            post.AiKeywords = htmlSanitizer.Sanitize(dto.AiKeywords);
-        if (dto.AiEstimatedReadingTime.HasValue)
-            post.AiEstimatedReadingTime = dto.AiEstimatedReadingTime.Value;
-        if (dto.AiSeoDescription != null)
-            post.AiSeoDescription = htmlSanitizer.Sanitize(dto.AiSeoDescription);
-        if (dto.AiGeoOptimization != null)
-            post.AiGeoOptimization = htmlSanitizer.Sanitize(dto.AiGeoOptimization);
-
         // Yayınlanma tarihi kontrolü
         if (status == PostStatus.Published && post.PublishedAt == null)
         {

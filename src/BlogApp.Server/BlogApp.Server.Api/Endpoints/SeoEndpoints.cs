@@ -69,7 +69,7 @@ public static class SeoEndpoints
         .WithName("Sitemap")
         .WithDescription("Generate sitemap.xml")
         .WithTags("SEO")
-        .CacheOutput(policy => policy.Expire(TimeSpan.FromHours(1)))
+        .CacheOutput("SitemapCache")
         .Produces<string>(200, "application/xml");
 
         // GET /robots.txt
@@ -79,21 +79,55 @@ public static class SeoEndpoints
 
             var robotsTxt = $@"User-agent: *
 Allow: /
-
-# Sitemap
-Sitemap: {baseUrl}/sitemap.xml
-
-# Disallow admin and API paths
 Disallow: /admin/
 Disallow: /api/
 Disallow: /swagger/
 Disallow: /login
 Disallow: /register
 
-# Allow search engines to index blog posts
-Allow: /posts/
-Allow: /category/
-Allow: /tag/
+# AI Search Crawlers — explicit allow
+User-agent: GPTBot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+# Sitemap
+Sitemap: {baseUrl}/sitemap.xml
 ";
 
             return Results.Content(robotsTxt, "text/plain", Encoding.UTF8);
@@ -101,7 +135,59 @@ Allow: /tag/
         .WithName("Robots")
         .WithDescription("Generate robots.txt")
         .WithTags("SEO")
-        .CacheOutput(policy => policy.Expire(TimeSpan.FromHours(24)))
+        .CacheOutput("RobotsCache")
+        .Produces<string>(200, "text/plain");
+
+        // GET /llms.txt — AI model'lerin siteyi anlamasi icin yapilandirilmis Markdown
+        app.MapGet("/llms.txt", async (
+            IApplicationDbContext context,
+            IOptions<SiteSettings> siteSettings,
+            IOptions<ServerLimitsSettings> serverLimits,
+            CancellationToken cancellationToken) =>
+        {
+            var baseUrl = siteSettings.Value.BaseUrl;
+
+            var maxPosts = serverLimits.Value.LlmsTxtMaxPosts;
+            var posts = await context.Posts
+                .Where(p => p.Status == PostStatus.Published && !p.IsDeleted)
+                .OrderByDescending(p => p.PublishedAt)
+                .Take(maxPosts)
+                .Select(p => new
+                {
+                    p.Title,
+                    p.Slug,
+                    Excerpt = p.Excerpt ?? (p.Content.Length > 150 ? p.Content.Substring(0, 150) + "..." : p.Content),
+                    p.PublishedAt
+                })
+                .ToListAsync(cancellationToken);
+
+            var sb = new StringBuilder();
+            sb.AppendLine("# MrBekoX Dev Blog");
+            sb.AppendLine();
+            sb.AppendLine("> Personal tech blog by Sample Author covering .NET, React, Next.js, Python, AI, software architecture, and system design.");
+            sb.AppendLine();
+            sb.AppendLine("## Blog Posts");
+            sb.AppendLine();
+
+            foreach (var post in posts)
+            {
+                var date = post.PublishedAt?.ToString("yyyy-MM-dd") ?? "";
+                sb.AppendLine($"- [{post.Title}]({baseUrl}/posts/{post.Slug}): {post.Excerpt} ({date})");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("## Links");
+            sb.AppendLine();
+            sb.AppendLine($"- [Blog]({baseUrl}): Ana sayfa");
+            sb.AppendLine($"- [RSS Feed]({baseUrl}/rss): RSS 2.0 feed");
+            sb.AppendLine($"- [Sitemap]({baseUrl}/sitemap.xml): XML sitemap");
+
+            return Results.Content(sb.ToString(), "text/plain", Encoding.UTF8);
+        })
+        .WithName("LlmsTxt")
+        .WithDescription("Generate llms.txt for AI models")
+        .WithTags("SEO")
+        .CacheOutput("LlmsTxtCache")
         .Produces<string>(200, "text/plain");
 
         // GET /rss, /feed, /feed.xml
@@ -109,19 +195,19 @@ Allow: /tag/
             .WithName("RssFeed")
             .WithDescription("Generate RSS feed")
             .WithTags("SEO")
-            .CacheOutput(policy => policy.Expire(TimeSpan.FromMinutes(30)))
+            .CacheOutput("RssFeedCache")
             .Produces<byte[]>(200, "application/rss+xml");
 
         app.MapGet("/feed", RssHandler)
             .WithName("Feed")
             .WithTags("SEO")
-            .CacheOutput(policy => policy.Expire(TimeSpan.FromMinutes(30)))
+            .CacheOutput("RssFeedCache")
             .Produces<byte[]>(200, "application/rss+xml");
 
         app.MapGet("/feed.xml", RssHandler)
             .WithName("FeedXml")
             .WithTags("SEO")
-            .CacheOutput(policy => policy.Expire(TimeSpan.FromMinutes(30)))
+            .CacheOutput("RssFeedCache")
             .Produces<byte[]>(200, "application/rss+xml");
 
         return app;
@@ -130,6 +216,7 @@ Allow: /tag/
     private static async Task<IResult> RssHandler(
         IApplicationDbContext context,
         IOptions<SiteSettings> siteSettings,
+        IOptions<ServerLimitsSettings> serverLimits,
         CancellationToken cancellationToken)
     {
         var baseUrl = siteSettings.Value.BaseUrl;
@@ -137,7 +224,7 @@ Allow: /tag/
         var posts = await context.Posts
             .Where(p => p.Status == PostStatus.Published && !p.IsDeleted)
             .OrderByDescending(p => p.PublishedAt)
-            .Take(20)
+            .Take(serverLimits.Value.RssFeedMaxPosts)
             .Include(p => p.Author)
             .Include(p => p.Category)
             .Select(p => new
@@ -170,7 +257,7 @@ Allow: /tag/
         {
             var item = new SyndicationItem(
                 p.Title,
-                p.MetaDescription ?? p.Excerpt ?? (p.Content != null ? p.Content.Substring(0, Math.Min(200, p.Content.Length)) : ""),
+                p.MetaDescription ?? p.Excerpt ?? (p.Content != null ? System.Security.SecurityElement.Escape(p.Content.Substring(0, Math.Min(200, p.Content.Length))) : ""),
                 new Uri($"{baseUrl}/posts/{p.Slug}"),
                 p.Slug,
                 p.PublishedAt ?? DateTime.UtcNow
@@ -206,4 +293,3 @@ Allow: /tag/
         return Results.File(stream.ToArray(), "application/rss+xml; charset=utf-8");
     }
 }
-

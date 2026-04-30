@@ -352,7 +352,7 @@ public abstract class HybridCacheServiceBase : IHybridCacheService, IDisposable
                 if (value.HasValue && long.TryParse(value.ToString(), out var v))
                     return v;
 
-                return 1;
+                return 0;
             }
 
             // Fallback: distributed cache
@@ -361,12 +361,12 @@ public abstract class HybridCacheServiceBase : IHybridCacheService, IDisposable
             if (!string.IsNullOrWhiteSpace(data) && long.TryParse(data, out var v2))
                 return v2;
 
-            return 1;
+            return 0;
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Error getting cache group version for {GroupName}, returning default", groupName);
-            return 1;
+            return 0;
         }
     }
 

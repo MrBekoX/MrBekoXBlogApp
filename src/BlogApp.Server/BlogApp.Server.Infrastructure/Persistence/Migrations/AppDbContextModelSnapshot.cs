@@ -28,24 +28,6 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<int?>("AiEstimatedReadingTime")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("AiGeoOptimization")
-                        .HasColumnType("text");
-
-                    b.Property<string>("AiKeywords")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("AiProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("AiSeoDescription")
-                        .HasColumnType("text");
-
-                    b.Property<string>("AiSummary")
-                        .HasColumnType("text");
-
                     b.Property<Guid>("AuthorId")
                         .HasColumnType("uuid");
 
@@ -118,6 +100,12 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("UpdatedBy")
                         .HasColumnType("text");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.Property<int>("ViewCount")
                         .HasColumnType("integer");
@@ -281,72 +269,6 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
                     b.ToTable("comments", (string)null);
                 });
 
-            modelBuilder.Entity("BlogApp.Server.Domain.Entities.ConsumerInboxMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ConsumerName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("CorrelationId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<Guid?>("MessageId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("OperationId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<DateTime?>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ConsumerName", "MessageId")
-                        .HasDatabaseName("IX_consumer_inbox_consumer_message");
-
-                    b.HasIndex("ConsumerName", "OperationId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_consumer_inbox_consumer_operation")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.ToTable("consumer_inbox_messages", (string)null);
-                });
-
             modelBuilder.Entity("BlogApp.Server.Domain.Entities.IdempotencyRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -396,10 +318,10 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
                     b.Property<int?>("FinalHttpStatus")
                         .HasColumnType("integer");
 
-                    b.Property<string>("FinalResponseJson")
+                    b.Property<string>("FinalResponseHeadersJson")
                         .HasColumnType("jsonb");
 
-                    b.Property<string>("FinalResponseHeadersJson")
+                    b.Property<string>("FinalResponseJson")
                         .HasColumnType("jsonb");
 
                     b.Property<bool>("IsDeleted")
@@ -452,94 +374,6 @@ namespace BlogApp.Server.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_idempotency_records_status_createdat");
 
                     b.ToTable("idempotency_records", (string)null);
-                });
-
-            modelBuilder.Entity("BlogApp.Server.Domain.Entities.OutboxMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("AttemptCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("CausationId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<string>("CorrelationId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<string>("HeadersJson")
-                        .HasColumnType("jsonb");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(4000)
-                        .HasColumnType("character varying(4000)");
-
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("NextAttemptAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("OperationId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<string>("PayloadJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTime?>("PublishedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("RoutingKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MessageId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_outbox_messages_messageid")
-                        .HasFilter("\"IsDeleted\" = false");
-
-                    b.HasIndex("Status", "NextAttemptAt")
-                        .HasDatabaseName("IX_outbox_messages_status_nextattempt");
-
-                    b.ToTable("outbox_messages", (string)null);
                 });
 
             modelBuilder.Entity("BlogApp.Server.Domain.Entities.RefreshToken", b =>

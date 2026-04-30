@@ -13,6 +13,11 @@ namespace BlogApp.Server.Infrastructure.Services;
 /// </summary>
 public class FileStorageService(IHostEnvironment environment, ILogger<FileStorageService> logger) : IFileStorageService
 {
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"
+    };
+
     private readonly string _uploadsFolder = InitializeUploadsFolder(environment.ContentRootPath);
 
     private static string InitializeUploadsFolder(string contentRootPath)
@@ -231,6 +236,11 @@ public class FileStorageService(IHostEnvironment environment, ILogger<FileStorag
     {
         // GÜVENLİK DÜZELTMESİ: Dosya adını temizleyerek potansiyel zararlı karakterleri kaldır.
         var extension = Path.GetExtension(fileName);
+
+        // Uzantı beyaz listede değilse güvenli varsayılana düş
+        if (!AllowedExtensions.Contains(extension))
+            extension = ".bin";
+
         var baseName = Path.GetFileNameWithoutExtension(fileName);
 
         // Basit sanitizasyon: sadece güvenli karakterlere izin ver

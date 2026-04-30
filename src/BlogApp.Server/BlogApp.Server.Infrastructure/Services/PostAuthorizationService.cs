@@ -40,10 +40,6 @@ public sealed class PostAuthorizationService(IUnitOfWork unitOfWork) : IPostAuth
                 isOwner || isStaff,
             PostAuthorizationAction.Edit =>
                 isOwner || isStaff,
-            PostAuthorizationAction.TriggerAi =>
-                isOwner || isStaff,
-            PostAuthorizationAction.ReceiveAiEvents =>
-                isOwner || isStaff,
             _ => false
         };
 

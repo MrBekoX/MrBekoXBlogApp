@@ -15,7 +15,4 @@ public interface IIdempotencyService
         CancellationToken cancellationToken = default,
         IReadOnlyDictionary<string, string[]>? finalResponseHeaders = null);
     Task MarkFailedByCorrelationAsync(string correlationId, string errorCode, string errorMessage, CancellationToken cancellationToken = default);
-    Task<ConsumerClaimResult> ClaimConsumerAsync(string consumerName, string operationId, Guid? messageId, string? correlationId, CancellationToken cancellationToken = default);
-    Task MarkConsumerCompletedAsync(Guid inboxId, CancellationToken cancellationToken = default);
-    Task MarkConsumerFailedAsync(Guid inboxId, string error, CancellationToken cancellationToken = default);
 }

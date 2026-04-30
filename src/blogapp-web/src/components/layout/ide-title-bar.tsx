@@ -23,11 +23,7 @@ export function IdeTitleBar() {
           )}
         </button>
 
-        <div className="flex space-x-1.5 mr-4">
-          <div className="w-3 h-3 rounded-full bg-red-500/80" />
-          <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-          <div className="w-3 h-3 rounded-full bg-green-500/80" />
-        </div>
+        <div className="mr-4" />
         <div className="text-xs flex items-center gap-2 opacity-70 text-gray-400 font-mono">
           <span className="text-[10px]">⌨</span>
           <span>mrbekox — dev-blog</span>

@@ -2,8 +2,6 @@ using BlogApp.BuildingBlocks.Caching;
 using BlogApp.BuildingBlocks.Caching.Abstractions;
 using BlogApp.BuildingBlocks.Caching.Metrics;
 using BlogApp.BuildingBlocks.Caching.Options;
-using BlogApp.BuildingBlocks.Messaging;
-using MessagingRabbitMqSettings = BlogApp.BuildingBlocks.Messaging.Options.RabbitMqSettings;
 using BlogApp.Server.Application.Common.Interfaces.Data;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Persistence.BlogPostRepository;
@@ -28,9 +26,6 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace BlogApp.Server.Infrastructure;
 
@@ -40,10 +35,6 @@ public static class DependencyInjection
     {
         services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
         services.Configure<AdminUserSettings>(configuration.GetSection(AdminUserSettings.SectionName));
-        services.Configure<ChatSessionTokenSettings>(configuration.GetSection(ChatSessionTokenSettings.SectionName));
-        services.Configure<InternalServiceAuthSettings>(configuration.GetSection(InternalServiceAuthSettings.SectionName));
-        services.Configure<ChatAbuseProtectionSettings>(configuration.GetSection(ChatAbuseProtectionSettings.SectionName));
-        services.Configure<TurnstileSettings>(configuration.GetSection(TurnstileSettings.SectionName));
 
         services.Configure<SiteSettings>(options =>
         {
@@ -98,51 +89,20 @@ public static class DependencyInjection
         services.AddScoped<IHybridCacheService>(sp => sp.GetRequiredService<ICacheService>());
         services.AddScoped<IBasicCacheService>(sp => sp.GetRequiredService<ICacheService>());
 
-        services.AddHttpClient(nameof(ChatAbuseProtectionService));
-
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<IPostAuthorizationService, PostAuthorizationService>();
-        services.AddScoped<IChatSessionTokenService, ChatSessionTokenService>();
-        services.AddScoped<IChatAbuseProtectionService>(sp => new ChatAbuseProtectionService(
-            sp.GetService<IConnectionMultiplexer>(),
-            sp.GetRequiredService<IHttpClientFactory>(),
-            sp.GetRequiredService<IOptions<ChatAbuseProtectionSettings>>(),
-            sp.GetRequiredService<IOptions<TurnstileSettings>>(),
-            sp.GetRequiredService<IHostEnvironment>(),
-            sp.GetRequiredService<ILogger<ChatAbuseProtectionService>>()));
         services.AddScoped<IFileStorageService, FileStorageService>();
         services.AddSingleton<IHtmlSanitizerService, HtmlSanitizerService>();
 
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
         services.AddScoped<ITagService, TagService>();
 
-        services.AddSingleton<IAiGenerationCorrelationService, AiGenerationCorrelationService>();
         services.AddScoped<IIdempotencyService, IdempotencyService>();
-        services.AddScoped<IAiGenerationRequestExecutor, AiGenerationRequestExecutor>();
-        services.AddScoped<IAsyncOperationDispatcher, AsyncOperationDispatcher>();
-
-        // Admin services for RabbitMQ management
-        services.AddSingleton<IRabbitMqAdminClient, RabbitMqAdminClient>();
-        services.AddScoped<IAdminService, AdminService>();
-        services.AddSingleton<IQueueDepthService>(sp => new QueueDepthService(
-            sp.GetService<IConnectionMultiplexer>(),
-            sp.GetRequiredService<ILogger<QueueDepthService>>()));
-
-        var rabbitMqSettings = configuration.GetSection(MessagingRabbitMqSettings.SectionName).Get<MessagingRabbitMqSettings>();
-        if (rabbitMqSettings?.Enabled == true)
-        {
-            services.AddScoped<IOutboxService, OutboxService>();
-            services.AddHostedService<OutboxPublisherHostedService>();
-        }
-        else
-        {
-            services.AddScoped<IOutboxService, NoOpOutboxService>();
-        }
 
         services.AddScoped<DbSeeder>();
         services.AddHostedService<RefreshTokenCleanupService>();
         services.AddHostedService<IdempotencyCleanupService>();
-        services.AddMessagingServices(configuration);
 
         return services;
     }

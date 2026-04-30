@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User } from '@/types';
-import { authApi, getErrorMessage } from '@/lib/api';
-import { AUTH_CHANNEL_NAME, broadcastAuthMessage } from '@/lib/auth-events';
+import { authApi, getErrorMessage, invalidateCsrfToken } from '@/lib/api';
+import { broadcastAuthMessage } from '@/lib/auth-events';
 
 type AuthStatus = 'idle' | 'checking' | 'authenticated' | 'unauthenticated';
 
@@ -24,26 +24,9 @@ interface AuthState {
 }
 
 let authCheckPromise: Promise<void> | null = null;
-let authChannel: BroadcastChannel | null = null;
 
 // Cooldown period for auth checks (5 seconds)
 const AUTH_CHECK_COOLDOWN_MS = 5000;
-
-function getAuthChannel(): BroadcastChannel | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  if (!authChannel) {
-    try {
-      authChannel = new BroadcastChannel(AUTH_CHANNEL_NAME);
-    } catch {
-      authChannel = null;
-    }
-  }
-
-  return authChannel;
-}
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -59,6 +42,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await authApi.login({ email, password }, operationId);
           if (response.success && response.data) {
+            invalidateCsrfToken();
             set({
               user: response.data.user,
               authStatus: 'authenticated',
@@ -82,6 +66,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await authApi.register(data, operationId);
           if (response.success && response.data) {
+            invalidateCsrfToken();
             set({
               user: response.data.user,
               authStatus: 'authenticated',
@@ -106,6 +91,7 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           // Ignore logout errors.
         } finally {
+          invalidateCsrfToken();
           set({
             user: null,
             authStatus: 'unauthenticated',
@@ -114,8 +100,6 @@ export const useAuthStore = create<AuthState>()(
             lastAuthCheck: Date.now(),
           });
           broadcastAuthMessage({ type: 'logout' });
-          getAuthChannel()?.close();
-          authChannel = null;
         }
       },
 
@@ -189,6 +173,30 @@ export const useAuthStore = create<AuthState>()(
         authStatus: state.authStatus,
         lastAuthCheck: state.lastAuthCheck,
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState ?? {}) as Partial<AuthState>;
+
+        let authStatus = persisted.authStatus ?? currentState.authStatus;
+        let user = persisted.user ?? currentState.user;
+
+        // 'checking' durumu hydration'da hayatta kalmamali (browser crash vb.)
+        if (authStatus === 'checking') {
+          authStatus = 'idle';
+        }
+
+        // State tutarliligi: authenticated ama user yok → sifirla
+        if (authStatus === 'authenticated' && !user) {
+          authStatus = 'idle';
+          user = null;
+        }
+
+        return {
+          ...currentState,
+          ...persisted,
+          authStatus,
+          user,
+        };
+      },
     }
   )
 );

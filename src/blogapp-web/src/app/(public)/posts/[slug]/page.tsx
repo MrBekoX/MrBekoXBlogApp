@@ -3,28 +3,20 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { fetchPostBySlug } from '@/lib/server-api';
+import { SITE_URL } from '@/lib/site-config';
 import { getImageUrl } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Calendar, Eye, ArrowLeft, Tag, Clock, Sparkles } from 'lucide-react';
+import { Calendar, Eye, ArrowLeft, Tag } from 'lucide-react';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
 import { CommentsSection } from '@/components/comments/comments-section';
 import { BlogPostingSchema } from '@/components/seo/blog-posting-schema';
 import { BreadcrumbSchema } from '@/components/seo/breadcrumb-schema';
-import { ArticleChatPanel } from '@/components/chat';
-
-function sanitizeText(text: string): string {
-  return text.replace(/<[^>]*>/g, '').replace(/[<>"'&]/g, (char) => {
-    const entities: Record<string, string> = { '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '&': '&amp;' };
-    return entities[char] || char;
-  });
-}
+import { FAQSchema, extractFAQFromContent } from '@/components/seo/faq-schema';
 
 interface PostPageProps {
   params: Promise<{ slug: string }>;
 }
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
 
 export async function generateMetadata({ params }: PostPageProps): Promise<Metadata> {
   const { slug } = await params;
@@ -106,7 +98,7 @@ export default async function PostPage({ params }: PostPageProps) {
 
         {/* Title */}
         <h1
-          className="text-3xl md:text-4xl text-white glow-text uppercase tracking-tight leading-tight"
+          className="post-title text-3xl md:text-4xl text-white glow-text uppercase tracking-tight leading-tight"
           style={{ fontFamily: "'VT323', monospace" }}
         >
           {post.title}
@@ -128,29 +120,8 @@ export default async function PostPage({ params }: PostPageProps) {
             <Eye className="w-3 h-3" />
             {post.viewCount} görüntüleme
           </span>
-          {post.aiEstimatedReadingTime && (
-            <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {post.aiEstimatedReadingTime} dk okuma
-            </span>
-          )}
         </div>
       </header>
-
-      {/* AI Summary */}
-      {post.aiSummary && (
-        <div className="mb-8 rounded border border-ide-border bg-ide-sidebar p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-ide-primary" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-ide-primary">
-              AI Summary
-            </span>
-          </div>
-          <p className="text-sm text-gray-400 leading-relaxed">
-            {sanitizeText(post.aiSummary)}
-          </p>
-        </div>
-      )}
 
       {/* Featured image */}
       {post.featuredImageUrl && (
@@ -192,11 +163,12 @@ export default async function PostPage({ params }: PostPageProps) {
       <Separator className="my-10 bg-ide-border" />
       {post.id && <CommentsSection postId={post.id} />}
 
-      {/* Schema.org */}
+      {/* Schema.org — GEO optimized */}
       <BlogPostingSchema
         title={post.title}
         description={post.excerpt || post.content.substring(0, 200)}
         slug={slug}
+        content={post.content}
         publishedAt={post.publishedAt || post.createdAt}
         updatedAt={post.updatedAt || post.createdAt}
         featuredImageUrl={post.featuredImageUrl}
@@ -211,9 +183,8 @@ export default async function PostPage({ params }: PostPageProps) {
           { name: post.title, url: `/posts/${slug}` },
         ]}
       />
+      <FAQSchema items={extractFAQFromContent(post.content)} />
 
-      {/* AI Chat Panel */}
-      <ArticleChatPanel postId={post.id} postTitle={post.title} />
     </article>
   );
 }

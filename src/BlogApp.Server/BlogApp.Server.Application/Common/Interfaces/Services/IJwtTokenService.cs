@@ -12,5 +12,6 @@ public interface IJwtTokenService
     bool ValidateToken(string token);
     Guid? GetUserIdFromToken(string token);
     DateTime GetTokenExpiration(string token);
+    string? GetTokenJti(string token);
 }
 

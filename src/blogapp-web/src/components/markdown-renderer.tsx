@@ -47,18 +47,16 @@ interface MarkdownRendererProps {
   date?: string;
   readingTime?: number;
   proseSize?: 'xs' | 'sm' | 'base' | 'lg' | 'xl';
-  forChat?: boolean;  // New prop for chat messages
 }
 
 export function MarkdownRenderer({
   content,
   className = "",
   title,
-  author = "MrBekoX",
+  author = process.env.NEXT_PUBLIC_SITE_NAME || "MrBekoX",
   date,
   readingTime,
   proseSize = 'lg',
-  forChat = false,
 }: MarkdownRendererProps) {
   const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
 
@@ -70,9 +68,6 @@ export function MarkdownRenderer({
     lg: 'prose-lg',
     xl: 'prose-xl',
   };
-
-  // For chat: Override prose size to text-sm regardless of proseSize prop
-  const effectiveProseSize = forChat ? 'sm' : proseSize;
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -122,7 +117,7 @@ export function MarkdownRenderer({
       </header>
 
       {/* --- İçerik Alanı --- */}
-      <div className={`prose dark:prose-invert max-w-none prose-headings:font-serif prose-p:font-serif prose-a:text-blue-600 ${proseClasses[effectiveProseSize]} ${forChat ? '!text-sm !leading-relaxed prose-headings:!text-lg prose-h1:!text-xl prose-h2:!text-lg prose-h3:!text-base' : ''}`}>
+      <div className={`prose dark:prose-invert max-w-none prose-headings:font-serif prose-p:font-serif prose-a:text-blue-600 ${proseClasses[proseSize]}`}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkUnwrapImages]} // ✅ Eklendi: remarkUnwrapImages
           components={{
@@ -167,7 +162,7 @@ export function MarkdownRenderer({
                         margin: 0,
                         padding: "2.5rem 1rem 1rem 1rem",
                         backgroundColor: "#1e1e1e",
-                        fontSize: forChat ? "0.8rem" : "0.9rem",  // Chat için daha küçük
+                        fontSize: "0.9rem",
                         lineHeight: "1.5",
                       }}
                     >
@@ -178,7 +173,7 @@ export function MarkdownRenderer({
               }
 
               return (
-                <code className={`px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded font-mono text-orange-600 dark:text-orange-400 border border-gray-200 dark:border-gray-700 font-semibold ${forChat ? 'text-xs' : 'text-sm'}`}>
+                <code className={`px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded font-mono text-orange-600 dark:text-orange-400 border border-gray-200 dark:border-gray-700 font-semibold text-sm`}>
                   {children}
                 </code>
               );

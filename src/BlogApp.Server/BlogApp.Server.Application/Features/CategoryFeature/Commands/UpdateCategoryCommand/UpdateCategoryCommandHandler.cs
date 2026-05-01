@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -12,9 +13,9 @@ namespace BlogApp.Server.Application.Features.CategoryFeature.Commands.UpdateCat
 public class UpdateCategoryCommandHandler(
     IUnitOfWork unitOfWork,
     ICategoryBusinessRules categoryBusinessRules,
-    ICacheService cacheService) : IRequestHandler<UpdateCategoryCommandRequest, UpdateCategoryCommandResponse>
+    ICacheService cacheService) : IRequestHandler<UpdateCategoryCommandRequest, Result<Unit>>
 {
-    public async Task<UpdateCategoryCommandResponse> Handle(UpdateCategoryCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(UpdateCategoryCommandRequest request, CancellationToken cancellationToken)
     {
         var dto = request.UpdateCategoryCommandRequestDto!;
 
@@ -26,19 +27,13 @@ public class UpdateCategoryCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new UpdateCategoryCommandResponse
-            {
-                Result = Result.Failure(ruleResult.Error!)
-            };
+            return Result<Unit>.Failure(ruleResult.ErrorDetail ?? Error.Domain(ruleResult.Error ?? string.Empty));
         }
 
         var category = await unitOfWork.CategoriesRead.GetByIdAsync(dto.Id, cancellationToken);
         if (category is null)
         {
-            return new UpdateCategoryCommandResponse
-            {
-                Result = Result.Failure(CategoryBusinessRuleMessages.CategoryNotFoundGeneric)
-            };
+            return Result<Unit>.Failure(Error.NotFound(CategoryBusinessRuleMessages.CategoryNotFoundGeneric));
         }
 
         var slug = Slug.CreateFromTitle(dto.Name);
@@ -56,12 +51,6 @@ public class UpdateCategoryCommandHandler(
         // Invalidate categories cache
         await cacheService.RotateGroupVersionAsync(CategoryCacheKeys.ListGroup, cancellationToken);
 
-        return new UpdateCategoryCommandResponse
-        {
-            Result = Result.Success()
-        };
+        return Result<Unit>.Success(Unit.Value);
     }
 }
-
-
-

@@ -1,5 +1,4 @@
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
-using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.CategoryFeature.DTOs;
 using BlogApp.Server.Domain.Enums;
@@ -9,9 +8,9 @@ using Microsoft.EntityFrameworkCore;
 namespace BlogApp.Server.Application.Features.CategoryFeature.Queries.GetAllCategoryQuery;
 
 public class GetAllCategoryQueryHandler(
-    IUnitOfWork unitOfWork) : IRequestHandler<GetAllCategoryQueryRequest, GetAllCategoryQueryResponse>
+    IUnitOfWork unitOfWork) : IRequestHandler<GetAllCategoryQueryRequest, Result<IReadOnlyList<GetAllCategoryQueryDto>>>
 {
-    public async Task<GetAllCategoryQueryResponse> Handle(GetAllCategoryQueryRequest request, CancellationToken cancellationToken)
+    public async Task<Result<IReadOnlyList<GetAllCategoryQueryDto>>> Handle(GetAllCategoryQueryRequest request, CancellationToken cancellationToken)
     {
         var query = unitOfWork.CategoriesRead.GetAll()
             .AsNoTracking()
@@ -47,20 +46,6 @@ public class GetAllCategoryQueryHandler(
             categories = categories.Where(c => c.PostCount > 0).ToList();
         }
 
-        if (!categories.Any())
-        {
-            return new GetAllCategoryQueryResponse
-            {
-                Result = Result<IEnumerable<GetAllCategoryQueryDto>>.Success(Enumerable.Empty<GetAllCategoryQueryDto>())
-            };
-        }
-
-        return new GetAllCategoryQueryResponse
-        {
-            Result = Result<IEnumerable<GetAllCategoryQueryDto>>.Success(categories)
-        };
+        return Result<IReadOnlyList<GetAllCategoryQueryDto>>.Success(categories);
     }
 }
-
-
-

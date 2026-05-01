@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -11,9 +12,9 @@ namespace BlogApp.Server.Application.Features.TagFeature.Commands.DeleteTagComma
 public class DeleteTagCommandHandler(
     IUnitOfWork unitOfWork,
     ITagBusinessRules tagBusinessRules,
-    ICacheService cacheService) : IRequestHandler<DeleteTagCommandRequest, DeleteTagCommandResponse>
+    ICacheService cacheService) : IRequestHandler<DeleteTagCommandRequest, Result<Unit>>
 {
-    public async Task<DeleteTagCommandResponse> Handle(DeleteTagCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(DeleteTagCommandRequest request, CancellationToken cancellationToken)
     {
         // Business Rules
         var ruleResult = await BusinessRuleEngine.RunAsync(
@@ -22,19 +23,13 @@ public class DeleteTagCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new DeleteTagCommandResponse
-            {
-                Result = Result.Failure(ruleResult.Error!)
-            };
+            return Result<Unit>.Failure(ruleResult.ErrorDetail ?? Error.NotFound(ruleResult.Error ?? string.Empty));
         }
 
         var tag = await unitOfWork.TagsRead.GetSingleAsync(t => t.Id == request.Id && !t.IsDeleted, cancellationToken);
         if (tag is null)
         {
-            return new DeleteTagCommandResponse
-            {
-                Result = Result.Failure(TagBusinessRuleMessages.TagNotFoundGeneric)
-            };
+            return Result<Unit>.Failure(Error.NotFound(TagBusinessRuleMessages.TagNotFoundGeneric));
         }
 
         // Soft delete
@@ -47,12 +42,6 @@ public class DeleteTagCommandHandler(
         // Invalidate tags cache
         await cacheService.RotateGroupVersionAsync(TagCacheKeys.ListGroup, cancellationToken);
 
-        return new DeleteTagCommandResponse
-        {
-            Result = Result.Success()
-        };
+        return Result<Unit>.Success(Unit.Value);
     }
 }
-
-
-

@@ -43,24 +43,24 @@ public static class AuthEndpoints
                 }
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            if (response.Result.Value is null)
+            if (response.Value is null)
                 return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Login failed: No response data"));
 
             var isProduction = !environment.IsDevelopment();
             CookieHelper.SetAuthCookies(
                 context.Response,
-                response.Result.Value.AccessToken,
-                response.Result.Value.RefreshToken,
-                response.Result.Value.ExpiresAt,
+                response.Value.AccessToken,
+                response.Value.RefreshToken,
+                response.Value.ExpiresAt,
                 isProduction);
 
             return Results.Ok(ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(new AuthResponseWithCookiesDto
             {
-                ExpiresAt = response.Result.Value.ExpiresAt,
-                User = response.Result.Value.User
+                ExpiresAt = response.Value.ExpiresAt,
+                User = response.Value.User
             }, "Login successful"));
         })
         .WithName("Login")
@@ -92,24 +92,24 @@ public static class AuthEndpoints
                 OperationId = context.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            if (response.Result.Value is null)
+            if (response.Value is null)
                 return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Registration failed: No response data"));
 
             var isProduction = !environment.IsDevelopment();
             CookieHelper.SetAuthCookies(
                 context.Response,
-                response.Result.Value.AccessToken,
-                response.Result.Value.RefreshToken,
-                response.Result.Value.ExpiresAt,
+                response.Value.AccessToken,
+                response.Value.RefreshToken,
+                response.Value.ExpiresAt,
                 isProduction);
 
             return Results.Created("/api/v1/auth/login", ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(new AuthResponseWithCookiesDto
             {
-                ExpiresAt = response.Result.Value.ExpiresAt,
-                User = response.Result.Value.User
+                ExpiresAt = response.Value.ExpiresAt,
+                User = response.Value.User
             }, "Registration successful"));
         })
         .WithName("Register")
@@ -146,13 +146,13 @@ public static class AuthEndpoints
                     "AuthRefreshToken", refreshToken, ipAddress)
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
+            if (!response.IsSuccess)
             {
                 CookieHelper.ClearAuthCookies(context.Response, isProduction);
-                return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult(response.Result.Error!));
+                return response.ToHttpResult();
             }
 
-            if (response.Result.Value is null)
+            if (response.Value is null)
             {
                 CookieHelper.ClearAuthCookies(context.Response, isProduction);
                 return Results.BadRequest(ApiResponse<AuthResponseWithCookiesDto>.FailureResult("Token refresh failed: No response data"));
@@ -160,15 +160,15 @@ public static class AuthEndpoints
 
             CookieHelper.SetAuthCookies(
                 context.Response,
-                response.Result.Value.AccessToken,
-                response.Result.Value.RefreshToken,
-                response.Result.Value.ExpiresAt,
+                response.Value.AccessToken,
+                response.Value.RefreshToken,
+                response.Value.ExpiresAt,
                 isProduction);
 
             return Results.Ok(ApiResponse<AuthResponseWithCookiesDto>.SuccessResult(new AuthResponseWithCookiesDto
             {
-                ExpiresAt = response.Result.Value.ExpiresAt,
-                User = response.Result.Value.User
+                ExpiresAt = response.Value.ExpiresAt,
+                User = response.Value.User
             }, "Token refreshed"));
         })
         .WithName("RefreshToken")
@@ -187,7 +187,7 @@ public static class AuthEndpoints
             var accessToken = context.Request.Cookies["accessToken"];
             var isProduction = !environment.IsDevelopment();
 
-            var response = await mediator.Send(new LogoutCommandRequest
+            await mediator.Send(new LogoutCommandRequest
             {
                 RefreshToken = refreshToken,
                 AccessToken = accessToken,
@@ -220,10 +220,10 @@ public static class AuthEndpoints
                 UserId = userId
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<UserInfoDto>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            return Results.Ok(ApiResponse<UserInfoDto>.SuccessResult(response.Result.Value!));
+            return Results.Ok(ApiResponse<UserInfoDto>.SuccessResult(response.Value!));
         })
         .WithName("GetCurrentUser")
         .WithDescription("Get current authenticated user")
@@ -247,9 +247,9 @@ public static class AuthEndpoints
                 UserId = currentUserService.UserId.Value
             }, cancellationToken);
 
-            return response.Result.IsSuccess
+            return response.IsSuccess
                 ? Results.Ok(ApiResponse<object>.SuccessResult(null!, "Password changed successfully."))
-                : Results.BadRequest(ApiResponse<object>.FailureResult(response.Result.Error!));
+                : response.ToHttpResult();
         })
         .RequireAuthorization()
         .ValidateAntiforgery()
@@ -270,9 +270,9 @@ public static class AuthEndpoints
                 Dto = dto
             }, cancellationToken);
 
-            return response.Result.IsSuccess
+            return response.IsSuccess
                 ? Results.Ok(ApiResponse<object>.SuccessResult(null!, "Password reset successfully."))
-                : Results.BadRequest(ApiResponse<object>.FailureResult(response.Result.Error!));
+                : response.ToHttpResult();
         })
         .RequireAuthorization(policy => policy.RequireRole("Admin"))
         .ValidateAntiforgery()

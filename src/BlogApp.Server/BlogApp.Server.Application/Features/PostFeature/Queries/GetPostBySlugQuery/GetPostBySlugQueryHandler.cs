@@ -1,4 +1,5 @@
 using AutoMapper;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -13,11 +14,11 @@ namespace BlogApp.Server.Application.Features.PostFeature.Queries.GetPostBySlugQ
 public class GetPostBySlugQueryHandler(
     IUnitOfWork unitOfWork,
     ICacheService cacheService,
-    IMapper mapper) : IRequestHandler<GetPostBySlugQueryRequest, GetPostBySlugQueryResponse>
+    IMapper mapper) : IRequestHandler<GetPostBySlugQueryRequest, Result<PostDetailQueryDto>>
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
 
-    public async Task<GetPostBySlugQueryResponse> Handle(GetPostBySlugQueryRequest request, CancellationToken cancellationToken)
+    public async Task<Result<PostDetailQueryDto>> Handle(GetPostBySlugQueryRequest request, CancellationToken cancellationToken)
     {
         var cacheKey = PostCacheKeys.BySlug(request.Slug);
 
@@ -27,10 +28,7 @@ public class GetPostBySlugQueryHandler(
             var cachedResult = await cacheService.GetAsync<PostDetailQueryDto>(cacheKey, cancellationToken);
             if (cachedResult != null)
             {
-                return new GetPostBySlugQueryResponse
-                {
-                    Result = Result<PostDetailQueryDto>.Success(cachedResult)
-                };
+                return Result<PostDetailQueryDto>.Success(cachedResult);
             }
         }
 
@@ -46,10 +44,7 @@ public class GetPostBySlugQueryHandler(
 
         if (post is null)
         {
-            return new GetPostBySlugQueryResponse
-            {
-                Result = Result<PostDetailQueryDto>.Failure(PostBusinessRuleMessages.PostNotFoundBySlug(request.Slug))
-            };
+            return Result<PostDetailQueryDto>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundBySlug(request.Slug)));
         }
 
         // View count artır (atomic operation - race condition önlemi)
@@ -76,10 +71,7 @@ public class GetPostBySlugQueryHandler(
         // Cache'e kaydet
         await cacheService.SetAsync(cacheKey, dto, CacheDuration, cancellationToken);
 
-        return new GetPostBySlugQueryResponse
-        {
-            Result = Result<PostDetailQueryDto>.Success(dto)
-        };
+        return Result<PostDetailQueryDto>.Success(dto);
     }
 }
 

@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Common.Utilities;
@@ -8,62 +9,39 @@ namespace BlogApp.Server.Application.Features.MediaFeature.Commands.UploadImageC
 
 public class UploadImageCommandHandler(
     IFileStorageService fileStorageService,
-    ILogger<UploadImageCommandHandler> logger) : IRequestHandler<UploadImageCommandRequest, UploadImageCommandResponse>
+    ILogger<UploadImageCommandHandler> logger) : IRequestHandler<UploadImageCommandRequest, Result<ImageUploadResult>>
 {
-    public async Task<UploadImageCommandResponse> Handle(
+    public async Task<Result<ImageUploadResult>> Handle(
         UploadImageCommandRequest request, CancellationToken cancellationToken)
     {
         var file = request.File;
 
         if (file.Length == 0)
-            return new UploadImageCommandResponse
-            {
-                Result = Result<ImageUploadResult>.Failure("No file uploaded")
-            };
+            return Result<ImageUploadResult>.Failure(Error.Validation("No file uploaded"));
 
         if (!ImageValidation.AllowedImageTypes.Contains(file.ContentType.ToLowerInvariant()))
-            return new UploadImageCommandResponse
-            {
-                Result = Result<ImageUploadResult>.Failure("Invalid file type. Allowed: JPEG, PNG, GIF, WebP")
-            };
+            return Result<ImageUploadResult>.Failure(Error.Validation("Invalid file type. Allowed: JPEG, PNG, GIF, WebP"));
 
         if (file.Length > ImageValidation.MaxFileSize)
-            return new UploadImageCommandResponse
-            {
-                Result = Result<ImageUploadResult>.Failure($"File too large. Maximum size: {ImageValidation.MaxFileSize / 1024 / 1024}MB")
-            };
+            return Result<ImageUploadResult>.Failure(Error.Validation($"File too large. Maximum size: {ImageValidation.MaxFileSize / 1024 / 1024}MB"));
 
         if (!ImageValidation.IsValidImageFile(file.Stream, file.ContentType))
-            return new UploadImageCommandResponse
-            {
-                Result = Result<ImageUploadResult>.Failure("Invalid image file format")
-            };
+            return Result<ImageUploadResult>.Failure(Error.Validation("Invalid image file format"));
 
-        try
+        var safeFileName = ImageValidation.SanitizeFileName(file.FileName);
+
+        var options = new ImageUploadOptions
         {
-            var safeFileName = ImageValidation.SanitizeFileName(file.FileName);
+            GenerateThumbnail = request.GenerateThumbnail,
+            ConvertToWebP = true,
+            Quality = 85
+        };
 
-            var options = new ImageUploadOptions
-            {
-                GenerateThumbnail = request.GenerateThumbnail,
-                ConvertToWebP = true,
-                Quality = 85
-            };
+        // IO failures are infra exceptions — let ExceptionHandlingMiddleware handle them
+        var result = await fileStorageService.UploadImageAsync(file.Stream, safeFileName, options, cancellationToken).ConfigureAwait(false);
 
-            var result = await fileStorageService.UploadImageAsync(file.Stream, safeFileName, options);
+        logger.LogInformation("Image uploaded successfully: {FileName}", safeFileName);
 
-            return new UploadImageCommandResponse
-            {
-                Result = Result<ImageUploadResult>.Success(result)
-            };
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error uploading image");
-            return new UploadImageCommandResponse
-            {
-                Result = Result<ImageUploadResult>.Failure("Error uploading image")
-            };
-        }
+        return Result<ImageUploadResult>.Success(result);
     }
 }

@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Text.Json;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
@@ -60,6 +61,9 @@ public class IdempotencyBehavior<TRequest, TResponse> : IPipelineBehavior<TReque
     {
         if (string.IsNullOrWhiteSpace(request.OperationId))
         {
+            if (ResultFactory.IsResult(typeof(TResponse)))
+                return ResultFactory.Failure<TResponse>(Error.Validation("Idempotency-Key header is required."));
+
             throw new ValidationException("Idempotency-Key header is required.");
         }
 

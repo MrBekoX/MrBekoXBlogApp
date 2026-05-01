@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.AuthFeature.DTOs;
@@ -6,18 +7,15 @@ using MediatR;
 namespace BlogApp.Server.Application.Features.AuthFeature.Queries.GetCurrentUserQuery;
 
 public class GetCurrentUserQueryHandler(
-    IUnitOfWork unitOfWork) : IRequestHandler<GetCurrentUserQueryRequest, GetCurrentUserQueryResponse>
+    IUnitOfWork unitOfWork) : IRequestHandler<GetCurrentUserQueryRequest, Result<UserInfoDto>>
 {
-    public async Task<GetCurrentUserQueryResponse> Handle(GetCurrentUserQueryRequest request, CancellationToken cancellationToken)
+    public async Task<Result<UserInfoDto>> Handle(GetCurrentUserQueryRequest request, CancellationToken cancellationToken)
     {
         var user = await unitOfWork.UsersRead.GetByIdAsync(request.UserId, cancellationToken);
 
         if (user is null)
         {
-            return new GetCurrentUserQueryResponse
-            {
-                Result = Result<UserInfoDto>.Failure("User not found")
-            };
+            return Result<UserInfoDto>.Failure(Error.NotFound("User not found"));
         }
 
         var userInfo = new UserInfoDto
@@ -30,9 +28,6 @@ public class GetCurrentUserQueryHandler(
             Role = user.Role.ToString()
         };
 
-        return new GetCurrentUserQueryResponse
-        {
-            Result = Result<UserInfoDto>.Success(userInfo)
-        };
+        return Result<UserInfoDto>.Success(userInfo);
     }
 }

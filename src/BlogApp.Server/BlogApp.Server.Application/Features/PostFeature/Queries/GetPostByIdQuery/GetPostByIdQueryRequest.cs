@@ -1,10 +1,12 @@
 using BlogApp.Server.Application.Common.Behaviors;
+using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Constants;
+using BlogApp.Server.Application.Features.PostFeature.DTOs;
 using MediatR;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Queries.GetPostByIdQuery;
 
-public class GetPostByIdQueryRequest : IRequest<GetPostByIdQueryResponse>, ICacheableQuery
+public class GetPostByIdQueryRequest : IRequest<Result<PostDetailQueryDto>>, ICacheableQuery
 {
     public Guid Id { get; set; }
 

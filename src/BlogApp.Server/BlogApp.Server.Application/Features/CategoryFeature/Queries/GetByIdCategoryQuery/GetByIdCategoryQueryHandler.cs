@@ -1,5 +1,5 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
-using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.CategoryFeature.Constants;
 using BlogApp.Server.Application.Features.CategoryFeature.DTOs;
@@ -8,18 +8,15 @@ using MediatR;
 namespace BlogApp.Server.Application.Features.CategoryFeature.Queries.GetByIdCategoryQuery;
 
 public class GetByIdCategoryQueryHandler(
-    IUnitOfWork unitOfWork) : IRequestHandler<GetByIdCategoryQueryRequest, GetByIdCategoryQueryResponse>
+    IUnitOfWork unitOfWork) : IRequestHandler<GetByIdCategoryQueryRequest, Result<GetByIdCategoryQueryDto>>
 {
-    public async Task<GetByIdCategoryQueryResponse> Handle(GetByIdCategoryQueryRequest request, CancellationToken cancellationToken)
+    public async Task<Result<GetByIdCategoryQueryDto>> Handle(GetByIdCategoryQueryRequest request, CancellationToken cancellationToken)
     {
         var category = await unitOfWork.CategoriesRead.GetByIdAsync(request.Id, cancellationToken);
 
-        if (category == null)
+        if (category is null)
         {
-            return new GetByIdCategoryQueryResponse
-            {
-                Result = Result<GetByIdCategoryQueryDto>.Failure(CategoryBusinessRuleMessages.CategoryNotFound(request.Id))
-            };
+            return Result<GetByIdCategoryQueryDto>.Failure(Error.NotFound(CategoryBusinessRuleMessages.CategoryNotFound(request.Id)));
         }
 
         var dto = new GetByIdCategoryQueryDto
@@ -36,11 +33,6 @@ public class GetByIdCategoryQueryHandler(
             UpdatedAt = category.UpdatedAt
         };
 
-        return new GetByIdCategoryQueryResponse
-        {
-            Result = Result<GetByIdCategoryQueryDto>.Success(dto)
-        };
+        return Result<GetByIdCategoryQueryDto>.Success(dto);
     }
 }
-
-

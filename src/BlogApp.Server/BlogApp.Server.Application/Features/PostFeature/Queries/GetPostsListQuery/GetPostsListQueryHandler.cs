@@ -11,9 +11,9 @@ namespace BlogApp.Server.Application.Features.PostFeature.Queries.GetPostsListQu
 
 public class GetPostsListQueryHandler(
     IUnitOfWork unitOfWork,
-    IMapper mapper) : IRequestHandler<GetPostsListQueryRequest, GetPostsListQueryResponse>
+    IMapper mapper) : IRequestHandler<GetPostsListQueryRequest, Result<PaginatedList<PostListQueryDto>>>
 {
-    public async Task<GetPostsListQueryResponse> Handle(GetPostsListQueryRequest request, CancellationToken cancellationToken)
+    public async Task<Result<PaginatedList<PostListQueryDto>>> Handle(GetPostsListQueryRequest request, CancellationToken cancellationToken)
     {
         var isSearchQuery = !string.IsNullOrWhiteSpace(request.SearchTerm);
 
@@ -135,7 +135,7 @@ public class GetPostsListQueryHandler(
 
         var result = new PaginatedList<PostListQueryDto>(posts, totalCount, request.PageNumber, request.PageSize);
 
-        return new GetPostsListQueryResponse { Result = result };
+        return Result<PaginatedList<PostListQueryDto>>.Success(result);
     }
 
     /// <summary>

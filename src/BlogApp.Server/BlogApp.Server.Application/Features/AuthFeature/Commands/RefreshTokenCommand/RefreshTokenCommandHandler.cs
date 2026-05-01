@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -10,9 +11,9 @@ namespace BlogApp.Server.Application.Features.AuthFeature.Commands.RefreshTokenC
 
 public class RefreshTokenCommandHandler(
     IUnitOfWork unitOfWork,
-    IJwtTokenService jwtTokenService) : IRequestHandler<RefreshTokenCommandRequest, RefreshTokenCommandResponse>
+    IJwtTokenService jwtTokenService) : IRequestHandler<RefreshTokenCommandRequest, Result<AuthResponseDto>>
 {
-    public async Task<RefreshTokenCommandResponse> Handle(RefreshTokenCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<AuthResponseDto>> Handle(RefreshTokenCommandRequest request, CancellationToken cancellationToken)
     {
         var dto = request.RefreshTokenCommandRequestDto!;
 
@@ -23,10 +24,7 @@ public class RefreshTokenCommandHandler(
 
         if (storedToken is null)
         {
-            return new RefreshTokenCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidRefreshToken)
-            };
+            return Result<AuthResponseDto>.Failure(Error.Unauthorized(AuthBusinessRuleMessages.InvalidRefreshToken));
         }
 
         // Token reuse detection: if already revoked, someone is reusing a stolen token
@@ -35,27 +33,18 @@ public class RefreshTokenCommandHandler(
             // Revoke ALL tokens for this user as a security measure
             await unitOfWork.RefreshTokensWrite.RevokeAllUserTokensAsync(storedToken.UserId, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
-            return new RefreshTokenCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidRefreshToken)
-            };
+            return Result<AuthResponseDto>.Failure(Error.Unauthorized(AuthBusinessRuleMessages.InvalidRefreshToken));
         }
 
         if (storedToken.IsExpired)
         {
-            return new RefreshTokenCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.RefreshTokenExpired)
-            };
+            return Result<AuthResponseDto>.Failure(Error.Unauthorized(AuthBusinessRuleMessages.RefreshTokenExpired));
         }
 
         var user = storedToken.User;
         if (user is null || !user.IsActive || user.IsDeleted)
         {
-            return new RefreshTokenCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.UserNotFound)
-            };
+            return Result<AuthResponseDto>.Failure(Error.NotFound(AuthBusinessRuleMessages.UserNotFound));
         }
 
         // Atomically revoke the old token
@@ -64,10 +53,7 @@ public class RefreshTokenCommandHandler(
 
         if (!revoked)
         {
-            return new RefreshTokenCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidRefreshToken)
-            };
+            return Result<AuthResponseDto>.Failure(Error.Unauthorized(AuthBusinessRuleMessages.InvalidRefreshToken));
         }
 
         // Generate new tokens
@@ -90,24 +76,21 @@ public class RefreshTokenCommandHandler(
         await unitOfWork.RefreshTokensWrite.AddAsync(refreshTokenEntity, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new RefreshTokenCommandResponse
+        return Result<AuthResponseDto>.Success(new AuthResponseDto
         {
-            Result = Result<AuthResponseDto>.Success(new AuthResponseDto
+            AccessToken = newAccessToken,
+            RefreshToken = newRefreshToken,
+            ExpiresAt = jwtTokenService.GetTokenExpiration(newAccessToken),
+            User = new UserInfoDto
             {
-                AccessToken = newAccessToken,
-                RefreshToken = newRefreshToken,
-                ExpiresAt = jwtTokenService.GetTokenExpiration(newAccessToken),
-                User = new UserInfoDto
-                {
-                    Id = user.Id,
-                    UserName = user.UserName,
-                    Email = user.Email,
-                    FullName = user.FullName,
-                    AvatarUrl = user.AvatarUrl,
-                    Role = user.Role.ToString()
-                }
-            })
-        };
+                Id = user.Id,
+                UserName = user.UserName,
+                Email = user.Email,
+                FullName = user.FullName,
+                AvatarUrl = user.AvatarUrl,
+                Role = user.Role.ToString()
+            }
+        });
     }
 }
 

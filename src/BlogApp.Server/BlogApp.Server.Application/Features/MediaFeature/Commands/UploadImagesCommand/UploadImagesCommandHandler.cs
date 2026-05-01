@@ -1,6 +1,8 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Common.Utilities;
+using BlogApp.Server.Application.Features.MediaFeature.DTOs;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -8,22 +10,16 @@ namespace BlogApp.Server.Application.Features.MediaFeature.Commands.UploadImages
 
 public class UploadImagesCommandHandler(
     IFileStorageService fileStorageService,
-    ILogger<UploadImagesCommandHandler> logger) : IRequestHandler<UploadImagesCommandRequest, UploadImagesCommandResponse>
+    ILogger<UploadImagesCommandHandler> logger) : IRequestHandler<UploadImagesCommandRequest, Result<UploadImagesResultDto>>
 {
-    public async Task<UploadImagesCommandResponse> Handle(
+    public async Task<Result<UploadImagesResultDto>> Handle(
         UploadImagesCommandRequest request, CancellationToken cancellationToken)
     {
         if (request.Files.Count == 0)
-            return new UploadImagesCommandResponse
-            {
-                Result = Result<List<ImageUploadResult>>.Failure("No files uploaded")
-            };
+            return Result<UploadImagesResultDto>.Failure(Error.Validation("No files uploaded"));
 
         if (request.Files.Count > 10)
-            return new UploadImagesCommandResponse
-            {
-                Result = Result<List<ImageUploadResult>>.Failure("Maximum 10 files at once")
-            };
+            return Result<UploadImagesResultDto>.Failure(Error.Validation("Maximum 10 files at once"));
 
         var results = new List<ImageUploadResult>();
         var errors = new List<string>();
@@ -51,7 +47,7 @@ public class UploadImagesCommandHandler(
             try
             {
                 var safeFileName = ImageValidation.SanitizeFileName(file.FileName);
-                var result = await fileStorageService.UploadImageAsync(file.Stream, safeFileName);
+                var result = await fileStorageService.UploadImageAsync(file.Stream, safeFileName, cancellationToken: cancellationToken).ConfigureAwait(false);
                 results.Add(result);
             }
             catch (Exception ex)
@@ -65,11 +61,11 @@ public class UploadImagesCommandHandler(
             ? $"Uploaded {results.Count} files. Errors: {string.Join(", ", errors)}"
             : $"Uploaded {results.Count} files successfully";
 
-        return new UploadImagesCommandResponse
+        return Result<UploadImagesResultDto>.Success(new UploadImagesResultDto
         {
-            Result = Result<List<ImageUploadResult>>.Success(results),
+            Uploaded = results,
             Errors = errors,
             Message = message
-        };
+        });
     }
 }

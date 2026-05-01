@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -11,12 +12,12 @@ namespace BlogApp.Server.Application.Features.AuthFeature.Commands.LoginCommand;
 public class LoginCommandHandler(
     IUnitOfWork unitOfWork,
     IJwtTokenService jwtTokenService,
-    ILogger<LoginCommandHandler> logger) : IRequestHandler<LoginCommandRequest, LoginCommandResponse>
+    ILogger<LoginCommandHandler> logger) : IRequestHandler<LoginCommandRequest, Result<AuthResponseDto>>
 {
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
-    public async Task<LoginCommandResponse> Handle(LoginCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<AuthResponseDto>> Handle(LoginCommandRequest request, CancellationToken cancellationToken)
     {
         var dto = request.LoginCommandRequestDto!;
 
@@ -29,24 +30,17 @@ public class LoginCommandHandler(
         {
             // Dummy BCrypt verify to equalize timing (prevents email enumeration via timing)
             BCrypt.Net.BCrypt.Verify("dummy-password", "$2a$11$K4GByMz0K3mFQoOBdVcHj.ZGZxYKYfblvP9OhNt7E.XzMnH4x1AEK");
-            return new LoginCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidCredentials)
-            };
+            return Result<AuthResponseDto>.Failure(Error.Unauthorized(AuthBusinessRuleMessages.InvalidCredentials));
         }
 
         // Hesap kilitli mi kontrol et
         if (user.LockoutEndTime.HasValue && user.LockoutEndTime > DateTime.UtcNow)
         {
             var remainingMinutes = (int)(user.LockoutEndTime.Value - DateTime.UtcNow).TotalMinutes + 1;
-            return new LoginCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.AccountLockedWithTime(remainingMinutes))
-            };
+            return Result<AuthResponseDto>.Failure(Error.Domain(AuthBusinessRuleMessages.AccountLockedWithTime(remainingMinutes)));
         }
 
         // Güvenli şifre doğrulama (BCrypt)
-        // Fix: Wrap in try-catch to handle potential exceptions
         bool passwordValid;
         try
         {
@@ -79,27 +73,18 @@ public class LoginCommandHandler(
             if (finalUser?.LockoutEndTime > DateTime.UtcNow)
             {
                 var remainingMinutes = (int)Math.Ceiling((finalUser.LockoutEndTime.Value - DateTime.UtcNow).TotalMinutes);
-                return new LoginCommandResponse
-                {
-                    Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.AccountLockedWithTime(remainingMinutes))
-                };
+                return Result<AuthResponseDto>.Failure(Error.Domain(AuthBusinessRuleMessages.AccountLockedWithTime(remainingMinutes)));
             }
 
             // Not: IncrementFailedLoginAttemptsAsync zaten veritabanına yazdığı için tekrar Update/Save çağırmaya gerek yok
 
-            return new LoginCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.InvalidCredentials)
-            };
+            return Result<AuthResponseDto>.Failure(Error.Unauthorized(AuthBusinessRuleMessages.InvalidCredentials));
         }
 
         // Kullanıcı aktif mi?
         if (!user.IsActive)
         {
-            return new LoginCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(AuthBusinessRuleMessages.AccountDisabled)
-            };
+            return Result<AuthResponseDto>.Failure(Error.Forbidden(AuthBusinessRuleMessages.AccountDisabled));
         }
 
         // Başarılı giriş - lockout bilgilerini sıfırla
@@ -129,24 +114,21 @@ public class LoginCommandHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new LoginCommandResponse
+        return Result<AuthResponseDto>.Success(new AuthResponseDto
         {
-            Result = Result<AuthResponseDto>.Success(new AuthResponseDto
+            AccessToken = accessToken,
+            RefreshToken = refreshToken,
+            ExpiresAt = jwtTokenService.GetTokenExpiration(accessToken),
+            User = new UserInfoDto
             {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                ExpiresAt = jwtTokenService.GetTokenExpiration(accessToken),
-                User = new UserInfoDto
-                {
-                    Id = user.Id,
-                    UserName = user.UserName,
-                    Email = user.Email,
-                    FullName = user.FullName,
-                    AvatarUrl = user.AvatarUrl,
-                    Role = user.Role.ToString()
-                }
-            })
-        };
+                Id = user.Id,
+                UserName = user.UserName,
+                Email = user.Email,
+                FullName = user.FullName,
+                AvatarUrl = user.AvatarUrl,
+                Role = user.Role.ToString()
+            }
+        });
     }
 }
 

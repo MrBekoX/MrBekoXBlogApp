@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -13,9 +14,9 @@ namespace BlogApp.Server.Application.Features.AuthFeature.Commands.RegisterComma
 public class RegisterCommandHandler(
     IUnitOfWork unitOfWork,
     IJwtTokenService jwtTokenService,
-    IAuthBusinessRules authBusinessRules) : IRequestHandler<RegisterCommandRequest, RegisterCommandResponse>
+    IAuthBusinessRules authBusinessRules) : IRequestHandler<RegisterCommandRequest, Result<AuthResponseDto>>
 {
-    public async Task<RegisterCommandResponse> Handle(RegisterCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<AuthResponseDto>> Handle(RegisterCommandRequest request, CancellationToken cancellationToken)
     {
         var dto = request.RegisterCommandRequestDto!;
 
@@ -27,10 +28,7 @@ public class RegisterCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new RegisterCommandResponse
-            {
-                Result = Result<AuthResponseDto>.Failure(ruleResult.Error!)
-            };
+            return Result<AuthResponseDto>.Failure(Error.Conflict(ruleResult.Error!));
         }
 
         // Kullanıcı oluştur
@@ -68,24 +66,21 @@ public class RegisterCommandHandler(
         await unitOfWork.RefreshTokensWrite.AddAsync(refreshTokenEntity, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new RegisterCommandResponse
+        return Result<AuthResponseDto>.Success(new AuthResponseDto
         {
-            Result = Result<AuthResponseDto>.Success(new AuthResponseDto
+            AccessToken = accessToken,
+            RefreshToken = refreshToken,
+            ExpiresAt = jwtTokenService.GetTokenExpiration(accessToken),
+            User = new UserInfoDto
             {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                ExpiresAt = jwtTokenService.GetTokenExpiration(accessToken),
-                User = new UserInfoDto
-                {
-                    Id = user.Id,
-                    UserName = user.UserName,
-                    Email = user.Email,
-                    FullName = user.FullName,
-                    AvatarUrl = user.AvatarUrl,
-                    Role = user.Role.ToString()
-                }
-            })
-        };
+                Id = user.Id,
+                UserName = user.UserName,
+                Email = user.Email,
+                FullName = user.FullName,
+                AvatarUrl = user.AvatarUrl,
+                Role = user.Role.ToString()
+            }
+        });
     }
 }
 

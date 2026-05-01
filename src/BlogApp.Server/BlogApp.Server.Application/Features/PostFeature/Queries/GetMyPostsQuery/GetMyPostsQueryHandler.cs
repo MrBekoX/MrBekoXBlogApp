@@ -11,9 +11,9 @@ namespace BlogApp.Server.Application.Features.PostFeature.Queries.GetMyPostsQuer
 
 public class GetMyPostsQueryHandler(
     IUnitOfWork unitOfWork,
-    IMapper mapper) : IRequestHandler<GetMyPostsQueryRequest, GetMyPostsQueryResponse>
+    IMapper mapper) : IRequestHandler<GetMyPostsQueryRequest, Result<PaginatedList<PostListQueryDto>>>
 {
-    public async Task<GetMyPostsQueryResponse> Handle(GetMyPostsQueryRequest request, CancellationToken cancellationToken)
+    public async Task<Result<PaginatedList<PostListQueryDto>>> Handle(GetMyPostsQueryRequest request, CancellationToken cancellationToken)
     {
         var query = unitOfWork.PostsRead.GetAll()
             .AsNoTracking()
@@ -33,10 +33,8 @@ public class GetMyPostsQueryHandler(
             .ProjectTo<PostListQueryDto>(mapper.ConfigurationProvider)
             .ToListAsync(cancellationToken);
 
-        return new GetMyPostsQueryResponse
-        {
-            Result = new PaginatedList<PostListQueryDto>(posts, totalCount, request.PageNumber, request.PageSize)
-        };
+        return Result<PaginatedList<PostListQueryDto>>.Success(
+            new PaginatedList<PostListQueryDto>(posts, totalCount, request.PageNumber, request.PageSize));
     }
 }
 

@@ -1,5 +1,4 @@
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
-using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.TagFeature.DTOs;
 using BlogApp.Server.Domain.Enums;
@@ -9,9 +8,9 @@ using Microsoft.EntityFrameworkCore;
 namespace BlogApp.Server.Application.Features.TagFeature.Queries.GetAllTagQuery;
 
 public class GetAllTagQueryHandler(
-    IUnitOfWork unitOfWork) : IRequestHandler<GetAllTagQueryRequest, GetAllTagQueryResponse>
+    IUnitOfWork unitOfWork) : IRequestHandler<GetAllTagQueryRequest, Result<IReadOnlyList<GetAllTagQueryDto>>>
 {
-    public async Task<GetAllTagQueryResponse> Handle(GetAllTagQueryRequest request, CancellationToken cancellationToken)
+    public async Task<Result<IReadOnlyList<GetAllTagQueryDto>>> Handle(GetAllTagQueryRequest request, CancellationToken cancellationToken)
     {
         // Fix N+1 Query: Use projection without Include
         var query = unitOfWork.TagsRead.Query()
@@ -37,9 +36,6 @@ public class GetAllTagQueryHandler(
             })
             .ToListAsync(cancellationToken);
 
-        return new GetAllTagQueryResponse
-        {
-            Result = Result<IEnumerable<GetAllTagQueryDto>>.Success(tags)
-        };
+        return Result<IReadOnlyList<GetAllTagQueryDto>>.Success(tags);
     }
 }

@@ -1,11 +1,13 @@
 using BlogApp.Server.Application.Common.Behaviors;
+using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Constants; // PostCacheKeys için gerekli
+using BlogApp.Server.Application.Features.PostFeature.DTOs;
 using BlogApp.Server.Domain.Enums;
 using MediatR;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Queries.GetPostsListQuery;
 
-public class GetPostsListQueryRequest : IRequest<GetPostsListQueryResponse>, ICacheableQuery
+public class GetPostsListQueryRequest : IRequest<Result<PaginatedList<PostListQueryDto>>>, ICacheableQuery
 {
     public int PageNumber { get; init; } = 1;
     public int PageSize { get; init; } = 10;

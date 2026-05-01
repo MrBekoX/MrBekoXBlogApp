@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -13,9 +14,9 @@ namespace BlogApp.Server.Application.Features.TagFeature.Commands.CreateTagComma
 public class CreateTagCommandHandler(
     IUnitOfWork unitOfWork,
     ITagBusinessRules tagBusinessRules,
-    ICacheService cacheService) : IRequestHandler<CreateTagCommandRequest, CreateTagCommandResponse>
+    ICacheService cacheService) : IRequestHandler<CreateTagCommandRequest, Result<Guid>>
 {
-    public async Task<CreateTagCommandResponse> Handle(CreateTagCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> Handle(CreateTagCommandRequest request, CancellationToken cancellationToken)
     {
         // Business Rules
         var ruleResult = await BusinessRuleEngine.RunAsync(
@@ -24,10 +25,7 @@ public class CreateTagCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new CreateTagCommandResponse
-            {
-                Result = Result<Guid>.Failure(ruleResult.Error!)
-            };
+            return Result<Guid>.Failure(Error.Conflict(ruleResult.Error ?? string.Empty));
         }
 
         var slug = Slug.CreateFromTitle(request.CreateTagCommandRequestDto!.Name);
@@ -46,12 +44,6 @@ public class CreateTagCommandHandler(
         // Invalidate tags cache
         await cacheService.RotateGroupVersionAsync(TagCacheKeys.ListGroup, cancellationToken);
 
-        return new CreateTagCommandResponse
-        {
-            Result = Result<Guid>.Success(tag.Id)
-        };
+        return Result<Guid>.Success(tag.Id);
     }
 }
-
-
-

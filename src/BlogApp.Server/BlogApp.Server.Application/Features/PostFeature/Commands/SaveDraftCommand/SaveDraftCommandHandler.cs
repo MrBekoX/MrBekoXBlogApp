@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -16,26 +17,20 @@ public class SaveDraftCommandHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     ITagService tagService,
-    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<SaveDraftCommandRequest, SaveDraftCommandResponse>
+    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<SaveDraftCommandRequest, Result<Guid>>
 {
-    public async Task<SaveDraftCommandResponse> Handle(SaveDraftCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> Handle(SaveDraftCommandRequest request, CancellationToken cancellationToken)
     {
         var userId = currentUserService.UserId;
         if (userId == null)
         {
-            return new SaveDraftCommandResponse
-            {
-                Result = Result<Guid>.Failure(PostBusinessRuleMessages.UserNotAuthenticated)
-            };
+            return Result<Guid>.Failure(Error.Forbidden(PostBusinessRuleMessages.UserNotAuthenticated));
         }
 
         // BUG-001 FIX: Null guard for DTO
         if (request.SaveDraftCommandRequestDto == null)
         {
-            return new SaveDraftCommandResponse
-            {
-                Result = Result<Guid>.Failure(PostValidationMessages.DraftDataRequired)
-            };
+            return Result<Guid>.Failure(Error.Validation(PostValidationMessages.DraftDataRequired));
         }
 
         var dto = request.SaveDraftCommandRequestDto;
@@ -53,10 +48,7 @@ public class SaveDraftCommandHandler(
 
             if (existingPost == null)
             {
-                return new SaveDraftCommandResponse
-                {
-                    Result = Result<Guid>.Failure(PostBusinessRuleMessages.PostNotFoundGeneric)
-                };
+                return Result<Guid>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
             }
 
             post = existingPost;
@@ -65,10 +57,7 @@ public class SaveDraftCommandHandler(
             var user = await unitOfWork.UsersRead.GetByIdAsync(userId.Value, cancellationToken);
             if (post.AuthorId != userId && user?.Role != UserRole.Admin && user?.Role != UserRole.Editor)
             {
-                return new SaveDraftCommandResponse
-                {
-                    Result = Result<Guid>.Failure(PostBusinessRuleMessages.UnauthorizedToEditPost)
-                };
+                return Result<Guid>.Failure(Error.Forbidden(PostBusinessRuleMessages.UnauthorizedToEditPost));
             }
 
             post.Title = htmlSanitizer.Sanitize(dto.Title) ?? string.Empty;
@@ -158,15 +147,12 @@ public class SaveDraftCommandHandler(
         {
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException ex)
+        catch (DbUpdateConcurrencyException)
         {
-            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently, ex);
+            return Result<Guid>.Failure(Error.Conflict(PostBusinessRuleMessages.PostModifiedConcurrently));
         }
 
-        return new SaveDraftCommandResponse
-        {
-            Result = Result<Guid>.Success(post.Id)
-        };
+        return Result<Guid>.Success(post.Id);
     }
 }
 

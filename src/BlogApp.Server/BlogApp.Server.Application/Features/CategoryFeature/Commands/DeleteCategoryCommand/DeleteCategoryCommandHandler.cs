@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -11,9 +12,9 @@ namespace BlogApp.Server.Application.Features.CategoryFeature.Commands.DeleteCat
 public class DeleteCategoryCommandHandler(
     IUnitOfWork unitOfWork,
     ICategoryBusinessRules categoryBusinessRules,
-    ICacheService cacheService) : IRequestHandler<DeleteCategoryCommandRequest, DeleteCategoryCommandResponse>
+    ICacheService cacheService) : IRequestHandler<DeleteCategoryCommandRequest, Result<Unit>>
 {
-    public async Task<DeleteCategoryCommandResponse> Handle(DeleteCategoryCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(DeleteCategoryCommandRequest request, CancellationToken cancellationToken)
     {
         // Business Rules
         var ruleResult = await BusinessRuleEngine.RunAsync(
@@ -22,19 +23,13 @@ public class DeleteCategoryCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new DeleteCategoryCommandResponse
-            {
-                Result = Result.Failure(ruleResult.Error!)
-            };
+            return Result<Unit>.Failure(ruleResult.ErrorDetail ?? Error.Domain(ruleResult.Error ?? string.Empty));
         }
 
         var category = await unitOfWork.CategoriesRead.GetByIdAsync(request.Id, cancellationToken);
         if (category is null)
         {
-            return new DeleteCategoryCommandResponse
-            {
-                Result = Result.Failure(CategoryBusinessRuleMessages.CategoryNotFoundGeneric)
-            };
+            return Result<Unit>.Failure(Error.NotFound(CategoryBusinessRuleMessages.CategoryNotFoundGeneric));
         }
 
         // Soft delete
@@ -47,10 +42,6 @@ public class DeleteCategoryCommandHandler(
         // Invalidate categories cache
         await cacheService.RotateGroupVersionAsync(CategoryCacheKeys.ListGroup, cancellationToken);
 
-        return new DeleteCategoryCommandResponse
-        {
-            Result = Result.Success()
-        };
+        return Result<Unit>.Success(Unit.Value);
     }
 }
-

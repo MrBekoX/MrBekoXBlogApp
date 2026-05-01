@@ -42,7 +42,7 @@ public class ExceptionHandlingMiddleware
                 statusCode = HttpStatusCode.BadRequest;
                 errors = validationEx.Errors.SelectMany(e => e.Value).ToList();
                 var errorDetails = string.Join("; ", validationEx.Errors.Select(e => $"{e.Key}: {string.Join(", ", e.Value)}"));
-                _logger.LogWarning("Validation error occurred: {Errors}", errorDetails);
+                _logger.LogInformation("ValidationException reached middleware (post-refactor this should be rare): {Errors}", errorDetails);
                 break;
 
             case NotFoundException notFoundEx:
@@ -60,7 +60,7 @@ public class ExceptionHandlingMiddleware
             case ConflictException conflictEx:
                 statusCode = HttpStatusCode.Conflict;
                 errors.Add(conflictEx.Message);
-                _logger.LogWarning(exception, "Conflict error: {Message}", conflictEx.Message);
+                _logger.LogInformation(exception, "ConflictException reached middleware (post-refactor this should be rare): {Message}", conflictEx.Message);
                 break;
 
             case UnauthorizedAccessException:

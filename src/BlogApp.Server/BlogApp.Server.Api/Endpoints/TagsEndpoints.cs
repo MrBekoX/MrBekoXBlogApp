@@ -4,6 +4,7 @@ using BlogApp.Server.Application.Features.TagFeature.Commands.DeleteTagCommand;
 using BlogApp.Server.Application.Features.TagFeature.DTOs;
 using BlogApp.Server.Application.Features.TagFeature.Queries.GetAllTagQuery;
 using BlogApp.Server.Api.Filters;
+using BlogApp.Server.Api.Helpers;
 using MediatR;
 
 namespace BlogApp.Server.Api.Endpoints;
@@ -28,15 +29,15 @@ public static class TagsEndpoints
                 IncludeEmpty = includeEmpty ?? false
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<IEnumerable<GetAllTagQueryDto>>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            return Results.Ok(ApiResponse<IEnumerable<GetAllTagQueryDto>>.SuccessResult(response.Result.Value!));
+            return Results.Ok(ApiResponse<IReadOnlyList<GetAllTagQueryDto>>.SuccessResult(response.Value!));
         })
         .WithName("GetAllTags")
         .WithDescription("Get all tags. Use includeEmpty=true to include tags without published posts.")
         .CacheOutput("Tags")
-        .Produces<ApiResponse<IEnumerable<GetAllTagQueryDto>>>(200);
+        .Produces<ApiResponse<IReadOnlyList<GetAllTagQueryDto>>>(200);
 
         // POST /api/tags
         group.MapPost("/", async (
@@ -51,11 +52,11 @@ public static class TagsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            return Results.Created($"/api/tags/{response.Result.Value}",
-                ApiResponse<Guid>.SuccessResult(response.Result.Value!, "Tag created successfully"));
+            return Results.Created($"/api/tags/{response.Value}",
+                ApiResponse<Guid>.SuccessResult(response.Value, "Tag created successfully"));
         })
         .WithName("CreateTag")
         .WithDescription("Create a new tag")
@@ -77,8 +78,8 @@ public static class TagsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
             return Results.NoContent();
         })

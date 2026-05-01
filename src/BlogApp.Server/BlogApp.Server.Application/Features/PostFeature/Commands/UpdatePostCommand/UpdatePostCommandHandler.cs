@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -17,9 +18,9 @@ public class UpdatePostCommandHandler(
     IPostBusinessRules postBusinessRules,
     ITagService tagService,
     ICacheService cacheService,
-    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<UpdatePostCommandRequest, UpdatePostCommandResponse>
+    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<UpdatePostCommandRequest, Result<Unit>>
 {
-    public async Task<UpdatePostCommandResponse> Handle(UpdatePostCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(UpdatePostCommandRequest request, CancellationToken cancellationToken)
     {
         var dto = request.UpdatePostCommandRequestDto!;
 
@@ -30,10 +31,7 @@ public class UpdatePostCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new UpdatePostCommandResponse
-            {
-                Result = Result.Failure(ruleResult.Error!)
-            };
+            return Result<Unit>.Failure(Error.NotFound(ruleResult.Error!));
         }
 
         // Include Tags to ensure EF Core tracks existing relationships correctly
@@ -45,10 +43,7 @@ public class UpdatePostCommandHandler(
             .FirstOrDefaultAsync(p => p.Id == dto.Id, cancellationToken);
         if (post is null)
         {
-            return new UpdatePostCommandResponse
-            {
-                Result = Result.Failure(PostBusinessRuleMessages.PostNotFoundGeneric)
-            };
+            return Result<Unit>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
         }
 
         // BOLA check: Authors can only edit their own posts
@@ -56,10 +51,7 @@ public class UpdatePostCommandHandler(
         if (!currentUserService.IsInRole("Admin") && !currentUserService.IsInRole("Editor")
             && post.AuthorId != currentUserId)
         {
-            return new UpdatePostCommandResponse
-            {
-                Result = Result.Failure("You can only edit your own posts")
-            };
+            return Result<Unit>.Failure(Error.Forbidden("You can only edit your own posts"));
         }
 
         // Cache invalidation için orijinal slug'ı sakla
@@ -168,9 +160,9 @@ public class UpdatePostCommandHandler(
             await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException ex)
+        catch (DbUpdateConcurrencyException)
         {
-            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently, ex);
+            return Result<Unit>.Failure(Error.Conflict(PostBusinessRuleMessages.PostModifiedConcurrently));
         }
 
         // Cache invalidation
@@ -189,10 +181,7 @@ public class UpdatePostCommandHandler(
         // Rotate list cache version (content change affects lists)
         await cacheService.RotateGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken);
 
-        return new UpdatePostCommandResponse
-        {
-            Result = Result.Success()
-        };
+        return Result<Unit>.Success(Unit.Value);
     }
 }
 

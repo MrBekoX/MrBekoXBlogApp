@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -8,19 +9,16 @@ namespace BlogApp.Server.Application.Features.AuthFeature.Commands.ChangePasswor
 
 public class ChangePasswordCommandHandler(
     IUnitOfWork unitOfWork,
-    ITokenBlacklistService tokenBlacklist) : IRequestHandler<ChangePasswordCommandRequest, ChangePasswordCommandResponse>
+    ITokenBlacklistService tokenBlacklist) : IRequestHandler<ChangePasswordCommandRequest, Result<Unit>>
 {
-    public async Task<ChangePasswordCommandResponse> Handle(ChangePasswordCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(ChangePasswordCommandRequest request, CancellationToken cancellationToken)
     {
         var dto = request.Dto;
 
         var user = await unitOfWork.UsersRead.GetByIdAsync(request.UserId, cancellationToken);
         if (user is null || user.IsDeleted)
         {
-            return new ChangePasswordCommandResponse
-            {
-                Result = Result.Failure(AuthBusinessRuleMessages.UserNotFound)
-            };
+            return Result<Unit>.Failure(Error.NotFound(AuthBusinessRuleMessages.UserNotFound));
         }
 
         bool currentPasswordValid;
@@ -35,10 +33,7 @@ public class ChangePasswordCommandHandler(
 
         if (!currentPasswordValid)
         {
-            return new ChangePasswordCommandResponse
-            {
-                Result = Result.Failure("Current password is incorrect.")
-            };
+            return Result<Unit>.Failure(Error.Unauthorized("Current password is incorrect."));
         }
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, workFactor: 12);
@@ -52,6 +47,6 @@ public class ChangePasswordCommandHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new ChangePasswordCommandResponse { Result = Result.Success() };
+        return Result<Unit>.Success(Unit.Value);
     }
 }

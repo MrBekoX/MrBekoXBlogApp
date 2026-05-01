@@ -1,12 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
-using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Common.Interfaces.Services;
+using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.MediaFeature.Commands.DeleteMediaCommand;
 using BlogApp.Server.Application.Features.MediaFeature.Commands.UploadImageCommand;
 using BlogApp.Server.Application.Features.MediaFeature.Commands.UploadImagesCommand;
 using BlogApp.Server.Application.Features.MediaFeature.DTOs;
 using BlogApp.Server.Api.Filters;
+using BlogApp.Server.Api.Helpers;
 using MediatR;
 
 namespace BlogApp.Server.Api.Endpoints;
@@ -55,10 +56,10 @@ public static class MediaEndpoints
                 CustomRequestHash = await BuildUploadRequestHashAsync([file], generateThumbnail, cancellationToken)
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<ImageUploadResult>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            return Results.Ok(ApiResponse<ImageUploadResult>.SuccessResult(response.Result.Value!, "Image uploaded successfully"));
+            return Results.Ok(ApiResponse<ImageUploadResult>.SuccessResult(response.Value!, "Image uploaded successfully"));
         })
         .WithName("UploadImage")
         .WithDescription("Upload an image")
@@ -74,7 +75,7 @@ public static class MediaEndpoints
             CancellationToken cancellationToken) =>
         {
             if (files == null || files.Count == 0)
-                return Results.BadRequest(ApiResponse<List<ImageUploadResult>>.FailureResult("No files uploaded"));
+                return Results.BadRequest(ApiResponse<UploadImagesResultDto>.FailureResult("No files uploaded"));
 
             var fileDtos = new List<FileUploadDto>();
             var memoryStreams = new List<MemoryStream>();
@@ -106,10 +107,10 @@ public static class MediaEndpoints
                     CustomRequestHash = await BuildUploadRequestHashAsync(files, null, cancellationToken)
                 }, cancellationToken);
 
-                if (!response.Result.IsSuccess)
-                    return Results.BadRequest(ApiResponse<List<ImageUploadResult>>.FailureResult(response.Result.Error!));
+                if (!response.IsSuccess)
+                    return response.ToHttpResult();
 
-                return Results.Ok(ApiResponse<List<ImageUploadResult>>.SuccessResult(response.Result.Value!, response.Message));
+                return Results.Ok(ApiResponse<UploadImagesResultDto>.SuccessResult(response.Value!, response.Value!.Message));
             }
             finally
             {
@@ -120,7 +121,7 @@ public static class MediaEndpoints
         .WithName("UploadImages")
         .WithDescription("Upload multiple images")
         .ValidateAntiforgery()
-        .Produces<ApiResponse<List<ImageUploadResult>>>(200)
+        .Produces<ApiResponse<UploadImagesResultDto>>(200)
         .Produces(400);
 
         // DELETE /api/media
@@ -136,8 +137,8 @@ public static class MediaEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
             return Results.NoContent();
         })

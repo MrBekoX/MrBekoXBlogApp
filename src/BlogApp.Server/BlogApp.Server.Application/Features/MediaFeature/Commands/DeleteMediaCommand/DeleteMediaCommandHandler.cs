@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using MediatR;
@@ -5,19 +6,19 @@ using MediatR;
 namespace BlogApp.Server.Application.Features.MediaFeature.Commands.DeleteMediaCommand;
 
 public class DeleteMediaCommandHandler(
-    IFileStorageService fileStorageService) : IRequestHandler<DeleteMediaCommandRequest, DeleteMediaCommandResponse>
+    IFileStorageService fileStorageService) : IRequestHandler<DeleteMediaCommandRequest, Result<Unit>>
 {
-    public async Task<DeleteMediaCommandResponse> Handle(
+    public async Task<Result<Unit>> Handle(
         DeleteMediaCommandRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(request.Url))
-            return new DeleteMediaCommandResponse { Result = Result.Failure("URL is required") };
+            return Result<Unit>.Failure(Error.Validation("URL is required"));
 
-        var deleted = await fileStorageService.DeleteAsync(request.Url);
+        var deleted = await fileStorageService.DeleteAsync(request.Url, cancellationToken).ConfigureAwait(false);
 
-        return new DeleteMediaCommandResponse
-        {
-            Result = deleted ? Result.Success() : Result.Failure("File not found")
-        };
+        if (!deleted)
+            return Result<Unit>.Failure(Error.NotFound("File not found"));
+
+        return Result<Unit>.Success(Unit.Value);
     }
 }

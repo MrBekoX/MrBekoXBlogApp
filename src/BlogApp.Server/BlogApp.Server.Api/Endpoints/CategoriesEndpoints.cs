@@ -6,6 +6,7 @@ using BlogApp.Server.Application.Features.CategoryFeature.DTOs;
 using BlogApp.Server.Application.Features.CategoryFeature.Queries.GetAllCategoryQuery;
 using BlogApp.Server.Application.Features.CategoryFeature.Queries.GetByIdCategoryQuery;
 using BlogApp.Server.Api.Filters;
+using BlogApp.Server.Api.Helpers;
 using MediatR;
 
 namespace BlogApp.Server.Api.Endpoints;
@@ -32,15 +33,15 @@ public static class CategoriesEndpoints
                 ExcludeEmptyCategories = excludeEmptyCategories ?? false
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<IEnumerable<GetAllCategoryQueryDto>>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            return Results.Ok(ApiResponse<IEnumerable<GetAllCategoryQueryDto>>.SuccessResult(response.Result.Value!));
+            return Results.Ok(ApiResponse<IReadOnlyList<GetAllCategoryQueryDto>>.SuccessResult(response.Value!));
         })
         .WithName("GetAllCategories")
         .WithDescription("Get all categories")
         .CacheOutput("Categories")
-        .Produces<ApiResponse<IEnumerable<GetAllCategoryQueryDto>>>(200);
+        .Produces<ApiResponse<IReadOnlyList<GetAllCategoryQueryDto>>>(200);
 
         // GET /api/categories/{id}
         group.MapGet("/{id:guid}", async (
@@ -53,10 +54,10 @@ public static class CategoriesEndpoints
                 Id = id
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<GetByIdCategoryQueryDto>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            return Results.Ok(ApiResponse<GetByIdCategoryQueryDto>.SuccessResult(response.Result.Value!));
+            return Results.Ok(ApiResponse<GetByIdCategoryQueryDto>.SuccessResult(response.Value!));
         })
         .WithName("GetCategoryById")
         .WithDescription("Get category by ID")
@@ -77,11 +78,11 @@ public static class CategoriesEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
-            return Results.Created($"/api/categories/{response.Result.Value}",
-                ApiResponse<Guid>.SuccessResult(response.Result.Value!, "Category created successfully"));
+            return Results.Created($"/api/categories/{response.Value}",
+                ApiResponse<Guid>.SuccessResult(response.Value, "Category created successfully"));
         })
         .WithName("CreateCategory")
         .WithDescription("Create a new category")
@@ -106,8 +107,8 @@ public static class CategoriesEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<object>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
             return Results.NoContent();
         })
@@ -132,8 +133,8 @@ public static class CategoriesEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
+            if (!response.IsSuccess)
+                return response.ToHttpResult();
 
             return Results.NoContent();
         })

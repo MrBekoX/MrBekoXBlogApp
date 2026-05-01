@@ -1,10 +1,11 @@
 using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.AuthFeature.DTOs;
 using MediatR;
 
 namespace BlogApp.Server.Application.Features.AuthFeature.Commands.RegisterCommand;
 
-public class RegisterCommandRequest : IRequest<RegisterCommandResponse>, IIdempotentCommand
+public class RegisterCommandRequest : IRequest<Result<AuthResponseDto>>, IIdempotentCommand
 {
     public RegisterCommandDto? RegisterCommandRequestDto { get; set; }
 

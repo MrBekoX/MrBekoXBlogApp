@@ -8,9 +8,9 @@ namespace BlogApp.Server.Application.Features.AuthFeature.Commands.LogoutCommand
 public class LogoutCommandHandler(
     IUnitOfWork unitOfWork,
     IJwtTokenService jwtTokenService,
-    ITokenBlacklistService tokenBlacklist) : IRequestHandler<LogoutCommandRequest, LogoutCommandResponse>
+    ITokenBlacklistService tokenBlacklist) : IRequestHandler<LogoutCommandRequest, Result<Unit>>
 {
-    public async Task<LogoutCommandResponse> Handle(LogoutCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(LogoutCommandRequest request, CancellationToken cancellationToken)
     {
         // Blacklist the access token so it cannot be reused
         if (!string.IsNullOrEmpty(request.AccessToken))
@@ -34,7 +34,7 @@ public class LogoutCommandHandler(
 
         if (string.IsNullOrEmpty(request.RefreshToken))
         {
-            return new LogoutCommandResponse { Result = Result.Success() };
+            return Result<Unit>.Success(Unit.Value);
         }
 
         // Find the token to get the user ID
@@ -48,6 +48,6 @@ public class LogoutCommandHandler(
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
-        return new LogoutCommandResponse { Result = Result.Success() };
+        return Result<Unit>.Success(Unit.Value);
     }
 }

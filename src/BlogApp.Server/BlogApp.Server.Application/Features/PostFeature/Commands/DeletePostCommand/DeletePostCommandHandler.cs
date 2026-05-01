@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -14,9 +15,9 @@ public class DeletePostCommandHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     IPostBusinessRules postBusinessRules,
-    ICacheService cacheService) : IRequestHandler<DeletePostCommandRequest, DeletePostCommandResponse>
+    ICacheService cacheService) : IRequestHandler<DeletePostCommandRequest, Result<Unit>>
 {
-    public async Task<DeletePostCommandResponse> Handle(DeletePostCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(DeletePostCommandRequest request, CancellationToken cancellationToken)
     {
         // Business Rules
         var ruleResult = await BusinessRuleEngine.RunAsync(
@@ -25,19 +26,13 @@ public class DeletePostCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new DeletePostCommandResponse
-            {
-                Result = Result.Failure(ruleResult.Error!)
-            };
+            return Result<Unit>.Failure(Error.NotFound(ruleResult.Error!));
         }
 
         var post = await unitOfWork.PostsRead.GetByIdAsync(request.Id, cancellationToken);
         if (post is null)
         {
-            return new DeletePostCommandResponse
-            {
-                Result = Result.Failure(PostBusinessRuleMessages.PostNotFoundGeneric)
-            };
+            return Result<Unit>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
         }
 
         // Soft delete
@@ -50,9 +45,9 @@ public class DeletePostCommandHandler(
             await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateConcurrencyException ex)
+        catch (DbUpdateConcurrencyException)
         {
-            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently, ex);
+            return Result<Unit>.Failure(Error.Conflict(PostBusinessRuleMessages.PostModifiedConcurrently));
         }
 
         // Cache invalidation
@@ -60,10 +55,7 @@ public class DeletePostCommandHandler(
         await cacheService.RemoveAsync(PostCacheKeys.BySlug(post.Slug), cancellationToken);
         await cacheService.RotateGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken);
 
-        return new DeletePostCommandResponse
-        {
-            Result = Result.Success()
-        };
+        return Result<Unit>.Success(Unit.Value);
     }
 }
 

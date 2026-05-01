@@ -1,3 +1,4 @@
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -14,16 +15,13 @@ public class CreatePostCommandHandler(
     ICurrentUserService currentUserService,
     ITagService tagService,
     ICacheService cacheService,
-    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<CreatePostCommandRequest, CreatePostCommandResponse>
+    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<CreatePostCommandRequest, Result<Guid>>
 {
-    public async Task<CreatePostCommandResponse> Handle(CreatePostCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> Handle(CreatePostCommandRequest request, CancellationToken cancellationToken)
     {
         if (currentUserService.UserId is null)
         {
-            return new CreatePostCommandResponse
-            {
-                Result = Result<Guid>.Failure(PostBusinessRuleMessages.UserNotAuthenticated)
-            };
+            return Result<Guid>.Failure(Error.Forbidden(PostBusinessRuleMessages.UserNotAuthenticated));
         }
 
         var dto = request.CreatePostCommandRequestDto!;
@@ -95,17 +93,13 @@ public class CreatePostCommandHandler(
             {
                 await cacheService.RotateGroupVersionAsync(PostCacheKeys.ListGroup, cancellationToken);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Cache rotation failure should not fail the entire operation
-                // Consider logging this error
             }
         }
 
-        return new CreatePostCommandResponse
-        {
-            Result = Result<Guid>.Success(post.Id)
-        };
+        return Result<Guid>.Success(post.Id);
     }
 }
 

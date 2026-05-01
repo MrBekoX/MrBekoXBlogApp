@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BlogApp.Server.Api.Extensions;
+using BlogApp.Server.Api.Helpers;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Commands.CreatePostCommand;
@@ -76,8 +77,8 @@ public static class PostsEndpoints
             }, cancellationToken);
 
             return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(
-                response.Result,
-                PaginationMeta.FromPaginatedList(response.Result)));
+                response.Value!,
+                PaginationMeta.FromPaginatedList(response.Value!)));
         })
         .WithName("GetAllPosts")
         .WithDescription("Get paginated list of posts")
@@ -96,7 +97,7 @@ public static class PostsEndpoints
                 SortDescending = true
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(response.Result));
+            return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(response.Value!));
         })
         .WithName("GetFeaturedPosts")
         .WithDescription("Get featured posts")
@@ -131,7 +132,7 @@ public static class PostsEndpoints
                 SortDescending = true
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(response.Result));
+            return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(response.Value!));
         })
         .WithName("GetDrafts")
         .WithDescription("Get current user's drafts")
@@ -161,8 +162,8 @@ public static class PostsEndpoints
             }, cancellationToken);
 
             return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(
-                response.Result,
-                PaginationMeta.FromPaginatedList(response.Result)));
+                response.Value!,
+                PaginationMeta.FromPaginatedList(response.Value!)));
         })
         .WithName("GetMyPosts")
         .WithDescription("Get current user's posts")
@@ -191,10 +192,10 @@ public static class PostsEndpoints
                 RequirePublishedStatus = decision.Status == PostStatus.Published
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult<PostDetailQueryDto>();
 
-            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(response.Result.Value!));
+            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(response.Value!));
         })
         .WithName("GetPostById")
         .WithDescription("Get post by ID")
@@ -211,10 +212,10 @@ public static class PostsEndpoints
                 Slug = slug
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<PostDetailQueryDto>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult<PostDetailQueryDto>();
 
-            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(response.Result.Value!));
+            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(response.Value!));
         })
         .WithName("GetPostBySlug")
         .WithDescription("Get post by slug")
@@ -233,11 +234,11 @@ public static class PostsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult<Guid>();
 
-            return Results.Created($"/api/posts/{response.Result.Value}",
-                ApiResponse<Guid>.SuccessResult(response.Result.Value, "Post created successfully"));
+            return Results.Created($"/api/posts/{response.Value}",
+                ApiResponse<Guid>.SuccessResult(response.Value, "Post created successfully"));
         })
         .WithName("CreatePost")
         .WithDescription("Create a new post")
@@ -262,8 +263,8 @@ public static class PostsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<object>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult();
 
             return Results.Ok(ApiResponse<object>.SuccessResult(new { postId = id }, "Post updated successfully"));
         })
@@ -287,8 +288,8 @@ public static class PostsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult();
 
             return Results.NoContent();
         })
@@ -311,26 +312,8 @@ public static class PostsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (response.IsProcessing)
-            {
-                return Results.Accepted(value: ApiResponse<object>.SuccessResult(
-                    new { response.OperationId, response.CorrelationId, status = "Processing" },
-                    response.ErrorMessage ?? "Publish request is still processing."));
-            }
-
-            if (string.Equals(response.ErrorCode, "operation_conflict", StringComparison.Ordinal))
-            {
-                return Results.Conflict(ApiResponse<object>.FailureResult(
-                    response.ErrorMessage ?? "The same operationId was used with a different payload."));
-            }
-
-            if (!response.Result.IsSuccess)
-            {
-                if (string.Equals(response.ErrorCode, "post_not_found", StringComparison.Ordinal))
-                    return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
-
-                return Results.BadRequest(ApiResponse<object>.FailureResult(response.Result.Error!));
-            }
+            if (response.IsFailure)
+                return response.ToHttpResult();
 
             return Results.Ok(ApiResponse<object>.SuccessResult(
                 new { postId = id }, "Post published successfully"));
@@ -340,8 +323,6 @@ public static class PostsEndpoints
         .RequireAuthorization(policy => policy.RequireRole("Admin", "Editor"))
         .ValidateAntiforgery()
         .Produces<ApiResponse<object>>(200)
-        .Produces(StatusCodes.Status202Accepted)
-        .Produces(StatusCodes.Status409Conflict)
         .Produces(404);
 
         group.MapPost("/{id:guid}/unpublish", async (
@@ -356,8 +337,8 @@ public static class PostsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult();
 
             return Results.Ok(ApiResponse<object>.SuccessResult(
                 new { postId = id }, "Post unpublished successfully"));
@@ -381,8 +362,8 @@ public static class PostsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.NotFound(ApiResponse<object>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult();
 
             return Results.Ok(ApiResponse<object>.SuccessResult(
                 new { postId = id }, "Post archived successfully"));
@@ -406,10 +387,10 @@ public static class PostsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult<Guid>();
 
-            return Results.Ok(ApiResponse<Guid>.SuccessResult(response.Result.Value, "Draft saved"));
+            return Results.Ok(ApiResponse<Guid>.SuccessResult(response.Value, "Draft saved"));
         })
         .WithName("SaveDraft")
         .WithDescription("Save draft (auto-save endpoint)")
@@ -430,10 +411,10 @@ public static class PostsEndpoints
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty
             }, cancellationToken);
 
-            if (!response.Result.IsSuccess)
-                return Results.BadRequest(ApiResponse<Guid>.FailureResult(response.Result.Error!));
+            if (response.IsFailure)
+                return response.ToHttpResult<Guid>();
 
-            return Results.Ok(ApiResponse<Guid>.SuccessResult(response.Result.Value, "Draft saved"));
+            return Results.Ok(ApiResponse<Guid>.SuccessResult(response.Value, "Draft saved"));
         })
         .WithName("UpdateDraft")
         .WithDescription("Update draft (auto-save endpoint)")

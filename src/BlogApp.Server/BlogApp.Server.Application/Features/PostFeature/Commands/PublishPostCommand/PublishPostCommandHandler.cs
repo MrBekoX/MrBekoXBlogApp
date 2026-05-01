@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -16,9 +17,9 @@ public class PublishPostCommandHandler(
     ICacheService cacheService,
     IPostBusinessRules postBusinessRules,
     ICurrentUserService currentUserService,
-    ILogger<PublishPostCommandHandler> logger) : IRequestHandler<PublishPostCommandRequest, PublishPostCommandResponse>
+    ILogger<PublishPostCommandHandler> logger) : IRequestHandler<PublishPostCommandRequest, Result<Unit>>
 {
-    public async Task<PublishPostCommandResponse> Handle(PublishPostCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(PublishPostCommandRequest request, CancellationToken cancellationToken)
     {
         var ruleResult = await BusinessRuleEngine.RunAsync(
             async () => await postBusinessRules.CheckPostExistsAsync(request.Id)
@@ -26,13 +27,7 @@ public class PublishPostCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new PublishPostCommandResponse
-            {
-                OperationId = request.OperationId,
-                ErrorCode = "post_not_found",
-                ErrorMessage = ruleResult.Error,
-                Result = Result.Failure(ruleResult.Error!)
-            };
+            return Result<Unit>.Failure(Error.NotFound(ruleResult.Error!));
         }
 
         // Use AsTracking() to get a tracked entity — prevents TOCTOU race condition
@@ -41,13 +36,7 @@ public class PublishPostCommandHandler(
             .FirstOrDefaultAsync(p => p.Id == request.Id, cancellationToken);
         if (post is null)
         {
-            return new PublishPostCommandResponse
-            {
-                OperationId = request.OperationId,
-                ErrorCode = "post_not_found",
-                ErrorMessage = PostBusinessRuleMessages.PostNotFoundGeneric,
-                Result = Result.Failure(PostBusinessRuleMessages.PostNotFoundGeneric)
-            };
+            return Result<Unit>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
         }
 
         post.Publish();
@@ -61,7 +50,7 @@ public class PublishPostCommandHandler(
         catch (DbUpdateConcurrencyException ex)
         {
             logger.LogWarning(ex, "Concurrent publish detected for post {PostId}", request.Id);
-            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently);
+            return Result<Unit>.Failure(Error.Conflict(PostBusinessRuleMessages.PostModifiedConcurrently));
         }
 
         await cacheService.RemoveAsync(PostCacheKeys.ById(post.Id), cancellationToken);
@@ -72,11 +61,7 @@ public class PublishPostCommandHandler(
             "[Publish] Post {PostId} ({Slug}) published. operationId={OperationId}",
             post.Id, post.Slug, request.OperationId);
 
-        return new PublishPostCommandResponse
-        {
-            OperationId = request.OperationId,
-            Result = Result.Success()
-        };
+        return Result<Unit>.Success(Unit.Value);
     }
 }
 
@@ -85,9 +70,9 @@ public class UnpublishPostCommandHandler(
     ICacheService cacheService,
     IPostBusinessRules postBusinessRules,
     ICurrentUserService currentUserService,
-    ILogger<UnpublishPostCommandHandler> logger) : IRequestHandler<UnpublishPostCommandRequest, UnpublishPostCommandResponse>
+    ILogger<UnpublishPostCommandHandler> logger) : IRequestHandler<UnpublishPostCommandRequest, Result<Unit>>
 {
-    public async Task<UnpublishPostCommandResponse> Handle(UnpublishPostCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Unit>> Handle(UnpublishPostCommandRequest request, CancellationToken cancellationToken)
     {
         var ruleResult = await BusinessRuleEngine.RunAsync(
             async () => await postBusinessRules.CheckPostExistsAsync(request.Id)
@@ -95,7 +80,7 @@ public class UnpublishPostCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new UnpublishPostCommandResponse { Result = Result.Failure(ruleResult.Error!) };
+            return Result<Unit>.Failure(Error.NotFound(ruleResult.Error!));
         }
 
         // Use AsTracking() to get a tracked entity — prevents TOCTOU race condition
@@ -104,7 +89,7 @@ public class UnpublishPostCommandHandler(
             .FirstOrDefaultAsync(p => p.Id == request.Id, cancellationToken);
         if (post is null)
         {
-            return new UnpublishPostCommandResponse { Result = Result.Failure(PostBusinessRuleMessages.PostNotFoundGeneric) };
+            return Result<Unit>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
         }
 
         post.Unpublish();
@@ -118,7 +103,7 @@ public class UnpublishPostCommandHandler(
         catch (DbUpdateConcurrencyException ex)
         {
             logger.LogWarning(ex, "Concurrent unpublish detected for post {PostId}", request.Id);
-            throw new ConflictException(PostBusinessRuleMessages.PostModifiedConcurrently);
+            return Result<Unit>.Failure(Error.Conflict(PostBusinessRuleMessages.PostModifiedConcurrently));
         }
 
         await cacheService.RemoveAsync(PostCacheKeys.ById(post.Id), cancellationToken);
@@ -127,6 +112,6 @@ public class UnpublishPostCommandHandler(
 
         logger.LogInformation("[Unpublish] Post {PostId} ({Slug}) unpublished.", post.Id, post.Slug);
 
-        return new UnpublishPostCommandResponse { Result = Result.Success() };
+        return Result<Unit>.Success(Unit.Value);
     }
 }

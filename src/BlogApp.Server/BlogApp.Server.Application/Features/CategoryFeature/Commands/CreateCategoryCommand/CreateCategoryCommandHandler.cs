@@ -1,4 +1,5 @@
 using BlogApp.Server.Application.Common.BusinessRuleEngine;
+using BlogApp.Server.Application.Common.Errors;
 using BlogApp.Server.Application.Common.Interfaces.Persistence;
 using BlogApp.Server.Application.Common.Interfaces.Services;
 using BlogApp.Server.Application.Common.Models;
@@ -13,9 +14,9 @@ namespace BlogApp.Server.Application.Features.CategoryFeature.Commands.CreateCat
 public class CreateCategoryCommandHandler(
     IUnitOfWork unitOfWork,
     ICategoryBusinessRules categoryBusinessRules,
-    ICacheService cacheService) : IRequestHandler<CreateCategoryCommandRequest, CreateCategoryCommandResponse>
+    ICacheService cacheService) : IRequestHandler<CreateCategoryCommandRequest, Result<Guid>>
 {
-    public async Task<CreateCategoryCommandResponse> Handle(CreateCategoryCommandRequest request, CancellationToken cancellationToken)
+    public async Task<Result<Guid>> Handle(CreateCategoryCommandRequest request, CancellationToken cancellationToken)
     {
         // Business Rules
         var ruleResult = await BusinessRuleEngine.RunAsync(
@@ -24,10 +25,7 @@ public class CreateCategoryCommandHandler(
 
         if (!ruleResult.IsSuccess)
         {
-            return new CreateCategoryCommandResponse
-            {
-                Result = Result<Guid>.Failure(ruleResult.Error!)
-            };
+            return Result<Guid>.Failure(Error.Conflict(ruleResult.Error ?? string.Empty));
         }
 
         var slug = Slug.CreateFromTitle(request.CreateCategoryCommandRequestDto!.Name);
@@ -50,12 +48,6 @@ public class CreateCategoryCommandHandler(
         // Invalidate categories cache
         await cacheService.RotateGroupVersionAsync(CategoryCacheKeys.ListGroup, cancellationToken);
 
-        return new CreateCategoryCommandResponse
-        {
-            Result = Result<Guid>.Success(category.Id)
-        };
+        return Result<Guid>.Success(category.Id);
     }
 }
-
-
-

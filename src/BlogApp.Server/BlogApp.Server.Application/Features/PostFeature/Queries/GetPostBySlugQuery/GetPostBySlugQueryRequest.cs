@@ -1,10 +1,12 @@
 using BlogApp.Server.Application.Common.Behaviors;
+using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.PostFeature.Constants;
+using BlogApp.Server.Application.Features.PostFeature.DTOs;
 using MediatR;
 
 namespace BlogApp.Server.Application.Features.PostFeature.Queries.GetPostBySlugQuery;
 
-public class GetPostBySlugQueryRequest : IRequest<GetPostBySlugQueryResponse>, ICacheableQuery
+public class GetPostBySlugQueryRequest : IRequest<Result<PostDetailQueryDto>>, ICacheableQuery
 {
     public string Slug { get; set; } = default!;
     public bool IncrementViewCount { get; set; } = true;

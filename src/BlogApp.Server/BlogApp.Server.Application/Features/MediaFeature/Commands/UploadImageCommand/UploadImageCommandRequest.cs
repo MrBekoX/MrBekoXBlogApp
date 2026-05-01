@@ -1,10 +1,12 @@
 using BlogApp.Server.Application.Common.Interfaces;
+using BlogApp.Server.Application.Common.Interfaces.Services;
+using BlogApp.Server.Application.Common.Models;
 using BlogApp.Server.Application.Features.MediaFeature.DTOs;
 using MediatR;
 
 namespace BlogApp.Server.Application.Features.MediaFeature.Commands.UploadImageCommand;
 
-public class UploadImageCommandRequest : IRequest<UploadImageCommandResponse>, IIdempotentCommand
+public class UploadImageCommandRequest : IRequest<Result<ImageUploadResult>>, IIdempotentCommand
 {
     public required FileUploadDto File { get; init; }
     public bool GenerateThumbnail { get; init; } = true;

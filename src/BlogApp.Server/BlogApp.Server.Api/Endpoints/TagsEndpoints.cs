@@ -29,10 +29,7 @@ public static class TagsEndpoints
                 IncludeEmpty = includeEmpty ?? false
             }, cancellationToken);
 
-            if (!response.IsSuccess)
-                return response.ToHttpResult();
-
-            return Results.Ok(ApiResponse<IReadOnlyList<GetAllTagQueryDto>>.SuccessResult(response.Value!));
+            return response.ToHttpResult();
         })
         .WithName("GetAllTags")
         .WithDescription("Get all tags. Use includeEmpty=true to include tags without published posts.")

@@ -9,13 +9,20 @@ namespace BlogApp.Server.Api.Helpers;
 /// </summary>
 public static class ResultHttpExtensions
 {
-    public static IResult ToHttpResult<T>(this Result<T> result)
+    public static IResult ToHttpResult<T>(
+        this Result<T> result,
+        PaginationMeta? pagination = null)
     {
         if (result.IsSuccess)
-            return Results.Ok(ApiResponse<T>.SuccessResult(result.Value!));
+        {
+            var success = pagination is null
+                ? ApiResponse<T>.SuccessResult(result.Value!)
+                : ApiResponse<T>.SuccessResult(result.Value!, pagination);
+            return Results.Ok(success);
+        }
 
         var status = MapStatus(result.ErrorDetail);
-        var body = ApiResponse<T>.FailureResult(result.Errors);
+        var body = ApiResponse<T>.FailureResult(result.Errors, result.ErrorDetail);
         return Results.Json(body, statusCode: status);
     }
 
@@ -25,7 +32,7 @@ public static class ResultHttpExtensions
             return Results.Ok(ApiResponse<object>.SuccessResult(new { }));
 
         var status = MapStatus(result.ErrorDetail);
-        var body = ApiResponse<object>.FailureResult(result.Errors);
+        var body = ApiResponse<object>.FailureResult(result.Errors, result.ErrorDetail);
         return Results.Json(body, statusCode: status);
     }
 

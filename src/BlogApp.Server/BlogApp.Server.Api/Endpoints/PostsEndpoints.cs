@@ -76,9 +76,8 @@ public static class PostsEndpoints
                 SortDescending = sortDescending ?? true
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(
-                response.Value!,
-                PaginationMeta.FromPaginatedList(response.Value!)));
+            return response.ToHttpResult(
+                pagination: response.IsSuccess ? PaginationMeta.FromPaginatedList(response.Value!) : null);
         })
         .WithName("GetAllPosts")
         .WithDescription("Get paginated list of posts")
@@ -97,7 +96,7 @@ public static class PostsEndpoints
                 SortDescending = true
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(response.Value!));
+            return response.ToHttpResult();
         })
         .WithName("GetFeaturedPosts")
         .WithDescription("Get featured posts")
@@ -132,7 +131,7 @@ public static class PostsEndpoints
                 SortDescending = true
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(response.Value!));
+            return response.ToHttpResult();
         })
         .WithName("GetDrafts")
         .WithDescription("Get current user's drafts")
@@ -161,9 +160,8 @@ public static class PostsEndpoints
                 PageSize = Math.Min(pageSize is null or 0 ? 10 : pageSize.Value, 100)
             }, cancellationToken);
 
-            return Results.Ok(ApiResponse<PaginatedList<PostListQueryDto>>.SuccessResult(
-                response.Value!,
-                PaginationMeta.FromPaginatedList(response.Value!)));
+            return response.ToHttpResult(
+                pagination: response.IsSuccess ? PaginationMeta.FromPaginatedList(response.Value!) : null);
         })
         .WithName("GetMyPosts")
         .WithDescription("Get current user's posts")
@@ -192,10 +190,7 @@ public static class PostsEndpoints
                 RequirePublishedStatus = decision.Status == PostStatus.Published
             }, cancellationToken);
 
-            if (response.IsFailure)
-                return response.ToHttpResult<PostDetailQueryDto>();
-
-            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(response.Value!));
+            return response.ToHttpResult();
         })
         .WithName("GetPostById")
         .WithDescription("Get post by ID")
@@ -212,10 +207,7 @@ public static class PostsEndpoints
                 Slug = slug
             }, cancellationToken);
 
-            if (response.IsFailure)
-                return response.ToHttpResult<PostDetailQueryDto>();
-
-            return Results.Ok(ApiResponse<PostDetailQueryDto>.SuccessResult(response.Value!));
+            return response.ToHttpResult();
         })
         .WithName("GetPostBySlug")
         .WithDescription("Get post by slug")

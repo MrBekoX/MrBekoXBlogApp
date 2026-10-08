@@ -42,7 +42,7 @@ public class ExceptionHandlingMiddleware
                 statusCode = HttpStatusCode.BadRequest;
                 errors = validationEx.Errors.SelectMany(e => e.Value).ToList();
                 var errorDetails = string.Join("; ", validationEx.Errors.Select(e => $"{e.Key}: {string.Join(", ", e.Value)}"));
-                _logger.LogInformation("ValidationException reached middleware (post-refactor this should be rare): {Errors}", errorDetails);
+                _logger.LogInformation(exception, "ValidationException reached middleware (post-refactor this should be rare): {Errors}", errorDetails);
                 break;
 
             case NotFoundException notFoundEx:

@@ -17,7 +17,7 @@ internal static class ResultFactory
 
     /// <summary>
     /// Returns a failure instance of <typeparamref name="TResponse"/> carrying the provided <see cref="Error"/>.
-    /// Throws <see cref="InvalidOperationException"/> if <typeparamref name="TResponse"/> is not assignable to <see cref="Result"/>.
+    /// Throws <see cref="InvalidOperationException"/> if <typeparamref name="TResponse"/> is not assignable to <see cref="IResultBase"/>.
     /// </summary>
     public static TResponse Failure<TResponse>(Error error)
     {
@@ -26,14 +26,14 @@ internal static class ResultFactory
     }
 
     public static bool IsResult(Type responseType)
-        => typeof(Result).IsAssignableFrom(responseType);
+        => typeof(IResultBase).IsAssignableFrom(responseType);
 
     private static Func<Error, object> BuildFactory(Type responseType)
     {
-        if (!typeof(Result).IsAssignableFrom(responseType))
+        if (!typeof(IResultBase).IsAssignableFrom(responseType))
         {
             throw new InvalidOperationException(
-                $"ResultFactory only supports Result-derived types; {responseType} is not assignable to Result.");
+                $"ResultFactory only supports IResultBase response types; {responseType} is not assignable to IResultBase.");
         }
 
         // Find: public static TResponse Failure(Error error)

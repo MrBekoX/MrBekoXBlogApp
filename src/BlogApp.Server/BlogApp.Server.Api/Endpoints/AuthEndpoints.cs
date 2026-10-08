@@ -220,10 +220,7 @@ public static class AuthEndpoints
                 UserId = userId
             }, cancellationToken);
 
-            if (!response.IsSuccess)
-                return response.ToHttpResult();
-
-            return Results.Ok(ApiResponse<UserInfoDto>.SuccessResult(response.Value!));
+            return response.ToHttpResult();
         })
         .WithName("GetCurrentUser")
         .WithDescription("Get current authenticated user")
@@ -247,9 +244,10 @@ public static class AuthEndpoints
                 UserId = currentUserService.UserId.Value
             }, cancellationToken);
 
-            return response.IsSuccess
-                ? Results.Ok(ApiResponse<object>.SuccessResult(null!, "Password changed successfully."))
-                : response.ToHttpResult();
+            if (response.IsFailure)
+                return response.ToHttpResult();
+
+            return Results.Ok(ApiResponse<object>.SuccessResult(null!, "Password changed successfully."));
         })
         .RequireAuthorization()
         .ValidateAntiforgery()
@@ -270,9 +268,10 @@ public static class AuthEndpoints
                 Dto = dto
             }, cancellationToken);
 
-            return response.IsSuccess
-                ? Results.Ok(ApiResponse<object>.SuccessResult(null!, "Password reset successfully."))
-                : response.ToHttpResult();
+            if (response.IsFailure)
+                return response.ToHttpResult();
+
+            return Results.Ok(ApiResponse<object>.SuccessResult(null!, "Password reset successfully."));
         })
         .RequireAuthorization(policy => policy.RequireRole("Admin"))
         .ValidateAntiforgery()

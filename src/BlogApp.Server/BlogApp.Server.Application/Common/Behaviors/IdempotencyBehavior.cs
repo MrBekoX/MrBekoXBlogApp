@@ -206,11 +206,17 @@ public class IdempotencyBehavior<TRequest, TResponse> : IPipelineBehavior<TReque
         errorMessage = null;
         if (response is null) return false;
 
+        if (response is IResultBase directResult)
+            return TryGetFailureMessage(directResult, out errorMessage);
+
         var resultProp = typeof(TResponse).GetProperty("Result");
         if (resultProp is null) return false;
 
         var resultValue = resultProp.GetValue(response);
         if (resultValue is null) return false;
+
+        if (resultValue is IResultBase nestedResult)
+            return TryGetFailureMessage(nestedResult, out errorMessage);
 
         var isFailureProp = resultValue.GetType().GetProperty("IsFailure");
         if (isFailureProp is null) return false;
@@ -220,6 +226,24 @@ public class IdempotencyBehavior<TRequest, TResponse> : IPipelineBehavior<TReque
 
         var errorProp = resultValue.GetType().GetProperty("Error");
         errorMessage = errorProp?.GetValue(resultValue) as string ?? "Unknown error";
+        return true;
+    }
+
+    private static bool TryGetFailureMessage(IResultBase result, out string? errorMessage)
+    {
+        errorMessage = null;
+        if (!result.IsFailure) return false;
+
+        if (result is Result concreteResult)
+        {
+            errorMessage = concreteResult.ErrorDetail?.Message
+                ?? concreteResult.Error
+                ?? concreteResult.Errors.FirstOrDefault()
+                ?? "Unknown error";
+            return true;
+        }
+
+        errorMessage = result.ErrorDetail?.Message ?? "Unknown error";
         return true;
     }
 }

@@ -10,6 +10,8 @@ deploy/.env
 .agent
 .claude
 .windsurf
+.codex-build
+.sisyphus
 
 # AGENTS.md development files (optional - comment out if you want to track them)
 # AGENTS.md

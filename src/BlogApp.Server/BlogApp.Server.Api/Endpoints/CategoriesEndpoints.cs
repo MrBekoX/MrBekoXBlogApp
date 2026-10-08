@@ -33,10 +33,7 @@ public static class CategoriesEndpoints
                 ExcludeEmptyCategories = excludeEmptyCategories ?? false
             }, cancellationToken);
 
-            if (!response.IsSuccess)
-                return response.ToHttpResult();
-
-            return Results.Ok(ApiResponse<IReadOnlyList<GetAllCategoryQueryDto>>.SuccessResult(response.Value!));
+            return response.ToHttpResult();
         })
         .WithName("GetAllCategories")
         .WithDescription("Get all categories")
@@ -54,10 +51,7 @@ public static class CategoriesEndpoints
                 Id = id
             }, cancellationToken);
 
-            if (!response.IsSuccess)
-                return response.ToHttpResult();
-
-            return Results.Ok(ApiResponse<GetByIdCategoryQueryDto>.SuccessResult(response.Value!));
+            return response.ToHttpResult();
         })
         .WithName("GetCategoryById")
         .WithDescription("Get category by ID")

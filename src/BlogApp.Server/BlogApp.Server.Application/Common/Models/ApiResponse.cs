@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BlogApp.Server.Application.Common.Errors;
 
 namespace BlogApp.Server.Application.Common.Models;
 
@@ -11,6 +12,12 @@ public class ApiResponse<T>
     public T? Data { get; set; }
     public string? Message { get; set; }
     public List<string> Errors { get; set; } = new();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ErrorCategory? Category { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, string[]>? FieldErrors { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PaginationMeta? Pagination { get; set; }
@@ -52,6 +59,26 @@ public class ApiResponse<T>
             Success = false,
             Errors = errors
         };
+    }
+
+    public static ApiResponse<T> FailureResult(List<string> errors, Error? errorDetail)
+    {
+        return new ApiResponse<T>
+        {
+            Success = false,
+            Errors = errors,
+            Category = errorDetail?.Category,
+            FieldErrors = errorDetail?.FieldErrors
+        };
+    }
+
+    public static ApiResponse<T> FailureResult(Error error)
+    {
+        var errors = error.FieldErrors is { Count: > 0 }
+            ? error.FieldErrors.SelectMany(kv => kv.Value).ToList()
+            : new List<string> { error.Message };
+
+        return FailureResult(errors, error);
     }
 }
 

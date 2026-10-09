@@ -1,0 +1,11 @@
+namespace BlogApp.Core.Application.Features.TagFeature.DTOs;
+
+public class GetAllTagQueryDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = null!;
+    public string Slug { get; set; } = null!;
+    public int PostCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+

@@ -1,0 +1,46 @@
+using BlogApp.Core.Application.Common.Interfaces.Persistence;
+using BlogApp.Core.Application.Common.Interfaces.Services;
+using BlogApp.Core.Domain.Entities;
+using BlogApp.Core.Domain.ValueObjects;
+using Microsoft.EntityFrameworkCore;
+
+namespace BlogApp.Infrastructure.Services;
+
+/// <summary>
+/// Service for managing tags with batch operations to prevent N+1 queries.
+/// </summary>
+public class TagService(IUnitOfWork unitOfWork) : ITagService
+{
+    public async Task<List<Tag>> GetOrCreateTagsAsync(IEnumerable<string> tagNames, CancellationToken cancellationToken = default)
+    {
+        var tagNameList = tagNames
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (tagNameList.Count == 0)
+            return [];
+
+        // Single batch query using TagReadRepository
+        var existingTags = await unitOfWork.TagsRead
+            .GetByNamesAsync(tagNameList, cancellationToken);
+
+        var existingTagNames = existingTags
+            .Select(t => t.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Create missing tags atomically — each call performs a DB-level
+        // INSERT ... ON CONFLICT DO NOTHING so concurrent requests never
+        // produce duplicate-key violations.
+        var newTags = new List<Tag>();
+        foreach (var tagName in tagNameList.Where(name => !existingTagNames.Contains(name)))
+        {
+            var slug = Slug.CreateFromTitle(tagName).Value;
+            var tag = await unitOfWork.TagsWrite.GetOrCreateAsync(tagName, slug, cancellationToken);
+            newTags.Add(tag);
+        }
+
+        return [.. existingTags, .. newTags];
+    }
+}

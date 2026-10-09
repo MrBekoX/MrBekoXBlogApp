@@ -1,0 +1,51 @@
+using BlogApp.Core.Application.Common.Interfaces.Persistence;
+using BlogApp.Core.Application.Common.Models;
+using BlogApp.Core.Application.Features.CategoryFeature.DTOs;
+using BlogApp.Core.Domain.Enums;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+
+namespace BlogApp.Core.Application.Features.CategoryFeature.Queries.GetAllCategoryQuery;
+
+public class GetAllCategoryQueryHandler(
+    IUnitOfWork unitOfWork) : IRequestHandler<GetAllCategoryQueryRequest, Result<IReadOnlyList<GetAllCategoryQueryDto>>>
+{
+    public async Task<Result<IReadOnlyList<GetAllCategoryQueryDto>>> Handle(GetAllCategoryQueryRequest request, CancellationToken cancellationToken)
+    {
+        var query = unitOfWork.CategoriesRead.GetAll()
+            .AsNoTracking()
+            .Include(c => c.Posts)
+            .Where(c => !c.IsDeleted);
+
+        if (!request.IncludeInactive)
+        {
+            query = query.Where(c => c.IsActive);
+        }
+
+        var categories = await query
+            .OrderBy(c => c.DisplayOrder)
+            .ThenBy(c => c.Name)
+            .Select(c => new GetAllCategoryQueryDto
+            {
+                Id = c.Id,
+                Name = c.Name,
+                Slug = c.Slug,
+                Description = c.Description,
+                ImageUrl = c.ImageUrl,
+                DisplayOrder = c.DisplayOrder,
+                IsActive = c.IsActive,
+                // Yalnızca yayınlanmış ve silinmemiş postları say
+                PostCount = c.Posts.Count(p => !p.IsDeleted && p.Status == PostStatus.Published),
+                CreatedAt = c.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        // Boş kategorileri filtrele (istenirse)
+        if (request.ExcludeEmptyCategories)
+        {
+            categories = categories.Where(c => c.PostCount > 0).ToList();
+        }
+
+        return Result<IReadOnlyList<GetAllCategoryQueryDto>>.Success(categories);
+    }
+}

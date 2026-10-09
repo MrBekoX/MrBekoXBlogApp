@@ -78,13 +78,13 @@ secrets/
 
 # Uploads
 uploads/
-src/BlogApp.Server/BlogApp.Server.Api/uploads/
+backend/Presentation/API/uploads/
 deploy/uploads/
 
 # Logs
 *.log
 logs/
-src/BlogApp.Server/BlogApp.Server.Api/logs/
+backend/Presentation/API/logs/
 
 # Build outputs
 **/bin/

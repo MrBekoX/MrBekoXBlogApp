@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkUnwrapImages from "remark-unwrap-images"; 
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Copy, Check } from "lucide-react";
+import { MermaidDiagram } from "@/components/mermaid-diagram";
+import { readMermaidChart } from "@/components/mermaid-source";
 
 /**
  * XSS Protection: Validates URL to prevent javascript: and data: URIs
@@ -37,6 +39,20 @@ function sanitizeUrl(url: string | undefined): string | undefined {
   }
   
   return undefined;
+}
+
+function ArticlePre({
+  children,
+  node,
+  ...props
+}: React.ComponentPropsWithoutRef<"pre"> & ExtraProps) {
+  void node;
+  const chart = readMermaidChart(children);
+  if (chart !== null) {
+    return <MermaidDiagram chart={chart} />;
+  }
+
+  return <pre {...props}>{children}</pre>;
 }
 
 interface MarkdownRendererProps {
@@ -121,6 +137,7 @@ export function MarkdownRenderer({
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkUnwrapImages]} // ✅ Eklendi: remarkUnwrapImages
           components={{
+            pre: ArticlePre,
             // Syntax Highlighting + Copy Button Entegrasyonu
             code: (props) => {
               const { inline, className, children } = props as {
@@ -130,6 +147,10 @@ export function MarkdownRenderer({
               };
               const match = /language-(\w+)/.exec(className || "");
               const codeString = String(children).replace(/\n$/, "");
+
+              if (!inline && match?.[1]?.toLowerCase() === "mermaid") {
+                return <code className="language-mermaid">{children}</code>;
+              }
 
               if (!inline && match) {
                 return (

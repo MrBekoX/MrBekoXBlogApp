@@ -4,22 +4,21 @@ WORKDIR /src
 
 # Copy solution and project files (layer cached until .csproj changes)
 COPY ["BlogApp.sln", "./"]
-COPY ["src/BlogApp.Server/BlogApp.Server.Domain/BlogApp.Server.Domain.csproj", "src/BlogApp.Server/BlogApp.Server.Domain/"]
-COPY ["src/BlogApp.Server/BlogApp.Server.Application/BlogApp.Server.Application.csproj", "src/BlogApp.Server/BlogApp.Server.Application/"]
-COPY ["src/BlogApp.Server/BlogApp.Server.Infrastructure/BlogApp.Server.Infrastructure.csproj", "src/BlogApp.Server/BlogApp.Server.Infrastructure/"]
-COPY ["src/BlogApp.Server/BlogApp.Server.Api/BlogApp.Server.Api.csproj", "src/BlogApp.Server/BlogApp.Server.Api/"]
-COPY ["src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Caching/BlogApp.BuildingBlocks.Caching.csproj", "src/BlogApp.BuildingBlocks/BlogApp.BuildingBlocks.Caching/"]
+COPY ["backend/Core/Domain/Domain.csproj", "backend/Core/Domain/"]
+COPY ["backend/Core/Application/Application.csproj", "backend/Core/Application/"]
+COPY ["backend/Infrastructure/Infrastructure/Infrastructure.csproj", "backend/Infrastructure/Infrastructure/"]
+COPY ["backend/Presentation/API/API.csproj", "backend/Presentation/API/"]
+COPY ["backend/BuildingBlocks/BuildingBlocks/BuildingBlocks.csproj", "backend/BuildingBlocks/BuildingBlocks/"]
 
 # Restore dependencies (cached until .csproj/.sln changes)
-RUN dotnet restore "src/BlogApp.Server/BlogApp.Server.Api/BlogApp.Server.Api.csproj"
+RUN dotnet restore "backend/Presentation/API/API.csproj"
 
-# Copy only backend + BuildingBlocks source (not frontend)
-COPY ["src/BlogApp.Server/", "src/BlogApp.Server/"]
-COPY ["src/BlogApp.BuildingBlocks/", "src/BlogApp.BuildingBlocks/"]
+# Copy only backend source (not frontend)
+COPY ["backend/", "backend/"]
 
 # Publish directly (includes build - no need for separate dotnet build)
-WORKDIR "/src/src/BlogApp.Server/BlogApp.Server.Api"
-RUN dotnet publish "BlogApp.Server.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
+WORKDIR "/src/backend/Presentation/API"
+RUN dotnet publish "API.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
@@ -55,4 +54,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 
-ENTRYPOINT ["dotnet", "BlogApp.Server.Api.dll"]
+ENTRYPOINT ["dotnet", "BlogApp.Presentation.Api.dll"]

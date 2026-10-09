@@ -1,0 +1,18 @@
+using BlogApp.Core.Application.Common.Models;
+using BlogApp.Core.Domain.Entities;
+
+namespace BlogApp.Core.Application.Common.Interfaces.Services;
+
+public interface IIdempotencyService
+{
+    Task<IdempotencyStartResult> BeginRequestAsync(IdempotencyStartRequest request, CancellationToken cancellationToken = default);
+    Task<IdempotencyRecord?> GetRequestByOperationAsync(string endpointName, string operationId, CancellationToken cancellationToken = default);
+    Task<IdempotencyRecord?> GetRequestByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default);
+    Task MarkCompletedByCorrelationAsync(
+        string correlationId,
+        int finalHttpStatus,
+        object finalResponse,
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string[]>? finalResponseHeaders = null);
+    Task MarkFailedByCorrelationAsync(string correlationId, string errorCode, string errorMessage, CancellationToken cancellationToken = default);
+}

@@ -100,7 +100,7 @@ services:
   # ==========================================
   frontend:
     build:
-      context: ../src/blogapp-web
+      context: ../frontend/blogapp-web
       dockerfile: ../../docker/frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: /api/v1

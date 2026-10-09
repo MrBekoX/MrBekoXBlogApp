@@ -100,8 +100,8 @@ services:
   # ==========================================
   frontend:
     build:
-      context: ../frontend/blogapp-web
-      dockerfile: ../../docker/frontend/Dockerfile
+      context: ../src/frontend/blogapp-web
+      dockerfile: ../../../docker/frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: /api/v1
         NEXT_PUBLIC_SIGNALR_URL: ${PUBLIC_SIGNALR_URL:-http://localhost:8080}

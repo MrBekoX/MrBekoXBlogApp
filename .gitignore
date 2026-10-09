@@ -78,13 +78,13 @@ secrets/
 
 # Uploads
 uploads/
-backend/Presentation/API/uploads/
+src/backend/Presentation/API/uploads/
 deploy/uploads/
 
 # Logs
 *.log
 logs/
-backend/Presentation/API/logs/
+src/backend/Presentation/API/logs/
 
 # Build outputs
 **/bin/

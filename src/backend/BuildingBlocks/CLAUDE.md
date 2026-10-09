@@ -1,6 +1,6 @@
 # BuildingBlocks
 
-> Bu dosya `backend/BuildingBlocks/` altinda calisirken otomatik yuklenir.
+> Bu dosya `src/backend/BuildingBlocks/` altinda calisirken otomatik yuklenir.
 > Detayli kurallar: `.claude/rules/building-blocks.md`.
 > Burada yalnizca bu agacin kapsamina ozgu olanlar var.
 

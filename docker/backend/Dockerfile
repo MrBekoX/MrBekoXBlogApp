@@ -4,20 +4,20 @@ WORKDIR /src
 
 # Copy solution and project files (layer cached until .csproj changes)
 COPY ["BlogApp.sln", "./"]
-COPY ["backend/Core/Domain/Domain.csproj", "backend/Core/Domain/"]
-COPY ["backend/Core/Application/Application.csproj", "backend/Core/Application/"]
-COPY ["backend/Infrastructure/Infrastructure/Infrastructure.csproj", "backend/Infrastructure/Infrastructure/"]
-COPY ["backend/Presentation/API/API.csproj", "backend/Presentation/API/"]
-COPY ["backend/BuildingBlocks/BuildingBlocks/BuildingBlocks.csproj", "backend/BuildingBlocks/BuildingBlocks/"]
+COPY ["src/backend/Core/Domain/Domain.csproj", "src/backend/Core/Domain/"]
+COPY ["src/backend/Core/Application/Application.csproj", "src/backend/Core/Application/"]
+COPY ["src/backend/Infrastructure/Infrastructure/Infrastructure.csproj", "src/backend/Infrastructure/Infrastructure/"]
+COPY ["src/backend/Presentation/API/API.csproj", "src/backend/Presentation/API/"]
+COPY ["src/backend/BuildingBlocks/BuildingBlocks/BuildingBlocks.csproj", "src/backend/BuildingBlocks/BuildingBlocks/"]
 
 # Restore dependencies (cached until .csproj/.sln changes)
-RUN dotnet restore "backend/Presentation/API/API.csproj"
+RUN dotnet restore "src/backend/Presentation/API/API.csproj"
 
 # Copy only backend source (not frontend)
-COPY ["backend/", "backend/"]
+COPY ["src/backend/", "src/backend/"]
 
 # Publish directly (includes build - no need for separate dotnet build)
-WORKDIR "/src/backend/Presentation/API"
+WORKDIR "/src/src/backend/Presentation/API"
 RUN dotnet publish "API.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage

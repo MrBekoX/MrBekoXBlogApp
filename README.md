@@ -305,14 +305,14 @@ docker-compose exec backend dotnet ef database update
 
 #### Backend
 ```bash
-cd backend/Presentation/API
+cd src/backend/Presentation/API
 dotnet restore
 dotnet run
 ```
 
 #### Frontend
 ```bash
-cd frontend/blogapp-web
+cd src/frontend/blogapp-web
 npm install
 npm run dev
 ```

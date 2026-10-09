@@ -1,6 +1,6 @@
 # Frontend (blogapp-web)
 
-> Bu dosya `frontend/blogapp-web/` altinda calisirken otomatik yuklenir.
+> Bu dosya `src/frontend/blogapp-web/` altinda calisirken otomatik yuklenir.
 > Genel frontend kurallari: `.claude/rules/frontend.md` (bazi yerleri tarihsel — gercek yapi asagidaki).
 > Genel proje kurallari: `.claude/CLAUDE.md`.
 

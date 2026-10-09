@@ -1,6 +1,6 @@
 # Backend (BlogApp.Server)
 
-> Bu dosya `backend/` altinda calisirken otomatik yuklenir.
+> Bu dosya `src/backend/` altinda calisirken otomatik yuklenir.
 > Genel kurallar: `.claude/CLAUDE.md` + `.claude/rules/{architecture,backend,database}.md`.
 > Burada **gercek envanter** + projeye ozgu sapmalar.
 
@@ -19,16 +19,16 @@ Bagimlilik **yalnizca yukaridan asagiya**. Domain hicbir seye bagli degil — `D
 
 ```bash
 dotnet build BlogApp.sln
-dotnet run --project backend/Presentation/API
+dotnet run --project src/backend/Presentation/API
 
 # Migration (--project Infrastructure, --startup-project Api)
 dotnet ef migrations add {Name} \
-  --project backend/Infrastructure/Infrastructure \
-  --startup-project backend/Presentation/API
+  --project src/backend/Infrastructure/Infrastructure \
+  --startup-project src/backend/Presentation/API
 
 dotnet ef database update \
-  --project backend/Infrastructure/Infrastructure \
-  --startup-project backend/Presentation/API
+  --project src/backend/Infrastructure/Infrastructure \
+  --startup-project src/backend/Presentation/API
 ```
 
 ---

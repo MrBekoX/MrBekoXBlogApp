@@ -35,9 +35,8 @@ export function FAQSchema({ items }: FAQSchemaProps) {
 
 /**
  * Markdown iceriginden FAQ cikarir.
- * Soru isareti iceren H2/H3 basliklarini soru olarak alir,
- * baslik altindaki ilk paragrafi cevap olarak kullanir.
- * Soru isareti olmayan basliklardan "X nedir?" formatinda soru turetir.
+ * Yalnizca soru isareti iceren H2/H3 basliklarini soru olarak alir.
+ * Baslik altindaki ilk paragrafi cevap olarak kullanir.
  */
 export function extractFAQFromContent(content: string): FAQItem[] {
   const lines = content.split('\n');
@@ -51,6 +50,7 @@ export function extractFAQFromContent(content: string): FAQItem[] {
     if (!headingMatch) continue;
 
     const heading = headingMatch[1].trim();
+    if (!heading.includes('?')) continue;
 
     // Baslik altindaki ilk paragraf (bos olmayan ilk satir blogu)
     let answer = '';
@@ -100,16 +100,7 @@ export function extractFAQFromContent(content: string): FAQItem[] {
       answer = answer.substring(0, 297) + '...';
     }
 
-    // Soru formatini belirle
-    let question: string;
-    if (heading.includes('?')) {
-      question = heading;
-    } else {
-      // Basliktan soru turet
-      question = `${heading} nedir?`;
-    }
-
-    faqs.push({ question, answer });
+    faqs.push({ question: heading, answer });
   }
 
   return faqs;

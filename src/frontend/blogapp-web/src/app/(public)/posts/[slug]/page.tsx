@@ -13,6 +13,8 @@ import { CommentsSection } from '@/components/comments/comments-section';
 import { BlogPostingSchema } from '@/components/seo/blog-posting-schema';
 import { BreadcrumbSchema } from '@/components/seo/breadcrumb-schema';
 import { FAQSchema, extractFAQFromContent } from '@/components/seo/faq-schema';
+import { postCategories } from '@/lib/post-categories';
+import { postSearchDescription, postSearchTitle } from '@/lib/seo-text';
 
 interface PostPageProps {
   params: Promise<{ slug: string }>;
@@ -26,30 +28,33 @@ export async function generateMetadata({ params }: PostPageProps): Promise<Metad
     return {
       title: 'Yazı Bulunamadı',
       description: 'Aradığınız yazı mevcut değil.',
+      robots: { index: false, follow: false },
     };
   }
 
-  const description = post.excerpt || post.content.substring(0, 160);
+  const title = postSearchTitle(post);
+  const description = postSearchDescription(post);
   const imageUrl = post.featuredImageUrl ? getImageUrl(post.featuredImageUrl) : undefined;
+  const modifiedAt = post.updatedAt || post.publishedAt || post.createdAt;
 
   return {
-    title: post.title,
+    title,
     description,
     authors: post.author ? [{ name: post.author.fullName || post.author.userName }] : undefined,
     openGraph: {
-      title: post.title,
+      title,
       description,
       type: 'article',
       url: `${SITE_URL}/posts/${slug}`,
       publishedTime: post.publishedAt || post.createdAt,
-      modifiedTime: post.updatedAt || post.createdAt,
+      modifiedTime: modifiedAt,
       authors: post.author ? [post.author.fullName || post.author.userName] : undefined,
-      images: imageUrl ? [{ url: imageUrl, alt: post.title }] : undefined,
+      images: imageUrl ? [{ url: imageUrl, alt: title }] : undefined,
       tags: post.tags?.map((tag) => tag.name),
     },
     twitter: {
       card: 'summary_large_image',
-      title: post.title,
+      title,
       description,
       images: imageUrl ? [imageUrl] : undefined,
     },
@@ -67,6 +72,11 @@ export default async function PostPage({ params }: PostPageProps) {
     notFound();
   }
 
+  const categories = postCategories(post);
+  const description = postSearchDescription(post, 200);
+  const modifiedAt = post.updatedAt || post.publishedAt || post.createdAt;
+  const hasExcerpt = Boolean(post.excerpt?.trim());
+
   return (
     <article className="max-w-3xl font-mono">
       {/* Back link */}
@@ -81,9 +91,9 @@ export default async function PostPage({ params }: PostPageProps) {
       {/* Post header */}
       <header className="mb-8 space-y-4">
         {/* Categories */}
-        {post.categories && post.categories.length > 0 && (
+        {categories.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {post.categories.map((category) => (
+            {categories.map((category) => (
               <Link key={category.id} href={`/posts?categoryId=${category.id}`}>
                 <Badge
                   variant="outline"
@@ -103,6 +113,12 @@ export default async function PostPage({ params }: PostPageProps) {
         >
           {post.title}
         </h1>
+
+        {hasExcerpt && (
+          <p className="post-excerpt text-sm text-gray-400 leading-relaxed">
+            {post.excerpt}
+          </p>
+        )}
 
         {/* Meta info */}
         <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500">
@@ -165,16 +181,17 @@ export default async function PostPage({ params }: PostPageProps) {
 
       {/* Schema.org — GEO optimized */}
       <BlogPostingSchema
-        title={post.title}
-        description={post.excerpt || post.content.substring(0, 200)}
+        title={postSearchTitle(post)}
+        description={description}
         slug={slug}
         content={post.content}
         publishedAt={post.publishedAt || post.createdAt}
-        updatedAt={post.updatedAt || post.createdAt}
+        updatedAt={modifiedAt}
         featuredImageUrl={post.featuredImageUrl}
         author={post.author}
         tags={post.tags}
-        categories={post.categories}
+        categories={categories}
+        hasExcerpt={hasExcerpt}
       />
       <BreadcrumbSchema
         items={[

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { getImageUrl } from '@/lib/utils';
+import { postCategories } from '@/lib/post-categories';
 import type { BlogPost } from '@/types';
 import { Calendar, Eye, FileText, Tag } from 'lucide-react';
 
@@ -59,7 +59,7 @@ export function PostCard({ post }: PostCardProps) {
               {tag.name}
             </span>
           ))}
-          {post.categories?.slice(0, 1).map((cat) => (
+          {postCategories(post).slice(0, 1).map((cat) => (
             <span key={cat.id} className="text-[10px] text-gray-600 border border-ide-border/60 px-1.5 py-0.5 rounded">
               {cat.name}
             </span>

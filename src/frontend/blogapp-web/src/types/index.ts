@@ -40,6 +40,8 @@ export interface BlogPost {
   publishedAt?: string;
   createdAt: string;
   updatedAt?: string;
+  metaTitle?: string;
+  metaDescription?: string;
   author: Author;
   category?: Category;
   categories?: Category[];

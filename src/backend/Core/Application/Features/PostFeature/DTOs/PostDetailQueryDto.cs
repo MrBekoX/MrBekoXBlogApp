@@ -21,6 +21,7 @@ public record PostDetailQueryDto
     public string? MetaKeywords { get; init; }
     public int CommentCount { get; init; }
     public DateTime CreatedAt { get; init; }
+    public DateTime? UpdatedAt { get; init; }
     public PostAuthorDto Author { get; init; } = default!;
     public PostCategoryDto? Category { get; init; }
     public List<PostTagDto> Tags { get; init; } = new();

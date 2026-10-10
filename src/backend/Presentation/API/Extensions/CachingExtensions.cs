@@ -27,18 +27,10 @@ public static class CachingExtensions
                 policy.Expire(TimeSpan.FromMinutes(limits.TagsCacheMinutes))
                       .Tag("tags"));
 
-            // SEO endpoint caches
-            options.AddPolicy("SitemapCache", policy =>
-                policy.Expire(TimeSpan.FromMinutes(limits.SitemapCacheMinutes)));
-
+            // robots.txt is static copy. Sitemap, llms.txt and RSS are not output-cached:
+            // EvictByTagAsync is unreliable after publish, and a long TTL served stale discovery files.
             options.AddPolicy("RobotsCache", policy =>
                 policy.Expire(TimeSpan.FromMinutes(limits.RobotsCacheMinutes)));
-
-            options.AddPolicy("LlmsTxtCache", policy =>
-                policy.Expire(TimeSpan.FromMinutes(limits.LlmsTxtCacheMinutes)));
-
-            options.AddPolicy("RssFeedCache", policy =>
-                policy.Expire(TimeSpan.FromMinutes(limits.RssFeedCacheMinutes)));
         });
 
         return services;

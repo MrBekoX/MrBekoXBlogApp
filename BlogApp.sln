@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlogApp.Infrastructure", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlogApp.Presentation.Api", "src\backend\Presentation\API\API.csproj", "{D34E97FD-7AE0-43E9-97E7-AE7FBD7CD845}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BlogApp.Presentation.Api.Tests", "src\backend\Presentation\Api.Tests\BlogApp.Presentation.Api.Tests.csproj", "{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -93,6 +95,18 @@ Global
 		{D34E97FD-7AE0-43E9-97E7-AE7FBD7CD845}.Release|x64.Build.0 = Release|Any CPU
 		{D34E97FD-7AE0-43E9-97E7-AE7FBD7CD845}.Release|x86.ActiveCfg = Release|Any CPU
 		{D34E97FD-7AE0-43E9-97E7-AE7FBD7CD845}.Release|x86.Build.0 = Release|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Debug|x64.Build.0 = Debug|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Debug|x86.Build.0 = Debug|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Release|x64.ActiveCfg = Release|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Release|x64.Build.0 = Release|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Release|x86.ActiveCfg = Release|Any CPU
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -107,5 +121,6 @@ Global
 		{029ADC04-E2FE-4770-AE17-DEAEA3B44044} = {CE3FDD05-E401-9C5E-9381-B842DF71D292}
 		{CF06B01A-8EE9-4AF9-9CA4-8779D3C93C56} = {F1A2B3C4-D5E6-4789-ABCD-111111111111}
 		{D34E97FD-7AE0-43E9-97E7-AE7FBD7CD845} = {F1A2B3C4-D5E6-4789-ABCD-222222222222}
+		{7E4A1C2B-9D33-4F18-A6B5-2C8E91F04A17} = {F1A2B3C4-D5E6-4789-ABCD-222222222222}
 	EndGlobalSection
 EndGlobal

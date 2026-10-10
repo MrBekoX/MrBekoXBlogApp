@@ -16,6 +16,7 @@ public record PostListQueryDto
     public bool IsFeatured { get; init; }
     public int ReadingTimeMinutes { get; init; }
     public DateTime CreatedAt { get; init; }
+    public DateTime? UpdatedAt { get; init; }
     public PostAuthorDto Author { get; init; } = default!;
     public PostCategoryDto? Category { get; init; }
     public List<PostTagDto> Tags { get; init; } = new();

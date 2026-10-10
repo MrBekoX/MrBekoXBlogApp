@@ -1,64 +1,54 @@
 import { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site-config';
-import { API_BASE_URL } from '@/lib/env.client';
+import { fetchPosts } from '@/lib/server-api';
+import { sitemapLastModified, type SitemapPostFields } from '@/lib/sitemap-entries';
 
-// Dynamic sitemap for SSR mode
 export const dynamic = 'force-dynamic';
 
-const API_URL = API_BASE_URL;
+const SITEMAP_PAGE_SIZE = 100;
+const SITEMAP_PAGE_CAP = 50;
 
-interface Post {
-  slug: string;
-  updatedAt: string;
-}
+async function getPublishedPosts(): Promise<SitemapPostFields[]> {
+  const posts: SitemapPostFields[] = [];
 
-interface ApiResponse<T> {
-  items: T;
-  success: boolean;
-  message?: string;
-}
-
-async function getPosts(): Promise<Post[]> {
-  try {
-    // Fetch at build time for static export (no revalidation)
-    const response = await fetch(`${API_URL}/posts?pageSize=1000&status=Published`, {
-      cache: 'no-store'
+  for (let pageNumber = 1; pageNumber <= SITEMAP_PAGE_CAP; pageNumber += 1) {
+    const page = await fetchPosts({
+      pageNumber,
+      pageSize: SITEMAP_PAGE_SIZE,
+      status: 'Published',
     });
-    
-    if (!response.ok) {
-      return [];
-    }
 
-    const data: ApiResponse<Post[]> = await response.json();
-    return data.items || [];
-  } catch {
-    return [];
+    if (!page || page.items.length === 0) break;
+
+    posts.push(...page.items);
+    if (!page.hasNextPage) break;
   }
+
+  return posts;
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const posts = await getPosts();
+  const posts = await getPublishedPosts();
+  const now = new Date();
 
-  // Static pages
   const staticPages: MetadataRoute.Sitemap = [
     {
       url: SITE_URL,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'daily',
       priority: 1.0,
     },
     {
       url: `${SITE_URL}/posts`,
-      lastModified: new Date(),
+      lastModified: now,
       changeFrequency: 'daily',
       priority: 0.9,
     },
   ];
 
-  // Dynamic blog post pages
   const postPages: MetadataRoute.Sitemap = posts.map((post) => ({
     url: `${SITE_URL}/posts/${post.slug}`,
-    lastModified: new Date(post.updatedAt),
+    lastModified: sitemapLastModified(post, now),
     changeFrequency: 'weekly' as const,
     priority: 0.8,
   }));

@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { SITE_URL } from '@/lib/site-config';
+import { OG_IMAGE_PATH, SITE_URL } from '@/lib/site-config';
 
 export const metadata: Metadata = {
   title: 'Yazılar & Düşünceler',
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     type: 'website',
     images: [
       {
-        url: '/opengraph-image',
+        url: OG_IMAGE_PATH,
         width: 1200,
         height: 630,
         alt: 'MrBekoX Blog Yazıları',
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Yazılar & Düşünceler | MrBekoX Blog',
     description: 'Yazılım dünyasına dair çalışmalarımı, denediğim teknolojileri ve kodlama pratiklerimi paylaşıyorum.',
-    images: ['/opengraph-image'],
+    images: [OG_IMAGE_PATH],
   },
   alternates: {
     canonical: `${SITE_URL}/posts`,

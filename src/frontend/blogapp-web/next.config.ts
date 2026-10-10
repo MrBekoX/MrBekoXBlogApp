@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { discoveryRewrites } from "./src/lib/discovery-rewrites";
 
 const nextConfig: NextConfig = {
   // SSR mode with standalone output for Docker deployment
@@ -68,6 +69,7 @@ const nextConfig: NextConfig = {
         source: '/uploads/:path*',
         destination: `${backendUrl}/uploads/:path*`,
       },
+      ...discoveryRewrites(backendUrl),
     ];
   },
 

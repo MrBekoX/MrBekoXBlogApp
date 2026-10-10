@@ -1,5 +1,11 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import { ArrowLeft } from 'lucide-react';
+
+export const metadata: Metadata = {
+  title: 'Yazı Bulunamadı',
+  robots: { index: false, follow: false },
+};
 
 export default function PostNotFound() {
   return (

@@ -7,6 +7,7 @@ import {
   SOCIAL_URLS,
 } from '@/lib/site-config';
 import { resolveEntities } from '@/lib/geo-entities';
+import { speakableSelectors, stripMarkdown } from '@/lib/seo-text';
 
 interface BlogPostingSchemaProps {
   title: string;
@@ -23,25 +24,11 @@ interface BlogPostingSchemaProps {
   };
   tags?: { name: string }[];
   categories?: { name: string }[];
+  hasExcerpt?: boolean;
 }
 
 function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
-}
-
-function stripMarkdown(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, '')       // code blocks
-    .replace(/`[^`]+`/g, '')              // inline code
-    .replace(/!\[.*?\]\(.*?\)/g, '')      // images
-    .replace(/\[(.+?)\]\(.*?\)/g, '$1')   // links → text only
-    .replace(/#{1,6}\s+/g, '')            // headings
-    .replace(/[*_~]+/g, '')               // bold/italic/strikethrough
-    .replace(/>\s+/g, '')                 // blockquotes
-    .replace(/[-*]\s+/g, '')              // list markers
-    .replace(/\n{2,}/g, ' ')             // multiple newlines
-    .replace(/\n/g, ' ')                 // single newlines
-    .trim();
 }
 
 export function BlogPostingSchema({
@@ -55,6 +42,7 @@ export function BlogPostingSchema({
   author,
   tags,
   categories,
+  hasExcerpt = false,
 }: BlogPostingSchemaProps) {
   const wordCount = countWords(content);
   const plainContent = stripMarkdown(content);
@@ -111,7 +99,7 @@ export function BlogPostingSchema({
     }),
     speakable: {
       '@type': 'SpeakableSpecification',
-      cssSelector: ['.post-title', '.post-excerpt'],
+      cssSelector: speakableSelectors(hasExcerpt),
     },
     inLanguage: 'tr-TR',
     mainEntityOfPage: {

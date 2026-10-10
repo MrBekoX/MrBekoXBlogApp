@@ -12,6 +12,7 @@ export const SITE_DESCRIPTION =
   process.env.NEXT_PUBLIC_SITE_DESCRIPTION ||
   'Yazılım geliştirme yolculuğumda öğrendiklerimi, aldığım teknik notları ve proje deneyimlerimi paylaştığım kişisel blog.';
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://mrbekox.dev';
+export const OG_IMAGE_PATH = '/opengraph-image.png';
 export const SITE_LOCALE = process.env.NEXT_PUBLIC_SITE_LOCALE || 'tr_TR';
 
 // --- Author / Person ---

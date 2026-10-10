@@ -1,11 +1,10 @@
 using System.ServiceModel.Syndication;
 using System.Text;
 using System.Xml;
-using System.Xml.Linq;
 using BlogApp.Core.Application.Common.Interfaces.Data;
-using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Options;
 using BlogApp.Core.Domain.Enums;
+using BlogApp.Presentation.Api.Seo;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -21,61 +20,27 @@ public static class SeoEndpoints
             IOptions<SiteSettings> siteSettings,
             CancellationToken cancellationToken) =>
         {
-            var baseUrl = siteSettings.Value.BaseUrl;
-
             var posts = await context.Posts
                 .Where(p => p.Status == PostStatus.Published && !p.IsDeleted)
                 .OrderByDescending(p => p.PublishedAt)
                 .Select(p => new { p.Slug, p.UpdatedAt, p.PublishedAt })
                 .ToListAsync(cancellationToken);
 
-            var categories = await context.Categories
-                .Where(c => !c.IsDeleted)
-                .Select(c => new { c.Slug, c.UpdatedAt })
-                .ToListAsync(cancellationToken);
+            var sitemap = SeoDocuments.BuildSitemapXml(
+                siteSettings.Value.BaseUrl,
+                posts.Select(p => new SeoSitemapPost(p.Slug, p.UpdatedAt, p.PublishedAt)));
 
-            XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
-
-            var sitemap = new XDocument(
-                new XDeclaration("1.0", "UTF-8", null),
-                new XElement(ns + "urlset",
-                    new XElement(ns + "url",
-                        new XElement(ns + "loc", baseUrl),
-                        new XElement(ns + "changefreq", "daily"),
-                        new XElement(ns + "priority", "1.0")
-                    ),
-                    new XElement(ns + "url",
-                        new XElement(ns + "loc", $"{baseUrl}/posts"),
-                        new XElement(ns + "changefreq", "daily"),
-                        new XElement(ns + "priority", "0.9")
-                    ),
-                    posts.Select(p => new XElement(ns + "url",
-                        new XElement(ns + "loc", $"{baseUrl}/posts/{p.Slug}"),
-                        new XElement(ns + "lastmod", (p.UpdatedAt ?? p.PublishedAt ?? DateTime.UtcNow).ToString("yyyy-MM-dd")),
-                        new XElement(ns + "changefreq", "weekly"),
-                        new XElement(ns + "priority", "0.8")
-                    )),
-                    categories.Select(c => new XElement(ns + "url",
-                        new XElement(ns + "loc", $"{baseUrl}/category/{c.Slug}"),
-                        new XElement(ns + "lastmod", (c.UpdatedAt ?? DateTime.UtcNow).ToString("yyyy-MM-dd")),
-                        new XElement(ns + "changefreq", "weekly"),
-                        new XElement(ns + "priority", "0.6")
-                    ))
-                )
-            );
-
-            return Results.Content(sitemap.ToString(), "application/xml", Encoding.UTF8);
+            return Results.Content(sitemap, "application/xml", Encoding.UTF8);
         })
         .WithName("Sitemap")
         .WithDescription("Generate sitemap.xml")
         .WithTags("SEO")
-        .CacheOutput("SitemapCache")
         .Produces<string>(200, "application/xml");
 
         // GET /robots.txt
         app.MapGet("/robots.txt", (IOptions<SiteSettings> siteSettings) =>
         {
-            var baseUrl = siteSettings.Value.BaseUrl;
+            var baseUrl = SeoDocuments.NormalizeBaseUrl(siteSettings.Value.BaseUrl);
 
             var robotsTxt = $@"User-agent: *
 Allow: /
@@ -145,8 +110,6 @@ Sitemap: {baseUrl}/sitemap.xml
             IOptions<ServerLimitsSettings> serverLimits,
             CancellationToken cancellationToken) =>
         {
-            var baseUrl = siteSettings.Value.BaseUrl;
-
             var maxPosts = serverLimits.Value.LlmsTxtMaxPosts;
             var posts = await context.Posts
                 .Where(p => p.Status == PostStatus.Published && !p.IsDeleted)
@@ -156,38 +119,21 @@ Sitemap: {baseUrl}/sitemap.xml
                 {
                     p.Title,
                     p.Slug,
-                    Excerpt = p.Excerpt ?? (p.Content.Length > 150 ? p.Content.Substring(0, 150) + "..." : p.Content),
+                    p.Excerpt,
+                    Content = p.Content.Length > 2000 ? p.Content.Substring(0, 2000) : p.Content,
                     p.PublishedAt
                 })
                 .ToListAsync(cancellationToken);
 
-            var sb = new StringBuilder();
-            sb.AppendLine("# MrBekoX Dev Blog");
-            sb.AppendLine();
-            sb.AppendLine("> Personal tech blog by Sample Author covering .NET, React, Next.js, Python, AI, software architecture, and system design.");
-            sb.AppendLine();
-            sb.AppendLine("## Blog Posts");
-            sb.AppendLine();
+            var llmsTxt = SeoDocuments.BuildLlmsTxt(
+                siteSettings.Value.BaseUrl,
+                posts.Select(p => new SeoPostLink(p.Title, p.Slug, p.Excerpt, p.Content, p.PublishedAt)));
 
-            foreach (var post in posts)
-            {
-                var date = post.PublishedAt?.ToString("yyyy-MM-dd") ?? "";
-                sb.AppendLine($"- [{post.Title}]({baseUrl}/posts/{post.Slug}): {post.Excerpt} ({date})");
-            }
-
-            sb.AppendLine();
-            sb.AppendLine("## Links");
-            sb.AppendLine();
-            sb.AppendLine($"- [Blog]({baseUrl}): Ana sayfa");
-            sb.AppendLine($"- [RSS Feed]({baseUrl}/rss): RSS 2.0 feed");
-            sb.AppendLine($"- [Sitemap]({baseUrl}/sitemap.xml): XML sitemap");
-
-            return Results.Content(sb.ToString(), "text/plain", Encoding.UTF8);
+            return Results.Content(llmsTxt, "text/plain", Encoding.UTF8);
         })
         .WithName("LlmsTxt")
         .WithDescription("Generate llms.txt for AI models")
         .WithTags("SEO")
-        .CacheOutput("LlmsTxtCache")
         .Produces<string>(200, "text/plain");
 
         // GET /rss, /feed, /feed.xml
@@ -195,19 +141,16 @@ Sitemap: {baseUrl}/sitemap.xml
             .WithName("RssFeed")
             .WithDescription("Generate RSS feed")
             .WithTags("SEO")
-            .CacheOutput("RssFeedCache")
             .Produces<byte[]>(200, "application/rss+xml");
 
         app.MapGet("/feed", RssHandler)
             .WithName("Feed")
             .WithTags("SEO")
-            .CacheOutput("RssFeedCache")
             .Produces<byte[]>(200, "application/rss+xml");
 
         app.MapGet("/feed.xml", RssHandler)
             .WithName("FeedXml")
             .WithTags("SEO")
-            .CacheOutput("RssFeedCache")
             .Produces<byte[]>(200, "application/rss+xml");
 
         return app;
@@ -219,7 +162,7 @@ Sitemap: {baseUrl}/sitemap.xml
         IOptions<ServerLimitsSettings> serverLimits,
         CancellationToken cancellationToken)
     {
-        var baseUrl = siteSettings.Value.BaseUrl;
+        var baseUrl = SeoDocuments.NormalizeBaseUrl(siteSettings.Value.BaseUrl);
 
         var posts = await context.Posts
             .Where(p => p.Status == PostStatus.Published && !p.IsDeleted)
@@ -232,9 +175,8 @@ Sitemap: {baseUrl}/sitemap.xml
                 p.Title,
                 p.Slug,
                 p.Excerpt,
-                p.Content,
+                Content = p.Content.Length > 2000 ? p.Content.Substring(0, 2000) : p.Content,
                 p.PublishedAt,
-                p.FeaturedImageUrl,
                 p.MetaDescription,
                 AuthorName = p.Author.FullName,
                 CategoryName = p.Category != null ? p.Category.Name : null
@@ -242,22 +184,22 @@ Sitemap: {baseUrl}/sitemap.xml
             .ToListAsync(cancellationToken);
 
         var feed = new SyndicationFeed(
-            "BlogApp",
-            "Latest blog posts",
+            SeoDocuments.SiteName,
+            SeoDocuments.SiteDescription,
             new Uri(baseUrl),
-            "BlogAppRSS",
+            SeoDocuments.SiteName,
             posts.FirstOrDefault()?.PublishedAt ?? DateTime.UtcNow
         );
 
-        feed.Authors.Add(new SyndicationPerson { Name = "BlogApp" });
+        feed.Authors.Add(new SyndicationPerson { Name = SeoDocuments.AuthorName });
         feed.Language = "tr-TR";
-        feed.Copyright = new TextSyndicationContent($"© {DateTime.UtcNow.Year} BlogApp");
+        feed.Copyright = new TextSyndicationContent($"© {DateTime.UtcNow.Year} {SeoDocuments.SiteName}");
 
         var items = posts.Select(p =>
         {
             var item = new SyndicationItem(
                 p.Title,
-                p.MetaDescription ?? p.Excerpt ?? (p.Content != null ? System.Security.SecurityElement.Escape(p.Content.Substring(0, Math.Min(200, p.Content.Length))) : ""),
+                SeoDocuments.PlainExcerpt(p.MetaDescription ?? p.Excerpt, p.Content, 200),
                 new Uri($"{baseUrl}/posts/{p.Slug}"),
                 p.Slug,
                 p.PublishedAt ?? DateTime.UtcNow

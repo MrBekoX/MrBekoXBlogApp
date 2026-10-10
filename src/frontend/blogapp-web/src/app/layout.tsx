@@ -18,6 +18,7 @@ import {
   SITE_LOCALE,
   AUTHOR_NAME,
   TWITTER_HANDLE,
+  OG_IMAGE_PATH,
 } from '@/lib/site-config';
 import './globals.css';
 
@@ -90,7 +91,7 @@ export const metadata: Metadata = {
     siteName: `${SITE_NAME} Blog`,
     images: [
       {
-        url: '/opengraph-image',
+        url: OG_IMAGE_PATH,
         width: 1200,
         height: 630,
         alt: `${SITE_NAME} Blog`,
@@ -102,7 +103,7 @@ export const metadata: Metadata = {
     title: `${SITE_NAME} | ${AUTHOR_NAME}`,
     description: SITE_DESCRIPTION,
     creator: TWITTER_HANDLE,
-    images: ['/opengraph-image'],
+    images: [OG_IMAGE_PATH],
   },
   robots: {
     index: true,
@@ -137,6 +138,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=VT323&display=swap"
           rel="stylesheet"
         />
+        <link rel="describedby" href={`${SITE_URL}/llms.txt`} type="text/plain" />
         <OrganizationSchema />
         <WebsiteSchema />
         <PersonSchema />

@@ -27,10 +27,11 @@ public sealed class ServerLimitsSettings
     public int CategoriesCacheMinutes { get; set; } = 10;
     public int TagsCacheMinutes { get; set; } = 10;
 
-    // SEO Cache TTLs (minutes)
+    // SEO cache TTLs (minutes). RobotsCacheMinutes is applied.
+    // Sitemap, llms.txt and RSS ignore their minute settings and are served uncached.
     public int SitemapCacheMinutes { get; set; } = 60;
     public int RobotsCacheMinutes { get; set; } = 1440; // 24h
-    public int LlmsTxtCacheMinutes { get; set; } = 360; // 6h
+    public int LlmsTxtCacheMinutes { get; set; } = 360; // retained so existing config still binds
     public int RssFeedCacheMinutes { get; set; } = 30;
 
     // SEO Content Limits

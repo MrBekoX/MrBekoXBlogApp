@@ -54,3 +54,21 @@ Her ders kök neden, yapılan düzeltme, tekrarını yakalayan kontrol ve gelece
 - **Düzeltme:** Dosyalar zedelenmeden geri geldi; A2 edit'leri yeniden uyguladı. Hiçbir veri kaybı olmadı (reflog + A2-rapor.md §6 kanıtlı). Orchestrator commit'leri geri almadı/üzerine yazmadı.
 - **Tekrarını yakalayan kontrol:** Her faz öncesi/sonrası `git branch --show-current` + `git status` + reflog kontrolü; commit'lerin beklenen ancestry'de olduğu doğrulanır.
 - **Gelecekteki önlem:** Kullanıcı aynı checkout'ta çalışıyorsa branch/checkout işlemleri faz yazma pencereleriyle çakıştırılmaz; faz raporlarındaki ortam olayları orchestrator kaydına alınır; izole checkout gerekiyorsa kullanıcıyla konuşulur.
+
+## L007 — Force-add geniş ağaç + stale index.lock: run kazası ve build-artifact kirliliği
+
+- **Faz/yer:** W3 teslim adımı (2026-10-11/12).
+- **Belirti:** Workflow sweep adımı `git add -f src` çalıştırınca ~5 dk askıda kalıp timeout ile run öldü; `.git/index.lock` artık kaldı. Önceki `git add -f` çağrıları ayrıca index'e 78 `.pyc` ve B3 commit'ine 492 `bin/obj` derleme çıktısı sokmuştu.
+- **Kök neden:** (1) `-f` bayrağı `**/bin/`, `**/obj/`, `__pycache__/` gitignore kurallarını bypass etti; (2) sweep `src` kökünü — `src/frontend/blogapp-web/node_modules` dahil — force-add etti; (3) timeout edilen git süreci kilidi bıraktı; (4) commit yardımcısında try/catch ve timeout yoktu, faz sonuç raporlaması commit'lerden SONRADAYDI (salvage kaybı).
+- **Düzeltme:** Stale lock silindi; .pyc ve bin/obj dosyaları `git rm --cached` ile index'ten çıkarıldı; kök `.gitignore`'a `!src/services/ai-agent-service/tests/` istisnası eklendi (tests için force-add ihtiyacını kaldırdı); git yardımcısına 120 sn timeout + try/catch eklendi; faz sonuç raporlaması commit'lerden önceye alındı; sweep dar altkümeyle force olmadan çalışır.
+- **Tekrarını yakalayan kontrol:** `git ls-files | grep -E "(^|/)(bin|obj)/|\.pyc$"` boş dönmeli; her faz sonrası orchestrator `git status`/`git log` doğrulaması.
+- **Gelecekteki önlem:** `-f` yalnız dar, bilinen yollar için (docs/ai-agent-plan); geniş ağaçlarda asla. Git takılırsa öncelikle index.lock kontrolü. `git rm --cached` düzeltmeleri raporda gösterilir.
+
+## L008 — core.autocrlf, üretilmiş YAML aynalarını bozup RAG aracını kırıyor
+
+- **Faz/yer:** W3, A5 (2026-10-11/12).
+- **Belirti:** `search.cjs verify` ve `search` komutları kalıcı olarak `manifest JSON ve YAML aynaları farklı` hatası verdi; RAG CONTEXT üretimi kapandı (A5 geçici çözümle library.cjs search() fonksiyonunu doğrudan, arşive yazmadan çağırdı).
+- **Kök neden:** Kaynak arşivi git'e ilk kez eklendiğinde `core.autocrlf=true`, `manifest.yaml` ve `stage-map.yaml` aynalarını CRLF'e çevirdi; araç ürettiği LF beklenen içerikle byte karşılaştırması yapıyor.
+- **Düzeltme:** `node docs/ai-agent-plan/source/tools/rebuild-metadata.cjs` ile aynalar LF olarak yeniden üretildi (`verify` → valid:true); `.gitattributes`'a `docs/ai-agent-plan/source/** text eol=lf` kuralı eklendi.
+- **Tekrarını yakalayan kontrol:** Faz başlarında çalıştırılan `search.cjs verify`; valid:false dönerse orchestrator rebuild-metadata çalıştırır.
+- **Gelecekteki önlem:** Üretilmiş makine dosyaları (yaml aynaları) versiyonlanırken .gitattributes eol kuralı eşlik eder; kaynak arşivi değişikliğinden sonra rebuild + verify zorunlu.

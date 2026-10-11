@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "BlogApp.Server.Domain/1.0.0": {
+        "runtime": {
+          "BlogApp.Server.Domain.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "BlogApp.Server.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

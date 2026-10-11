@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-agent-service"
+version = "0.1.0"
+description = "MrBekoX Blog AI agent cekirdegi (agent_core): is modelleri, portlar ve giris noktalari"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.11,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["app"]
+include = ["agent_core*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["app"]

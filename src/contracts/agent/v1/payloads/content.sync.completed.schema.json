@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:content.sync.completed",
+  "title": "ContentSnapshotCompletedPayloadV1",
+  "description": "İçerik senkronizasyonu tamamlandı (Backend → Python). sync_id, batch mesajlarındaki ile aynı senkronizasyonu işaret eder.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sync_id", "item_count"],
+  "properties": {
+    "sync_id": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "item_count": { "type": "integer", "minimum": 0 }
+  }
+}

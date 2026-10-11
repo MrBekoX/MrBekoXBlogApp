@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:agent.execute.requested",
+  "title": "AgentExecutionRequestedPayloadV1",
+  "description": "Execution isteği: soru, dil, mod tercihi, doğrulanmış bağlam snapshot REFERANSI, makale revizyonu/hash referansı, tamamlanmış geçmiş ve bütçe profili adı taşınır (plan satır 235; K7: makale içeriği gömülmez). user_ref backend kimliği doğruladıktan sonra ekler; bu alanın varlığı tek başına yetki kanıtı değildir (plan satır 198). A1 ExecutionContext alan adlarıyla birebir eşlenir.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["user_ref", "question", "language", "mode_preference", "budget_profile"],
+  "properties": {
+    "user_ref": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "question": { "type": "string", "minLength": 1, "maxLength": 8000 },
+    "language": { "$ref": "urn:blog-agent:v1:common#/$defs/language_code" },
+    "mode_preference": { "$ref": "urn:blog-agent:v1:common#/$defs/mode_preference" },
+    "budget_profile": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "article_id": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "article_revision": { "type": "integer", "minimum": 0 },
+    "article_content_hash": { "$ref": "urn:blog-agent:v1:common#/$defs/hash_hex" },
+    "context_snapshot_reference": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "selected_text": { "type": "string", "minLength": 1, "maxLength": 20000 },
+    "conversation_history": {
+      "type": "array",
+      "items": { "$ref": "urn:blog-agent:v1:common#/$defs/conversation_turn" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          { "required": ["article_id"] },
+          { "required": ["article_revision"] },
+          { "required": ["article_content_hash"] }
+        ]
+      },
+      "then": { "required": ["article_id", "article_revision", "article_content_hash"] }
+    }
+  ]
+}

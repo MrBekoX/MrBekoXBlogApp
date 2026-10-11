@@ -1,0 +1,14 @@
+{
+  "message_id": "44444444-4444-4444-8444-444444444445",
+  "message_type": "content.profile.changed",
+  "schema_version": 1,
+  "occurred_at": "2026-10-11T09:00:00Z",
+  "producer": "backend-net",
+  "payload": {
+    "profile_revision": 3,
+    "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "context_snapshot_reference": "agent/profile-snapshot/3"
+  },
+  "correlation_id": "ccccccc1-0000-4000-8000-000000000003",
+  "trace_context": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}

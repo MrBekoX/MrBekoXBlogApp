@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:agent.run.accepted",
+  "title": "AgentRunAcceptedPayloadV1",
+  "description": "Python intake işi kalıcı kabul ettiğinde yayınlanır. event_sequence run başına monoton artar; execution_attempt agent yürütme denemesidir ve transport tekrar sayısından (zarf delivery_attempt) ayrıdır (plan satır 237).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_sequence", "accepted_at"],
+  "properties": {
+    "event_sequence": { "type": "integer", "minimum": 0 },
+    "execution_attempt": { "type": "integer", "minimum": 1 },
+    "fencing_token": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "accepted_at": { "$ref": "urn:blog-agent:v1:common#/$defs/utc_iso" }
+  }
+}

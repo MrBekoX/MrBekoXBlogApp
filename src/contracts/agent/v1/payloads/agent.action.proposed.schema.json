@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:agent.action.proposed",
+  "title": "AgentActionProposedPayloadV1",
+  "description": "Backend'e sunulan içerik önerisi (A1 ActionProposal). run_id zarftaki run_id ile uyuşmak zorundadır; kayıt gerçek gönderim onayı ve belirli proposal sürümüne bağlıdır — önerinin yayınlanması backend onayından önce etkisizdir.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_sequence", "run_id", "proposal_id", "article_id", "article_revision", "base_content_hash", "summary", "proposed_content", "created_at"],
+  "properties": {
+    "event_sequence": { "type": "integer", "minimum": 0 },
+    "execution_attempt": { "type": "integer", "minimum": 1 },
+    "fencing_token": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "run_id": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "proposal_id": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "article_id": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "article_revision": { "type": "integer", "minimum": 0 },
+    "base_content_hash": { "$ref": "urn:blog-agent:v1:common#/$defs/hash_hex" },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 8000 },
+    "proposed_content": { "type": "string", "minLength": 1, "maxLength": 20000 },
+    "created_at": { "$ref": "urn:blog-agent:v1:common#/$defs/utc_iso" }
+  }
+}

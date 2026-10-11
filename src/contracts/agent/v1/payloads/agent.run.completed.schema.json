@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:agent.run.completed",
+  "title": "AgentRunCompletedPayloadV1",
+  "description": "Terminal başarı olayı (A1 AgentOutcome.status=completed): answer veya report tam olarak biri zorunludur. usage.run_id ve varsa action_proposal.run_id zarfın run_id'siyle uyuşmak zorundadır (doğrulayıcı kuralı).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_sequence", "selected_mode", "source_scope", "usage"],
+  "properties": {
+    "event_sequence": { "type": "integer", "minimum": 0 },
+    "execution_attempt": { "type": "integer", "minimum": 1 },
+    "fencing_token": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "selected_mode": { "$ref": "urn:blog-agent:v1:common#/$defs/agent_mode" },
+    "answer": { "type": "string", "minLength": 1, "maxLength": 200000 },
+    "report": { "type": "string", "minLength": 1, "maxLength": 200000 },
+    "citations": {
+      "type": "array",
+      "items": { "$ref": "urn:blog-agent:v1:common#/$defs/source_reference" }
+    },
+    "source_scope": { "$ref": "urn:blog-agent:v1:common#/$defs/source_scope" },
+    "unresolved_questions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 20000 }
+    },
+    "usage": { "$ref": "urn:blog-agent:v1:common#/$defs/usage_record" },
+    "action_proposal": { "$ref": "urn:blog-agent:v1:common#/$defs/action_proposal" }
+  },
+  "allOf": [
+    { "oneOf": [{ "required": ["answer"] }, { "required": ["report"] }] },
+    {
+      "not": {
+        "allOf": [{ "required": ["answer"] }, { "required": ["report"] }]
+      }
+    }
+  ]
+}

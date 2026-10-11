@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:content.article.changed",
+  "title": "ArticleContentChangedPayloadV1",
+  "description": "Makale içeriği değişti (Backend → Python içerik). action=updated için content_hash zorunludur; action=unpublished için content_hash taşınmaz. İçerik gömülmez, referans taşınır (K7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["article_id", "article_revision", "action"],
+  "properties": {
+    "article_id": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "article_revision": { "type": "integer", "minimum": 0 },
+    "action": { "enum": ["updated", "unpublished"] },
+    "content_hash": { "$ref": "urn:blog-agent:v1:common#/$defs/hash_hex" },
+    "language": { "$ref": "urn:blog-agent:v1:common#/$defs/language_code" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 512 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "updated" } }, "required": ["action"] },
+      "then": { "required": ["content_hash"] }
+    },
+    {
+      "if": { "properties": { "action": { "const": "unpublished" } }, "required": ["action"] },
+      "then": { "not": { "required": ["content_hash"] } }
+    }
+  ]
+}

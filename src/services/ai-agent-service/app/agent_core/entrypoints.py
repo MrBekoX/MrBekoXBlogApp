@@ -1,8 +1,16 @@
 """Agent çekirdeğinin üç uygulama girişi (plan A1, ``01-agent-gelistirme-plani.md:186``):
 
 - ``prepare_and_route``: hazırlık/mod seçimi; router kararı burada bir kez
-  hesaplanır (saf fonksiyon, model çağrısı yok).
+  hesaplanır — kesin durumlarda kurallar, belirsiz durumlarda verilen
+  ``router_model``'den yapılandırılmış öneri (plan A5); kararı yeniden
+  hesaplamaz.
 - ``execute_plan``: hazırlanmış planı yürütür; kararı yeniden hesaplamaz.
+  A5: makale bağlamlı analysis çalışması analysis alt akışını koşar; fast
+  çalışma A4 QA akışını koşar ve yetersizlikte SINIRLI, KAYITLI bir
+  fast → analysis yükseltmesi yapabilir; ``needs_clarification`` kararı
+  tahminle değil ``needs_input`` terminaliyle döner; ``needs_web`` kararında
+  web araçları bağlı değilse özelliğin kullanılamaz olduğu doğru durumla
+  bildirilir (web gerçekleştirimi A6/A7 kapsamıdır).
 - ``resume``: duraklatılmış çalışmayı checkpoint'ten yükleyip sürdürür;
   route kararını checkpoint'ten okur, yeniden model çağrısıyla hesaplamaz.
 
@@ -14,6 +22,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from .analysis.models import AnalysisConfig
+from .analysis.runner import run_article_analysis
 from .errors import AgentErrorCode, PortError
 from .models import (
     AgentMode,
@@ -22,6 +32,7 @@ from .models import (
     DomainProgress,
     ExecutionContext,
     Identifier,
+    ModeUpgradeRecord,
     ProgressKind,
     RouteDecision,
     RunStatus,
@@ -35,7 +46,7 @@ from .ports.budget import BudgetKind
 from .ports.model import ModelRequest
 from .qa.models import QaFlowConfig
 from .qa.runner import run_article_qa
-from .routing import route_for_context
+from .routing import is_multi_part_question, route_for_context
 
 __all__ = ["PreparedRun", "ResumeRequest", "execute_plan", "prepare_and_route", "resume"]
 
@@ -115,11 +126,17 @@ def verify_snapshot_binding(context: ExecutionContext) -> None:
 async def prepare_and_route(
     context: ExecutionContext,
     *,
+    router_model: ModelProvider | None = None,
     progress: ProgressSink | None = None,
     cancel: CancellationToken | None = None,
     checkpoint: CheckpointStore | None = None,
 ) -> PreparedRun:
-    """Hazırlık ve mod seçimi; rota kararı bir kez, model çağrısız üretilir.
+    """Hazırlık ve mod seçimi; rota kararı bir kez üretilir.
+
+    Kesin durumlarda karar model çağrısız kuraldır; belirsiz durumlarda
+    ``router_model`` verildiyse yapılandırılmış öneri istenir ve doğrulanmış
+    politika profiline eşlenir (plan A5). ``router_model`` verilmediğinde
+    belirsiz durumlar deterministik kuralıyla çözülür (geçiş davranışı).
 
     Raises:
         PortError: ``cancelled`` — iptal sinyali; ``stale_snapshot`` — snapshot
@@ -136,10 +153,10 @@ async def prepare_and_route(
             f"makale bağlamı doğrulandı: {context.article_id}",
         )
 
-    route = route_for_context(context)
+    route = await route_for_context(context, router_model=router_model, cancel=cancel)
     await _publish(
         progress, context.run_id, ProgressKind.MODE_SELECTED,
-        f"mod seçildi: {route.selected_mode.value} ({route.reason})",
+        f"mod seçildi: {route.selected_mode.value} ({route.brief_reason})",
     )
 
     prepared = PreparedRun(context=context, route=route, prepared_at=_utcnow())
@@ -192,8 +209,10 @@ def _build_usage(prepared: PreparedRun, started_at: datetime, *, model_usage=Non
 
 
 def _scope_for(prepared: PreparedRun) -> SourceScope:
-    if prepared.route.requires_web_search:
+    if prepared.route.needs_web:
         return SourceScope.ARTICLE_AND_WEB
+    if prepared.route.source_scope is not None:
+        return prepared.route.source_scope
     if prepared.context.article_snapshot is not None:
         return SourceScope.ARTICLE
     return SourceScope.GENERAL
@@ -202,6 +221,52 @@ def _scope_for(prepared: PreparedRun) -> SourceScope:
 def _is_article_bound(context: ExecutionContext) -> bool:
     """Bağlam bir makaleye mi bağlı? (snapshot veya yalnız referans — K7)."""
     return context.article_snapshot is not None or context.article_id is not None
+
+
+#: Plan A5: web araçları A6'ya kadar bağlı değildir; ihtiyaç duyan çalışma
+#: özelliğin kullanılamaz olduğunu doğru durumla bildirir.
+_WEB_UNAVAILABLE_TR_WIRED = (
+    "Not: bu çalışma güncel dış kanıt gerektiriyor; ancak web araştırma akışı bu "
+    "sürümde henüz uygulanmadığı için dış kanıt toplanamadı. Sunulan içerik yalnızca "
+    "makale bağlamına dayanır."
+)
+_WEB_UNAVAILABLE_TR_UNWIRED = (
+    "Not: bu çalışma güncel dış kanıt gerektiriyor; ancak web araştırma araçları bu "
+    "sürümde bağlı olmadığı için bu özellik kullanılamıyor. Sunulan içerik yalnızca "
+    "makale bağlamına dayanır."
+)
+_WEB_UNAVAILABLE_EN_WIRED = (
+    "Note: this request requires up-to-date external evidence, but the web research "
+    "flow is not implemented in this release, so no external evidence was collected. "
+    "The content below relies on the article context only."
+)
+_WEB_UNAVAILABLE_EN_UNWIRED = (
+    "Note: this request requires up-to-date external evidence, but web research tools "
+    "are not connected in this release, so this capability is unavailable. The content "
+    "below relies on the article context only."
+)
+
+
+def _web_unavailability_note(language: str, *, wired: bool) -> str:
+    if language.casefold().startswith("tr"):
+        return _WEB_UNAVAILABLE_TR_WIRED if wired else _WEB_UNAVAILABLE_TR_UNWIRED
+    return _WEB_UNAVAILABLE_EN_WIRED if wired else _WEB_UNAVAILABLE_EN_UNWIRED
+
+
+def _clarification_outcome(prepared: PreparedRun, started_at: datetime) -> AgentOutcome:
+    """``needs_clarification`` kararı için ``needs_input`` terminali.
+
+    Eksik bağlam/kişisel bilgi tahminle tamamlanmaz; model çağrısı yapılmaz,
+    kullanıcıya açık soru döner (plan A5).
+    """
+    question = prepared.route.clarification_question or ""
+    return AgentOutcome(
+        selected_mode=prepared.route.selected_mode,
+        status=RunStatus.NEEDS_INPUT,
+        source_scope=_scope_for(prepared),
+        unresolved_questions=[question] if question else [],
+        usage=_build_usage(prepared, started_at),
+    )
 
 
 def _terminal_outcome(
@@ -230,21 +295,37 @@ async def execute_plan(
     progress: ProgressSink | None = None,
     cancel: CancellationToken | None = None,
     qa_config: QaFlowConfig | None = None,
+    analysis_config: AnalysisConfig | None = None,
+    web_search=None,
 ) -> AgentOutcome:
     """Hazırlanmış planı yürütür; rota kararını yeniden hesaplamaz.
 
-    Makaleye bağlı fast/analysis çalışmaları (A4), ``retriever``
-    (``agent_core.qa.ArticleRetriever``) verildiğinde makale soru-cevap
-    graph'ını yürütür: cevap getirilen makale bölümlerine dayanır ve atıflar
-    yalnız gerçek getirilen kanıttan seçilir. ``content``
-    (``ContentRepository``) yalnız referans taşıyan bağlamların (K7) içerik
-    getirmesi içindir. Derin araştırma ve makalesiz akışlar A1 tek-çağrı
-    yürütücüsünde kalır (A6–A7 kapsamı).
+    Makaleye bağlı çalışmalarda (``retriever`` verildiğinde):
 
-    GEÇİŞ DAVRANIŞI (A5 kapanacak): ``retriever`` verilmediğinde makale
+    - ``analysis`` modu A5 analysis alt akışını koşar: soru cevap başlıklarına
+      ayrılır, başlık başına arama + sınırlı kapsam artırma + kanıt kontrolü
+      yapılır, açıklama makale örnekleriyle üretilir ve atıflarla
+      ilişkilendirilir (plan A5).
+    - ``fast`` modu A4 QA akışını koşar; yetersizlik ve çok bölümlü soru
+      durumunda TEK KEZ analysis alt akışına yükselir — yükseltme
+      ``AgentOutcome.mode_upgrades`` ile kayıtlıdır (plan A5: "Mod
+      yükseltmesini sınırlı ve kayıtlı yap").
+    - ``needs_clarification`` kararında model çağrısı yapılmaz; açık soruyla
+      ``needs_input`` terminali döner: eksik kişisel bilgi tahminle
+      tamamlanmaz (plan A5).
+    - ``deep_research`` A1 tek-çağrı yolunda kalır (A6–A7 kapsamı);
+      ``needs_web`` kararlarında web araçları bağlı değilse rapora
+      kullanılamazlık durumu eklenir.
+
+    ``content`` (``ContentRepository``) yalnız referans taşıyan bağlamların
+    (K7) içerik getirmesi içindir. ``web_search`` portu A5'te çağrılmaz;
+    yalnız bağlantı durumunun doğru bildirilmesi için kabul edilir.
+
+    GEÇİŞ DAVRANIŞI (B4 kapanacak): ``retriever`` verilmediğinde makale
     bağlamlı çalışma A1 tek-çağrı yolunda kalır. Bu, kanıtsız makale cevabı
-    riskini taşır; worker wiring'i (A5/B4) ``retriever``'ı zorunlu kılınca
-    kaldırılacak ve ekseni ``config_error`` terminaline dönecektir.
+    riskini taşır; worker wiring'i (B4) ``retriever``'ı zorunlu kılınca
+    kaldırılacak ve ekseni ``config_error`` terminaline dönecektir
+    (A4-rapor.md F1; A5 dispatch'i dosya sahipliği gereği bu geçişi kapatmaz).
 
     Raises:
         PortError: yalnız beklenmedik (terminal olmayan) arızalarda; plan
@@ -257,14 +338,34 @@ async def execute_plan(
     except PortError as error:
         return _terminal_outcome(prepared, started_at, error)
 
+    route = prepared.route
+
+    # Plan A5: eksik bağlam/kişisel bilgi tahminle tamamlanmaz.
+    if route.needs_clarification:
+        return _clarification_outcome(prepared, started_at)
+
     if (
         _is_article_bound(prepared.context)
-        and prepared.route.selected_mode is not AgentMode.DEEP_RESEARCH
+        and route.selected_mode is not AgentMode.DEEP_RESEARCH
         and retriever is not None
     ):
+        if route.selected_mode is AgentMode.ANALYSIS:
+            analysis_result = await run_article_analysis(
+                prepared.context,
+                route,
+                model=model,
+                retriever=retriever,
+                content=content,
+                config=analysis_config,
+                store=budget,
+                cancel=cancel,
+                progress=progress,
+            )
+            return analysis_result.outcome
+
         result = await run_article_qa(
             prepared.context,
-            prepared.route,
+            route,
             model=model,
             retriever=retriever,
             content=content,
@@ -273,6 +374,42 @@ async def execute_plan(
             cancel=cancel,
             progress=progress,
         )
+        verdict = result.state.get("sufficiency")
+        fast_insufficient = verdict is not None and not verdict.sufficient
+        if fast_insufficient and is_multi_part_question(prepared.context.question):
+            upgrade = ModeUpgradeRecord(
+                from_mode=AgentMode.FAST,
+                to_mode=AgentMode.ANALYSIS,
+                reason=(
+                    "fast tek bölüm araması çok bölümlü soruyu karşılamadı; "
+                    "analysis alt akışı çalıştırıldı (sınırlı yükseltme: çalışma başına bir)"
+                ),
+                upgraded_at=_utcnow(),
+            )
+            await _publish(
+                progress, run_id, ProgressKind.MODE_SELECTED,
+                f"mod yükseltmesi: fast → analysis ({upgrade.reason})",
+            )
+            # Alt akış, fiilen çalışan modu taşır: terminal sonuç analysis moduyla etiketlenir.
+            upgraded_route = route.model_copy(
+                update={
+                    "selected_mode": AgentMode.ANALYSIS,
+                    "brief_reason": f"{route.brief_reason}; mod yükseltmesi: analysis",
+                }
+            )
+            analysis_result = await run_article_analysis(
+                prepared.context,
+                upgraded_route,
+                model=model,
+                retriever=retriever,
+                content=content,
+                config=analysis_config,
+                store=budget,
+                mode_upgrade=upgrade,
+                cancel=cancel,
+                progress=progress,
+            )
+            return analysis_result.outcome
         return result.outcome
 
     await _publish(progress, run_id, ProgressKind.GENERATION_STARTED, "yanıt üretiliyor")
@@ -295,11 +432,17 @@ async def execute_plan(
         f"yanıt üretildi ({usage.total_tokens} token)",
     )
 
-    deep = prepared.route.selected_mode is AgentMode.DEEP_RESEARCH
+    deep = route.selected_mode is AgentMode.DEEP_RESEARCH
+    report = response.text if deep else None
+    if deep and route.needs_web:
+        report = (
+            f"{response.text}\n\n"
+            f"{_web_unavailability_note(prepared.context.language, wired=web_search is not None)}"
+        )
     return AgentOutcome(
-        selected_mode=prepared.route.selected_mode,
+        selected_mode=route.selected_mode,
         status=RunStatus.COMPLETED,
-        report=response.text if deep else None,
+        report=report,
         answer=None if deep else response.text,
         source_scope=_scope_for(prepared),
         usage=usage,
@@ -316,6 +459,7 @@ async def resume(
     budget: BudgetStore | None = None,
     progress: ProgressSink | None = None,
     cancel: CancellationToken | None = None,
+    web_search=None,
 ) -> AgentOutcome:
     """Duraklatılmış çalışmayı checkpoint'ten sürdürür; rota kararı yeniden hesaplanmaz.
 
@@ -357,4 +501,5 @@ async def resume(
         budget=budget,
         progress=progress,
         cancel=cancel,
+        web_search=web_search,
     )

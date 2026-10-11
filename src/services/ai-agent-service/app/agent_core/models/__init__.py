@@ -14,11 +14,11 @@ from .action import ActionProposal, ValidatedActionResult
 from .article import ArticleChunk, ArticleSnapshot, compute_content_hash
 from .base import BusinessModel, HashHex, Identifier, LanguageCode, NonEmptyText, UtcDatetime
 from .context import BudgetProfile, ConversationTurn, ExecutionContext
-from .enums import AgentMode, ModePreference, ProgressKind, RunStatus, SourceScope
+from .enums import AgentMode, ModePreference, ProgressKind, RunIntent, RunStatus, SourceScope
 from .outcome import AgentOutcome
 from .progress import DomainProgress
 from .research import ResearchFinding, ResearchPlan
-from .routing import RouteDecision
+from .routing import ModeUpgradeRecord, RouteDecision
 from .sources import EvidenceItem, SourceReference
 from .usage import UsageRecord
 
@@ -38,11 +38,13 @@ __all__ = [
     "Identifier",
     "LanguageCode",
     "ModePreference",
+    "ModeUpgradeRecord",
     "NonEmptyText",
     "ProgressKind",
     "ResearchFinding",
     "ResearchPlan",
     "RouteDecision",
+    "RunIntent",
     "RunStatus",
     "SourceReference",
     "SourceScope",

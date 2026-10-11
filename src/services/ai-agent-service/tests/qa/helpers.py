@@ -262,6 +262,7 @@ class ScriptedRetriever:
     def __init__(self, batches: list[list[IndexedChunk]]) -> None:
         self._batches = list(batches)
         self.queries: list[str] = []
+        self.top_ks: list[int] = []
         self.indexed: list[ArticleSnapshot] = []
 
     async def ensure_indexed(self, snapshot: ArticleSnapshot, *, cancel: Any = None):
@@ -285,6 +286,7 @@ class ScriptedRetriever:
         cancel: Any = None,
     ) -> list[IndexedChunk]:
         self.queries.append(query)
+        self.top_ks.append(top_k)
         if not self._batches:
             raise AssertionError("ScriptedRetriever yığını tükendi: beklenmedik arama")
         return self._batches.pop(0)

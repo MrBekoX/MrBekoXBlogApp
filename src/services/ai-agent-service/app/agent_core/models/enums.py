@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-__all__ = ["AgentMode", "ModePreference", "ProgressKind", "RunStatus", "SourceScope"]
+__all__ = ["AgentMode", "ModePreference", "ProgressKind", "RunIntent", "RunStatus", "SourceScope"]
 
 
 class RunStatus(StrEnum):
@@ -20,6 +20,22 @@ class RunStatus(StrEnum):
     NEEDS_INPUT = "needs_input"
     CANCELLED = "cancelled"
     FAILED = "failed"
+
+
+class RunIntent(StrEnum):
+    """Router'ın sınıflandırdığı görev türü (plan A5 ``RouteDecision.intent``).
+
+    ``RESEARCH`` güncellik/dış kanıt dahil araştırma görevidir; ``COMPARE``
+    karşılaştırma veya senaryoya uyarlama, ``EXPLAIN`` seçili metin/kod
+    açıklaması, ``SUMMARIZE`` makaleyi bütün olarak soran özet sınıfıdır.
+    """
+
+    ARTICLE_QA = "article_qa"
+    SUMMARIZE = "summarize"
+    EXPLAIN = "explain"
+    COMPARE = "compare"
+    RESEARCH = "research"
+    GENERAL = "general"
 
 
 class AgentMode(StrEnum):

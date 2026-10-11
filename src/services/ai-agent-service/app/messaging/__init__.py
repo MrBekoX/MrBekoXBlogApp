@@ -26,6 +26,18 @@ from .errors import TopologyError
 from .connection import broker_connection, connect_broker
 from .publisher import BrokerPublisher, PublishResult
 from .consumer import BrokerConsumer
+from .db import AgentDbError, AgentDbSettings, connect_pool
+from .job_store import (
+    ACCEPTED_MESSAGE_TYPE,
+    JOB_STATUS_ACCEPTED,
+    AcceptOutcome,
+    JobPayloadConflict,
+    JobStore,
+    build_accepted_envelope,
+    compute_payload_hash,
+)
+from .intake import EXECUTE_COMMAND_TYPE, IntakeOutcome, IntakePolicyError, IntakeService
+from .outbox import OutboxRelay, RelayBatchResult
 
 __all__ = [
     "BrokerSettings",
@@ -50,4 +62,21 @@ __all__ = [
     "CONTENT_QUEUE",
     "BACKEND_EVENTS_QUEUE",
     "DEFAULT_RETRY_TIER_SECONDS",
+    # B4: kalıcı iş kabulü
+    "AgentDbError",
+    "AgentDbSettings",
+    "connect_pool",
+    "JobStore",
+    "AcceptOutcome",
+    "JobPayloadConflict",
+    "compute_payload_hash",
+    "build_accepted_envelope",
+    "ACCEPTED_MESSAGE_TYPE",
+    "JOB_STATUS_ACCEPTED",
+    "IntakeService",
+    "IntakeOutcome",
+    "IntakePolicyError",
+    "EXECUTE_COMMAND_TYPE",
+    "OutboxRelay",
+    "RelayBatchResult",
 ]

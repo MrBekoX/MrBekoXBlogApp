@@ -13,6 +13,7 @@ from ..errors import AgentErrorCode
 from .action import ActionProposal
 from .base import BusinessModel, NonEmptyText
 from .enums import AgentMode, RunStatus, SourceScope
+from .routing import ModeUpgradeRecord
 from .sources import SourceReference
 from .usage import UsageRecord
 
@@ -30,6 +31,8 @@ class AgentOutcome(BusinessModel):
     citations: list[SourceReference] = []
     source_scope: SourceScope
     unresolved_questions: list[NonEmptyText] = []
+    #: Sınırlı ve kayıtlı mod yükseltmeleri (plan A5); çalışma başına en fazla bir kayıt.
+    mode_upgrades: list[ModeUpgradeRecord] = []
     usage: UsageRecord
     action_proposal: ActionProposal | None = None
     #: Yalnız failed/partial gibi hata bilgi taşıyan durumlarda anlamlıdır.

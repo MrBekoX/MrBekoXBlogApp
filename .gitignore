@@ -12,6 +12,9 @@ deploy/.env
 .windsurf
 .codex-build
 .sisyphus
+.zcode
+.zcodeignore
+.video_agent
 
 # AGENTS.md development files (optional - comment out if you want to track them)
 # AGENTS.md

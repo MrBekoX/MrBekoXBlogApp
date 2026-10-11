@@ -12,7 +12,10 @@ namespace BlogApp.Presentation.Api.Tests.Messaging.Broker;
 /// consumer yeniden bağlantı sonrası çalışır; yetki kapsamı broker'da uygulanır.
 /// Python tarafı (tests/messaging_broker) aynı topolojiyi ve broker'ı paylaşır;
 /// aynı argümanla çift taraflı declare PRECONDITION_FAILED üretmez (diller arası tutarlılık).
+/// B3 notu: kuyruk erişimi yarışmasın diye B3 outbox relay testleriyle aynı xunit
+/// koleksiyonunda sıraya alınmıştır (davranış değişikliği yoktur).
 /// </summary>
+[Collection("agent-rabbitmq-outbox")]
 public class AgentRabbitMqBrokerTests
 {
     private static readonly string[] BackendPublisherExchanges =

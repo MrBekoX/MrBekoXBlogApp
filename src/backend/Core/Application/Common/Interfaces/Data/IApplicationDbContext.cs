@@ -14,7 +14,13 @@ public interface IApplicationDbContext
     DbSet<User> Users { get; }
     DbSet<Comment> Comments { get; }
     DbSet<RefreshToken> RefreshTokens { get; }
+    DbSet<IdempotencyRecord> IdempotencyRecords { get; }
+
+    /// <summary>Agent iş kabul kayıtları (B3).</summary>
+    DbSet<AgentRun> AgentRuns { get; }
+
+    /// <summary>Transactional outbox kayıtları (B3).</summary>
+    DbSet<OutboxMessage> OutboxMessages { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
-

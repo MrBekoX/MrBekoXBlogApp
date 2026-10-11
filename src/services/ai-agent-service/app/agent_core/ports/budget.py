@@ -25,12 +25,19 @@ __all__ = ["BudgetKind", "BudgetReservation", "BudgetStore", "BudgetUsage"]
 
 
 class BudgetKind(StrEnum):
-    """Denetlenen bütçe birimleri."""
+    """Denetlenen bütçe birimleri.
+
+    ``SOURCE_PAGE_READ`` ve ``RESEARCH_ROUND`` A2 eklemesidir (plan A2:
+    kaynak sayfası ve araştırma turu sınırları BudgetStore üzerinden denetlenir);
+    mevcut üyelerin değerleri değişmediği için B1 eşlemesi etkilenmez.
+    """
 
     MODEL_CALL = "model_call"
     TOKEN = "token"
     TOOL_CALL = "tool_call"
     WEB_SEARCH_CALL = "web_search_call"
+    SOURCE_PAGE_READ = "source_page_read"
+    RESEARCH_ROUND = "research_round"
 
 
 class BudgetReservation(BusinessModel):

@@ -9,6 +9,7 @@ description = "MrBekoX Blog AI agent cekirdegi (agent_core) ve transport katmani
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.11,<3",
+    "langgraph>=1.0,<2",
 ]
 
 [project.optional-dependencies]

@@ -33,6 +33,8 @@ from .models import (
 from .ports import BudgetStore, CheckpointStore, CancellationToken, ModelProvider, ProgressSink
 from .ports.budget import BudgetKind
 from .ports.model import ModelRequest
+from .qa.models import QaFlowConfig
+from .qa.runner import run_article_qa
 from .routing import route_for_context
 
 __all__ = ["PreparedRun", "ResumeRequest", "execute_plan", "prepare_and_route", "resume"]
@@ -197,6 +199,11 @@ def _scope_for(prepared: PreparedRun) -> SourceScope:
     return SourceScope.GENERAL
 
 
+def _is_article_bound(context: ExecutionContext) -> bool:
+    """Bağlam bir makaleye mi bağlı? (snapshot veya yalnız referans — K7)."""
+    return context.article_snapshot is not None or context.article_id is not None
+
+
 def _terminal_outcome(
     prepared: PreparedRun, started_at: datetime, error: PortError
 ) -> AgentOutcome:
@@ -217,15 +224,27 @@ async def execute_plan(
     prepared: PreparedRun,
     *,
     model: ModelProvider,
+    retriever=None,
+    content=None,
     budget: BudgetStore | None = None,
     progress: ProgressSink | None = None,
     cancel: CancellationToken | None = None,
+    qa_config: QaFlowConfig | None = None,
 ) -> AgentOutcome:
     """Hazırlanmış planı yürütür; rota kararını yeniden hesaplamaz.
 
-    A1 minimal yürütücü: tek tamamlama çağrısı; bütçe rezervasyonu ve iptal
-    noktaları A2'nin graph yürütmesine taşınacak sözleşmeyle aynıdır.
-    Derin araştırmanın çok turlu akışı A4–A6 kapsamındadır.
+    Makaleye bağlı fast/analysis çalışmaları (A4), ``retriever``
+    (``agent_core.qa.ArticleRetriever``) verildiğinde makale soru-cevap
+    graph'ını yürütür: cevap getirilen makale bölümlerine dayanır ve atıflar
+    yalnız gerçek getirilen kanıttan seçilir. ``content``
+    (``ContentRepository``) yalnız referans taşıyan bağlamların (K7) içerik
+    getirmesi içindir. Derin araştırma ve makalesiz akışlar A1 tek-çağrı
+    yürütücüsünde kalır (A6–A7 kapsamı).
+
+    GEÇİŞ DAVRANIŞI (A5 kapanacak): ``retriever`` verilmediğinde makale
+    bağlamlı çalışma A1 tek-çağrı yolunda kalır. Bu, kanıtsız makale cevabı
+    riskini taşır; worker wiring'i (A5/B4) ``retriever``'ı zorunlu kılınca
+    kaldırılacak ve ekseni ``config_error`` terminaline dönecektir.
 
     Raises:
         PortError: yalnız beklenmedik (terminal olmayan) arızalarda; plan
@@ -237,6 +256,24 @@ async def execute_plan(
         _check_cancel(cancel)
     except PortError as error:
         return _terminal_outcome(prepared, started_at, error)
+
+    if (
+        _is_article_bound(prepared.context)
+        and prepared.route.selected_mode is not AgentMode.DEEP_RESEARCH
+        and retriever is not None
+    ):
+        result = await run_article_qa(
+            prepared.context,
+            prepared.route,
+            model=model,
+            retriever=retriever,
+            content=content,
+            config=qa_config,
+            store=budget,
+            cancel=cancel,
+            progress=progress,
+        )
+        return result.outcome
 
     await _publish(progress, run_id, ProgressKind.GENERATION_STARTED, "yanıt üretiliyor")
 
@@ -274,6 +311,8 @@ async def resume(
     *,
     checkpoint: CheckpointStore,
     model: ModelProvider,
+    retriever=None,
+    content=None,
     budget: BudgetStore | None = None,
     progress: ProgressSink | None = None,
     cancel: CancellationToken | None = None,
@@ -311,5 +350,11 @@ async def resume(
         f"çalışma checkpoint'ten sürdürüldü (mod: {prepared.route.selected_mode.value})",
     )
     return await execute_plan(
-        prepared, model=model, budget=budget, progress=progress, cancel=cancel
+        prepared,
+        model=model,
+        retriever=retriever,
+        content=content,
+        budget=budget,
+        progress=progress,
+        cancel=cancel,
     )

@@ -190,3 +190,6 @@ htmlcov/
 .dotnet-home/
 .dotnet/
 
+
+# AI agent servis test paketi - tests/ kuralinin istisnasi (L001)
+!src/services/ai-agent-service/tests/

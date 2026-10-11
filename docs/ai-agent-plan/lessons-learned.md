@@ -36,3 +36,21 @@ Her ders kök neden, yapılan düzeltme, tekrarını yakalayan kontrol ve gelece
 - **Düzeltme:** W0 anlam sözlüğü: `article_revision` backend'in atadığı monoton yayımlanmış içerik anı kimliği; `article_content_hash` UTF-8 SHA-256. B8 kendi revizyon üretimini yazacak (D008).
 - **Tekrarını yakalayan kontrol:** A0-rapor.md §5 ve W0-ortak-mimari-kararlari.md §1.4; B8 dispatch'ine bağlam olarak eklenir; B8 kabul ölçütleri (olayların ters gelmesi, kaldırma) bunu test eder.
 - **Gelecekteki önlem:** Mevcut alan adları plan kavramlarıyla eşlenirken kod tanımı (configuration/annotation) okunur; isim benzerliği kanıt sayılmaz.
+
+## L005 — pytest alt-dizin conftest.py kök conftest'i gölgeler
+
+- **Faz/yer:** A2 (2026-10-11), W2.
+- **Belirti:** `tests/state/conftest.py` açılınca pytest prepend modunda `conftest` modül adını ele geçirdi; kök `tests/conftest.py`'yi import eden A1 testleri `AttributeError: module 'conftest' has no attribute 'make_context'` ile 61 test kırıldı.
+- **Kök neden:** `tests/` alt dizinleri `__init__.py`'li paket değil; pytest rootdir-relative modül adı çakışıyor.
+- **Düzeltme:** A2 conftest'i silip yardımcıları `tests/state/effects.py`'e taşıdı; B2'nin `tests/messaging_broker/` dizini `__init__.py`'li paket olduğu için kendi conftest'i güvenli kaldı.
+- **Tekrarını yakalayan kontrol:** Tam suite koşusu (yalnız faz alt dizini değil); bütünleştirme fazındaki tam pytest kapısı.
+- **Gelecekteki önlem:** Faz test dizinlerinde conftest.py ancak dizin `__init__.py`'li paketse açılır; aksi halde yardımcılar ayrı adlandırılmış modüle konur. Dispatch promptlarına eklendi.
+
+## L006 — Paylaşılan working tree'de paralel checkout/commit çakışması
+
+- **Faz/yer:** W2 (2026-10-11), A2 yazma penceresi.
+- **Belirti:** A2'nin iki Edit çağrısı "File does not exist" ile reddedildi; untracked dosyaları geçici görünmez oldu. Reflog: `feature/ai-agent-integration → main` checkout, `d72a607` commit, geri dönüş.
+- **Kök neden:** Aynı checkout'ta başka bir süreç (kullanıcının paralel çalışması — task kapsamı dışı `d72a607` main commit'i ve `6ed4cc7` web fix'i) branch değiştirdi; muhtemel `stash -u`/pop döngüsü untracked dosyaları geçici taşıdı.
+- **Düzeltme:** Dosyalar zedelenmeden geri geldi; A2 edit'leri yeniden uyguladı. Hiçbir veri kaybı olmadı (reflog + A2-rapor.md §6 kanıtlı). Orchestrator commit'leri geri almadı/üzerine yazmadı.
+- **Tekrarını yakalayan kontrol:** Her faz öncesi/sonrası `git branch --show-current` + `git status` + reflog kontrolü; commit'lerin beklenen ancestry'de olduğu doğrulanır.
+- **Gelecekteki önlem:** Kullanıcı aynı checkout'ta çalışıyorsa branch/checkout işlemleri faz yazma pencereleriyle çakıştırılmaz; faz raporlarındaki ortam olayları orchestrator kaydına alınır; izole checkout gerekiyorsa kullanıcıyla konuşulur.

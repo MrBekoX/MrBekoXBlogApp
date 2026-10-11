@@ -1,0 +1,10 @@
+{
+  "source_id": "ENG-OUTBOX",
+  "url": "https://microservices.io/patterns/data/transactional-outbox.html",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "engineering/eng-outbox.md",
+  "notes_sha256": "399ecd121d5a74d3c67a2ca2d2a60bf74a2f3bd6a13c5fb3d4d7c14995be4921"
+}

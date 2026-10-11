@@ -1,0 +1,10 @@
+{
+  "source_id": "LG-WORKFLOWS",
+  "url": "https://docs.langchain.com/oss/python/langgraph/workflows-agents",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/lg-workflows.md",
+  "notes_sha256": "a180dc4bd7e711a5b34b9fa63c427bf44ad7b2fd557684ec814ee1ebf6542741"
+}

@@ -1,0 +1,10 @@
+{
+  "source_id": "LG-INTERRUPTS",
+  "url": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/lg-interrupts.md",
+  "notes_sha256": "da8b70f3236e59fdea81f1b5cf895afa669358634b4ad69e99834314a09e1f11"
+}

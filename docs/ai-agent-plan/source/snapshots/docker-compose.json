@@ -1,0 +1,10 @@
+{
+  "source_id": "DOCKER-COMPOSE",
+  "url": "https://docs.docker.com/compose/intro/features-uses/",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/docker-compose.md",
+  "notes_sha256": "0c26cb9fbd71dfb0394b48760bf99105e5fe7f64893578f61fc70e4ef64a1b46"
+}

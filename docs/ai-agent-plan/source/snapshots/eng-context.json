@@ -1,0 +1,10 @@
+{
+  "source_id": "ENG-CONTEXT",
+  "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "engineering/eng-context.md",
+  "notes_sha256": "20f929f0f682bb788f18afaeaf5f2ea21d5a56a7596571e43bbe8718f2e9238a"
+}

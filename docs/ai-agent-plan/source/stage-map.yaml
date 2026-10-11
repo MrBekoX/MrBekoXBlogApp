@@ -1,0 +1,72 @@
+# JSON dosyasından üretilen okunabilir YAML aynası.
+schema_version: 1
+stages:
+  A0:
+    query: "Agent mimarisi workflow ve kaynak sınırları"
+    sources: ["LG-WORKFLOWS","ENG-AGENTS","ENG-CONTEXT","PY-ASYNCIO","DOCKER-COMPOSE"]
+  A1:
+    query: "Pydantic BaseModel veri doğrulama ve JSON sözleşmesi"
+    sources: ["PYDANTIC-MODELS","JSON-SCHEMA","PY-ASYNCIO","LG-WORKFLOWS"]
+  A2:
+    query: "LangGraph state checkpoint paralel görev ve iptal"
+    sources: ["LG-WORKFLOWS","LG-PERSISTENCE","LG-STREAMING","PY-ASYNCIO"]
+  A3:
+    query: "Pgvector hibrit retrieval ve chunk bağlamı"
+    sources: ["PGVECTOR","LG-RAG","AC-RAG","ENG-CONTEXTUAL"]
+  A4:
+    query: "Makale sorusuna CONTEXT kaynaklarıyla cevap ve retrieval yeterliliği"
+    sources: ["LG-RAG","AC-RAG","AC-SELF-RAG","AC-LOST-MIDDLE","ENG-CONTEXT"]
+  A5:
+    query: "Soru karmaşıklığına göre mod seçimi ve koşullu yönlendirme"
+    sources: ["LG-WORKFLOWS","ENG-AGENTS","LG-RAG"]
+  A6:
+    query: "Web kaynak okuma araçları ve asyncio timeout iptal"
+    sources: ["PY-ASYNCIO","LG-RAG","ENG-CONTEXT"]
+  A7:
+    query: "Derin araştırma orchestrator worker araç kullanımı ve kanıt değerlendirmesi"
+    sources: ["LG-WORKFLOWS","LG-STREAMING","AC-RAG","AC-REACT","AC-SELF-RAG","AC-LOST-MIDDLE","ENG-AGENTS","ENG-CONTEXTUAL","ENG-CONTEXT"]
+  A8:
+    query: "Checkpoint resume interrupt ve iptal sonrası devam"
+    sources: ["LG-PERSISTENCE","LG-INTERRUPTS","PY-ASYNCIO"]
+  A9:
+    query: "İş birliği teklifinde interrupt onay ve resume"
+    sources: ["LG-INTERRUPTS","ENG-AGENTS"]
+  A10:
+    query: "RAG kaynak desteği değerlendirmesi ve uzun bağlam ölçümü"
+    sources: ["LG-RAG","AC-SELF-RAG","AC-LOST-MIDDLE","ENG-CONTEXTUAL","ENG-CONTEXT","PY-ASYNCIO"]
+  B0:
+    query: "RabbitMQ backend Python istemcisi ve outbox mimarisi"
+    sources: ["RMQ-RELIABILITY","RMQ-DOTNET","AIO-PIKA","ENG-OUTBOX","PG-ISOLATION","FASTAPI-LIFESPAN"]
+  B1:
+    query: "JSON Schema required properties ve mesaj DTO doğrulama"
+    sources: ["JSON-SCHEMA","PYDANTIC-MODELS","RMQ-RELIABILITY"]
+  B2:
+    query: "RabbitMQ durable queue publisher confirms channel ve quorum"
+    sources: ["RMQ-RELIABILITY","RMQ-CONFIRMS","RMQ-QUORUM","RMQ-DLX","RMQ-DOTNET","AIO-PIKA"]
+  B3:
+    query: "Transactional outbox commit ve publisher confirm kaybı"
+    sources: ["ENG-OUTBOX","PG-ISOLATION","RMQ-CONFIRMS","RMQ-RELIABILITY"]
+  B4:
+    query: "Consumer ACK kalıcı kabul ve tekrar teslim idempotency"
+    sources: ["RMQ-CONFIRMS","ENG-OUTBOX","PG-ISOLATION","AIO-PIKA"]
+  B5:
+    query: "Sonuç olayları duplicate ve SignalR progress yayını"
+    sources: ["RMQ-CONFIRMS","RMQ-RELIABILITY","ENG-OUTBOX","LG-STREAMING","SIGNALR-HUBS"]
+  B6:
+    query: "Worker checkpoint recovery eşzamanlılık iptal ve transaction"
+    sources: ["LG-PERSISTENCE","PY-ASYNCIO","RMQ-RELIABILITY","PG-ISOLATION"]
+  B7:
+    query: "Retry DLQ dead letter güvenilirliği ve iptal yarışı"
+    sources: ["RMQ-DLX","RMQ-RELIABILITY","RMQ-QUORUM","PY-ASYNCIO"]
+  B8:
+    query: "Makale revizyonu outbox değişiklik aktarımı ve vector index"
+    sources: ["PG-ISOLATION","ENG-OUTBOX","PGVECTOR"]
+  B9:
+    query: "Onay authorization resume ve idempotent kayıt"
+    sources: ["LG-INTERRUPTS","ASPNET-AUTH","JSON-SCHEMA","ENG-OUTBOX"]
+  B10:
+    query: "Next.js App Router SignalR hub ve rol yetkilendirme"
+    sources: ["NEXTJS-APP","SIGNALR-HUBS","ASPNET-AUTH","LG-STREAMING","REDIS-EVICTION"]
+  B11:
+    query: "Docker Compose RabbitMQ client kaynak yaşam döngüsü ve cache memory"
+    sources: ["DOCKER-COMPOSE","FASTAPI-LIFESPAN","RMQ-QUORUM","AIO-PIKA","RMQ-DOTNET","REDIS-EVICTION"]

@@ -1,0 +1,10 @@
+{
+  "source_id": "AC-SELF-RAG",
+  "url": "https://arxiv.org/abs/2310.11511",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "academic/ac-self-rag.md",
+  "notes_sha256": "f27ee1119ab8fcb15bcf911731b9a90e997b3a4b0cb74aa7b6f6a25cbaf80e61"
+}

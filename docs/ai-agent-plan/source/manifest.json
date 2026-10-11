@@ -1,0 +1,1118 @@
+{
+  "schema_version": 1,
+  "corpus_kind": "curated_reference_notes",
+  "created_on": "2026-10-11",
+  "source_count": 30,
+  "sources": [
+    {
+      "id": "LG-WORKFLOWS",
+      "type": "official",
+      "title": "LangGraph workflows and agents",
+      "url": "https://docs.langchain.com/oss/python/langgraph/workflows-agents",
+      "publisher": "LangChain",
+      "authors": [
+        "LangChain documentation team"
+      ],
+      "technology": [
+        "Python",
+        "LangGraph"
+      ],
+      "version_scope": "Python OSS belgeleri; kurulu LangGraph sürümüyle API uyumu kontrol edilmeli",
+      "stages": [
+        "A0",
+        "A1",
+        "A2",
+        "A5",
+        "A7"
+      ],
+      "tags": [
+        "routing",
+        "router",
+        "yönlendirme",
+        "karmaşıklık",
+        "conditional edges",
+        "StateGraph",
+        "worker",
+        "parallel",
+        "mod seçimi"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/lg-workflows.md",
+      "snapshot_file": "snapshots/lg-workflows.json",
+      "notes_sha256": "a180dc4bd7e711a5b34b9fa63c427bf44ad7b2fd557684ec814ee1ebf6542741",
+      "chunk_count": 2
+    },
+    {
+      "id": "LG-PERSISTENCE",
+      "type": "official",
+      "title": "LangGraph persistence",
+      "url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+      "publisher": "LangChain",
+      "authors": [
+        "LangChain documentation team"
+      ],
+      "technology": [
+        "Python",
+        "LangGraph"
+      ],
+      "version_scope": "Python OSS; checkpointer paket sürümü ayrıca kontrol edilmeli",
+      "stages": [
+        "A2",
+        "A8",
+        "B6"
+      ],
+      "tags": [
+        "checkpoint",
+        "kalıcılık",
+        "state",
+        "thread_id",
+        "resume",
+        "recovery",
+        "memory",
+        "store"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/lg-persistence.md",
+      "snapshot_file": "snapshots/lg-persistence.json",
+      "notes_sha256": "9355db6db7c2bdfae648679676689cd32f3a3741d6d048519ffa1ef1e838ab8a",
+      "chunk_count": 2
+    },
+    {
+      "id": "LG-STREAMING",
+      "type": "official",
+      "title": "LangGraph streaming",
+      "url": "https://docs.langchain.com/oss/python/langgraph/streaming",
+      "publisher": "LangChain",
+      "authors": [
+        "LangChain documentation team"
+      ],
+      "technology": [
+        "Python",
+        "LangGraph"
+      ],
+      "version_scope": "Stream formatı ve version parametresi kurulu LangGraph sürümüne göre kontrol edilmeli",
+      "stages": [
+        "A2",
+        "A7",
+        "B5",
+        "B10"
+      ],
+      "tags": [
+        "streaming",
+        "progress",
+        "ilerleme",
+        "custom",
+        "updates",
+        "messages",
+        "astream",
+        "olay"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/lg-streaming.md",
+      "snapshot_file": "snapshots/lg-streaming.json",
+      "notes_sha256": "9ccd13a40f410537793d412d646942e8a9df050139ca9907e2bd79ba5b7535f2",
+      "chunk_count": 2
+    },
+    {
+      "id": "LG-RAG",
+      "type": "official",
+      "title": "Build a custom RAG agent with LangGraph",
+      "url": "https://docs.langchain.com/oss/python/langgraph/agentic-rag",
+      "publisher": "LangChain",
+      "authors": [
+        "LangChain documentation team"
+      ],
+      "technology": [
+        "Python",
+        "LangGraph",
+        "RAG"
+      ],
+      "version_scope": "Python OSS öğretici; örnek API ve model adları kurulu sürümle doğrulanmalı",
+      "stages": [
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "A10"
+      ],
+      "tags": [
+        "retrieval",
+        "retrieve",
+        "RAG",
+        "kaynak",
+        "kanıt",
+        "ilgili bölüm",
+        "grade_documents",
+        "rewrite_question",
+        "grounded",
+        "CONTEXT"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/lg-rag.md",
+      "snapshot_file": "snapshots/lg-rag.json",
+      "notes_sha256": "659e73b230c247999cb3e66ebce7d00c0e6848b3fe7dec88d247b1d50e2d6794",
+      "chunk_count": 2
+    },
+    {
+      "id": "LG-INTERRUPTS",
+      "type": "official",
+      "title": "LangGraph interrupts",
+      "url": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+      "publisher": "LangChain",
+      "authors": [
+        "LangChain documentation team"
+      ],
+      "technology": [
+        "Python",
+        "LangGraph"
+      ],
+      "version_scope": "Python OSS; resume ve stream formatı sürüme göre kontrol edilmeli",
+      "stages": [
+        "A8",
+        "A9",
+        "B9"
+      ],
+      "tags": [
+        "interrupt",
+        "resume",
+        "approval",
+        "onay",
+        "human input",
+        "needs_input",
+        "checkpoint",
+        "Command"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/lg-interrupts.md",
+      "snapshot_file": "snapshots/lg-interrupts.json",
+      "notes_sha256": "da8b70f3236e59fdea81f1b5cf895afa669358634b4ad69e99834314a09e1f11",
+      "chunk_count": 2
+    },
+    {
+      "id": "PY-ASYNCIO",
+      "type": "official",
+      "title": "Python 3.13 coroutines and tasks",
+      "url": "https://docs.python.org/3.13/library/asyncio-task.html",
+      "publisher": "Python Software Foundation",
+      "authors": [
+        "Python documentation contributors"
+      ],
+      "technology": [
+        "Python",
+        "asyncio"
+      ],
+      "version_scope": "Python 3.13",
+      "stages": [
+        "A0",
+        "A1",
+        "A2",
+        "A6",
+        "A8",
+        "A10",
+        "B6",
+        "B7"
+      ],
+      "tags": [
+        "asyncio",
+        "TaskGroup",
+        "parallel",
+        "eşzamanlılık",
+        "cancel",
+        "iptal",
+        "timeout",
+        "deadline",
+        "cleanup"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/py-asyncio.md",
+      "snapshot_file": "snapshots/py-asyncio.json",
+      "notes_sha256": "b066b6a769a2106bbc8c1eca6c5791764b294d5fd6284964970936b8f2d36d2b",
+      "chunk_count": 2
+    },
+    {
+      "id": "PYDANTIC-MODELS",
+      "type": "official",
+      "title": "Pydantic models",
+      "url": "https://pydantic.dev/docs/validation/latest/concepts/models/",
+      "publisher": "Pydantic",
+      "authors": [
+        "Pydantic documentation team"
+      ],
+      "technology": [
+        "Python",
+        "Pydantic"
+      ],
+      "version_scope": "Latest belgeleri; kurulu Pydantic major sürümü kontrol edilmeli",
+      "stages": [
+        "A1",
+        "B1"
+      ],
+      "tags": [
+        "Pydantic",
+        "BaseModel",
+        "validation",
+        "doğrulama",
+        "schema",
+        "model",
+        "DTO",
+        "JSON",
+        "strict"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/pydantic-models.md",
+      "snapshot_file": "snapshots/pydantic-models.json",
+      "notes_sha256": "abc787a0e52ba3c62e7a72d525a8b108344ac593c18174c83518ef7d1e97ed05",
+      "chunk_count": 2
+    },
+    {
+      "id": "FASTAPI-LIFESPAN",
+      "type": "official",
+      "title": "FastAPI lifespan events",
+      "url": "https://fastapi.tiangolo.com/advanced/events/",
+      "publisher": "FastAPI",
+      "authors": [
+        "FastAPI documentation contributors"
+      ],
+      "technology": [
+        "Python",
+        "FastAPI"
+      ],
+      "version_scope": "Rolling belgeler; yalnız management/health host seçilirse uygulanır",
+      "stages": [
+        "B0",
+        "B11"
+      ],
+      "tags": [
+        "FastAPI",
+        "lifespan",
+        "startup",
+        "shutdown",
+        "health",
+        "resource",
+        "cleanup",
+        "bağlantı"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/fastapi-lifespan.md",
+      "snapshot_file": "snapshots/fastapi-lifespan.json",
+      "notes_sha256": "5939b7d7c6e08d3fbb8fc93c4a2862591b648920e9dcab90c760ac37cad41d3c",
+      "chunk_count": 2
+    },
+    {
+      "id": "PG-ISOLATION",
+      "type": "official",
+      "title": "PostgreSQL 18 transaction isolation",
+      "url": "https://www.postgresql.org/docs/18/transaction-iso.html",
+      "publisher": "PostgreSQL Global Development Group",
+      "authors": [
+        "PostgreSQL documentation team"
+      ],
+      "technology": [
+        "PostgreSQL"
+      ],
+      "version_scope": "PostgreSQL 18",
+      "stages": [
+        "B0",
+        "B3",
+        "B4",
+        "B6",
+        "B8"
+      ],
+      "tags": [
+        "transaction",
+        "isolation",
+        "commit",
+        "Read Committed",
+        "snapshot",
+        "concurrency",
+        "yarış",
+        "veritabanı"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/pg-isolation.md",
+      "snapshot_file": "snapshots/pg-isolation.json",
+      "notes_sha256": "e86e2b90858ed566e3fd37b9b0aa07ed3454e90d972594c1f368aaf88a6b3edb",
+      "chunk_count": 2
+    },
+    {
+      "id": "PGVECTOR",
+      "type": "official",
+      "title": "pgvector project documentation",
+      "url": "https://github.com/pgvector/pgvector",
+      "publisher": "pgvector project",
+      "authors": [
+        "pgvector maintainers"
+      ],
+      "technology": [
+        "PostgreSQL",
+        "pgvector"
+      ],
+      "version_scope": "Proje README sürümü; extension sürümü kurulumda kilitlenmeli",
+      "stages": [
+        "A3",
+        "B8"
+      ],
+      "tags": [
+        "pgvector",
+        "embedding",
+        "vector",
+        "retrieval",
+        "cosine",
+        "HNSW",
+        "IVFFlat",
+        "hybrid",
+        "arama"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/pgvector.md",
+      "snapshot_file": "snapshots/pgvector.json",
+      "notes_sha256": "2397265c9f5a7804044db554c3f26b60e0e9a678168484885180885db02523cc",
+      "chunk_count": 2
+    },
+    {
+      "id": "REDIS-EVICTION",
+      "type": "official",
+      "title": "Redis key eviction",
+      "url": "https://redis.io/docs/latest/develop/reference/eviction/",
+      "publisher": "Redis",
+      "authors": [
+        "Redis documentation team"
+      ],
+      "technology": [
+        "Redis"
+      ],
+      "version_scope": "Rolling belgeler; kurulu Redis sürümü ve memory policy doğrulanmalı",
+      "stages": [
+        "B10",
+        "B11"
+      ],
+      "tags": [
+        "Redis",
+        "cache",
+        "önbellek",
+        "maxmemory",
+        "eviction",
+        "memory",
+        "LRU",
+        "LFU",
+        "noeviction"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/redis-eviction.md",
+      "snapshot_file": "snapshots/redis-eviction.json",
+      "notes_sha256": "56ce2448462846db22268c842d86631d1c008ad23ffc7d2dd397d0f0073b760a",
+      "chunk_count": 2
+    },
+    {
+      "id": "RMQ-RELIABILITY",
+      "type": "official",
+      "title": "RabbitMQ reliability guide",
+      "url": "https://www.rabbitmq.com/docs/reliability",
+      "publisher": "RabbitMQ",
+      "authors": [
+        "RabbitMQ documentation team"
+      ],
+      "technology": [
+        "RabbitMQ"
+      ],
+      "version_scope": "Belgeler broker sürümüyle eşleştirilmeli",
+      "stages": [
+        "B0",
+        "B1",
+        "B2",
+        "B3",
+        "B5",
+        "B6",
+        "B7"
+      ],
+      "tags": [
+        "RabbitMQ",
+        "reliability",
+        "duplicate",
+        "idempotency",
+        "redelivery",
+        "teslim",
+        "persistent",
+        "durable",
+        "recovery"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/rmq-reliability.md",
+      "snapshot_file": "snapshots/rmq-reliability.json",
+      "notes_sha256": "05f7f67007992551480f53614efed9384bc5d81667c498a8280d47adfb88d06b",
+      "chunk_count": 2
+    },
+    {
+      "id": "RMQ-CONFIRMS",
+      "type": "official",
+      "title": "RabbitMQ consumer acknowledgements and publisher confirms",
+      "url": "https://www.rabbitmq.com/docs/confirms",
+      "publisher": "RabbitMQ",
+      "authors": [
+        "RabbitMQ documentation team"
+      ],
+      "technology": [
+        "RabbitMQ"
+      ],
+      "version_scope": "Protokol davranışı; örnek client API'lerinin major sürümü ayrıca kontrol edilmeli",
+      "stages": [
+        "B2",
+        "B3",
+        "B4",
+        "B5"
+      ],
+      "tags": [
+        "ACK",
+        "acknowledgement",
+        "onay",
+        "teslim",
+        "publisher confirms",
+        "confirm",
+        "consumer",
+        "prefetch",
+        "broker"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/rmq-confirms.md",
+      "snapshot_file": "snapshots/rmq-confirms.json",
+      "notes_sha256": "c841b7f3c16a01f0f2ed3749ef75646e9eccf4929d6df0e8ef3e5ec45011a9dc",
+      "chunk_count": 2
+    },
+    {
+      "id": "RMQ-QUORUM",
+      "type": "official",
+      "title": "RabbitMQ quorum queues",
+      "url": "https://www.rabbitmq.com/docs/quorum-queues",
+      "publisher": "RabbitMQ",
+      "authors": [
+        "RabbitMQ documentation team"
+      ],
+      "technology": [
+        "RabbitMQ"
+      ],
+      "version_scope": "Quorum seçenekleri hedef broker sürümünde kontrol edilmeli",
+      "stages": [
+        "B2",
+        "B7",
+        "B11"
+      ],
+      "tags": [
+        "quorum",
+        "replication",
+        "cluster",
+        "majority",
+        "çoğunluk",
+        "availability",
+        "dayanıklılık",
+        "broker"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/rmq-quorum.md",
+      "snapshot_file": "snapshots/rmq-quorum.json",
+      "notes_sha256": "0d8d5d95408b0cec84a6765487a117ddb09ffb41b7e8309b5981ff68dd17de26",
+      "chunk_count": 2
+    },
+    {
+      "id": "RMQ-DLX",
+      "type": "official",
+      "title": "RabbitMQ dead letter exchanges",
+      "url": "https://www.rabbitmq.com/docs/dlx",
+      "publisher": "RabbitMQ",
+      "authors": [
+        "RabbitMQ documentation team"
+      ],
+      "technology": [
+        "RabbitMQ"
+      ],
+      "version_scope": "DLX ve at least once ayarları broker sürümünde doğrulanmalı",
+      "stages": [
+        "B2",
+        "B7"
+      ],
+      "tags": [
+        "DLQ",
+        "DLX",
+        "dead letter",
+        "retry",
+        "tekrar",
+        "requeue",
+        "poison",
+        "at least once",
+        "confirm"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/rmq-dlx.md",
+      "snapshot_file": "snapshots/rmq-dlx.json",
+      "notes_sha256": "ca4efc116012afefe886615d74d2cf413754684643334d6bdc651369e70d24d7",
+      "chunk_count": 2
+    },
+    {
+      "id": "RMQ-DOTNET",
+      "type": "official",
+      "title": "RabbitMQ .NET client API guide",
+      "url": "https://www.rabbitmq.com/client-libraries/dotnet-api-guide",
+      "publisher": "RabbitMQ",
+      "authors": [
+        "RabbitMQ documentation team"
+      ],
+      "technology": [
+        ".NET",
+        "RabbitMQ.Client"
+      ],
+      "version_scope": "İncelenen rehber client 7.x API'lerini açıklar; paket major sürümü doğrulanmalı",
+      "stages": [
+        "B0",
+        "B2",
+        "B11"
+      ],
+      "tags": [
+        "RabbitMQ.Client",
+        "dotnet",
+        "C#",
+        "IChannel",
+        "connection",
+        "channel",
+        "memory",
+        "consumer",
+        "concurrency"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/rmq-dotnet.md",
+      "snapshot_file": "snapshots/rmq-dotnet.json",
+      "notes_sha256": "f8f7cd1ab5958f9c3f6d2feb47e32c2ce2d61d0e9b1c2595edf5ec020b242cc6",
+      "chunk_count": 2
+    },
+    {
+      "id": "AIO-PIKA",
+      "type": "official",
+      "title": "aio-pika quick start",
+      "url": "https://docs.aio-pika.com/quick-start.html",
+      "publisher": "aio-pika project",
+      "authors": [
+        "aio-pika maintainers"
+      ],
+      "technology": [
+        "Python",
+        "aio-pika",
+        "RabbitMQ"
+      ],
+      "version_scope": "Quick start ve kurulu aio-pika sürümü birlikte doğrulanmalı",
+      "stages": [
+        "B0",
+        "B2",
+        "B4",
+        "B11"
+      ],
+      "tags": [
+        "aio-pika",
+        "AMQP",
+        "async",
+        "connect_robust",
+        "consumer",
+        "publisher",
+        "ack",
+        "RabbitMQ",
+        "connection"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/aio-pika.md",
+      "snapshot_file": "snapshots/aio-pika.json",
+      "notes_sha256": "70be209c3735a13eb350e4dac597f62ca4fff2ead1537e8947bae90f2ebbcedd",
+      "chunk_count": 2
+    },
+    {
+      "id": "ASPNET-AUTH",
+      "type": "official",
+      "title": "ASP.NET Core role based authorization",
+      "url": "https://learn.microsoft.com/en-us/aspnet/core/security/authorization/roles?view=aspnetcore-10.0",
+      "publisher": "Microsoft Learn",
+      "authors": [
+        "Microsoft documentation contributors"
+      ],
+      "technology": [
+        ".NET",
+        "ASP.NET Core"
+      ],
+      "version_scope": "ASP.NET Core 10.0 görünümü",
+      "stages": [
+        "B9",
+        "B10"
+      ],
+      "tags": [
+        "authorization",
+        "yetkilendirme",
+        "roles",
+        "policy",
+        "Authorize",
+        "Admin",
+        "sahiplik",
+        "claims"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/aspnet-auth.md",
+      "snapshot_file": "snapshots/aspnet-auth.json",
+      "notes_sha256": "7d896bad882c9169a56f8e9de234f2cc935bf286a0d89a5aa0bf1811614b1b1e",
+      "chunk_count": 2
+    },
+    {
+      "id": "SIGNALR-HUBS",
+      "type": "official",
+      "title": "ASP.NET Core SignalR hubs",
+      "url": "https://learn.microsoft.com/en-us/aspnet/core/signalr/hubs?view=aspnetcore-10.0",
+      "publisher": "Microsoft Learn",
+      "authors": [
+        "Microsoft documentation contributors"
+      ],
+      "technology": [
+        ".NET",
+        "SignalR"
+      ],
+      "version_scope": "ASP.NET Core 10.0 görünümü",
+      "stages": [
+        "B5",
+        "B10"
+      ],
+      "tags": [
+        "SignalR",
+        "hub",
+        "IHubContext",
+        "progress",
+        "ilerleme",
+        "client",
+        "connection",
+        "notification",
+        "UI"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/signalr-hubs.md",
+      "snapshot_file": "snapshots/signalr-hubs.json",
+      "notes_sha256": "06d3aeb8fe020e790770c0c4e6e3fac3f22d474a073cb73c69b576964982d26c",
+      "chunk_count": 2
+    },
+    {
+      "id": "DOCKER-COMPOSE",
+      "type": "official",
+      "title": "Docker Compose features and uses",
+      "url": "https://docs.docker.com/compose/intro/features-uses/",
+      "publisher": "Docker",
+      "authors": [
+        "Docker documentation team"
+      ],
+      "technology": [
+        "Docker",
+        "Docker Compose"
+      ],
+      "version_scope": "Güncel Compose belgeleri; kurulu Compose sürümü kontrol edilmeli",
+      "stages": [
+        "A0",
+        "B11"
+      ],
+      "tags": [
+        "Docker",
+        "Compose",
+        "container",
+        "services",
+        "networks",
+        "volumes",
+        "deployment",
+        "ortam"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/docker-compose.md",
+      "snapshot_file": "snapshots/docker-compose.json",
+      "notes_sha256": "0c26cb9fbd71dfb0394b48760bf99105e5fe7f64893578f61fc70e4ef64a1b46",
+      "chunk_count": 2
+    },
+    {
+      "id": "JSON-SCHEMA",
+      "type": "official",
+      "title": "JSON Schema object reference",
+      "url": "https://json-schema.org/understanding-json-schema/reference/object",
+      "publisher": "JSON Schema",
+      "authors": [
+        "JSON Schema documentation contributors"
+      ],
+      "technology": [
+        "JSON Schema"
+      ],
+      "version_scope": "Draft 2020-12 ve belge örneklerindeki draft farkları doğrulanmalı",
+      "stages": [
+        "A1",
+        "B1",
+        "B9"
+      ],
+      "tags": [
+        "JSON Schema",
+        "schema",
+        "required",
+        "properties",
+        "additionalProperties",
+        "validation",
+        "sözleşme",
+        "DTO",
+        "envelope"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/json-schema.md",
+      "snapshot_file": "snapshots/json-schema.json",
+      "notes_sha256": "c9e617404bdcbf5c8b383bc2351a059bd800e7db9dc41422fdf890211a20c8d3",
+      "chunk_count": 2
+    },
+    {
+      "id": "NEXTJS-APP",
+      "type": "official",
+      "title": "Next.js App Router documentation",
+      "url": "https://nextjs.org/docs/app",
+      "publisher": "Vercel Next.js",
+      "authors": [
+        "Next.js documentation contributors"
+      ],
+      "technology": [
+        "Next.js",
+        "React"
+      ],
+      "version_scope": "Rolling App Router belgeleri; package.json sürümüyle eşleştirilmeli",
+      "stages": [
+        "B10"
+      ],
+      "tags": [
+        "Next.js",
+        "App Router",
+        "frontend",
+        "React",
+        "Server Components",
+        "Suspense",
+        "UI",
+        "routing"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "official/nextjs-app.md",
+      "snapshot_file": "snapshots/nextjs-app.json",
+      "notes_sha256": "5bd9da68f08246967452a60782895a7157dc851ff3202b6c357a09017e155cfa",
+      "chunk_count": 2
+    },
+    {
+      "id": "AC-RAG",
+      "type": "academic",
+      "title": "Retrieval Augmented Generation for Knowledge Intensive NLP Tasks",
+      "url": "https://arxiv.org/abs/2005.11401",
+      "publisher": "arXiv / NeurIPS 2020",
+      "authors": [
+        "Patrick Lewis ve diğerleri"
+      ],
+      "technology": [
+        "RAG",
+        "retrieval"
+      ],
+      "version_scope": "Araştırma 2020; güncel kütüphane API kaynağı değildir",
+      "publication_year": 2020,
+      "stages": [
+        "A3",
+        "A4",
+        "A7"
+      ],
+      "tags": [
+        "RAG",
+        "retrieval",
+        "generation",
+        "knowledge",
+        "grounding",
+        "kaynak",
+        "kanıt",
+        "research"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "academic/ac-rag.md",
+      "snapshot_file": "snapshots/ac-rag.json",
+      "notes_sha256": "387c7e7ed7723f49228fe8d19736bd2dae6ea8e1d39d6c52b37bc1ebe46fedb1",
+      "chunk_count": 2
+    },
+    {
+      "id": "AC-REACT",
+      "type": "academic",
+      "title": "ReAct Synergizing Reasoning and Acting in Language Models",
+      "url": "https://arxiv.org/abs/2210.03629",
+      "publisher": "arXiv / ICLR 2023",
+      "authors": [
+        "Shunyu Yao ve diğerleri"
+      ],
+      "technology": [
+        "AI agents",
+        "tool use"
+      ],
+      "version_scope": "ICLR camera ready 2023; araştırma modeli",
+      "publication_year": 2023,
+      "stages": [
+        "A7"
+      ],
+      "tags": [
+        "ReAct",
+        "agent",
+        "tools",
+        "araç",
+        "actions",
+        "reasoning",
+        "plan",
+        "research"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "academic/ac-react.md",
+      "snapshot_file": "snapshots/ac-react.json",
+      "notes_sha256": "67bd46e8bb75eea3809dd76531e389388add096e55c6e7cf9a700907a43805e6",
+      "chunk_count": 2
+    },
+    {
+      "id": "AC-LOST-MIDDLE",
+      "type": "academic",
+      "title": "Lost in the Middle How Language Models Use Long Contexts",
+      "url": "https://aclanthology.org/2024.tacl-1.9/",
+      "publisher": "ACL Anthology / TACL 2024",
+      "authors": [
+        "Nelson F. Liu ve diğerleri"
+      ],
+      "technology": [
+        "context",
+        "evaluation"
+      ],
+      "version_scope": "TACL 2024 deneyleri; tüm güncel modellere otomatik genellenmemeli",
+      "publication_year": 2024,
+      "stages": [
+        "A4",
+        "A7",
+        "A10"
+      ],
+      "tags": [
+        "context",
+        "long context",
+        "bağlam",
+        "evaluation",
+        "değerlendirme",
+        "position",
+        "retrieval",
+        "attention"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "academic/ac-lost-middle.md",
+      "snapshot_file": "snapshots/ac-lost-middle.json",
+      "notes_sha256": "738580afdc4b571f30d83c10ff0956845be085d8020a250ea5eaeb5ea5984520",
+      "chunk_count": 2
+    },
+    {
+      "id": "AC-SELF-RAG",
+      "type": "academic",
+      "title": "Self RAG Learning to Retrieve Generate and Critique through Self Reflection",
+      "url": "https://arxiv.org/abs/2310.11511",
+      "publisher": "arXiv",
+      "authors": [
+        "Akari Asai ve diğerleri"
+      ],
+      "technology": [
+        "RAG",
+        "evaluation"
+      ],
+      "version_scope": "Araştırma 2023; özel eğitim ve reflection token yöntemi",
+      "publication_year": 2023,
+      "stages": [
+        "A4",
+        "A7",
+        "A10"
+      ],
+      "tags": [
+        "Self RAG",
+        "reflection",
+        "retrieval",
+        "critique",
+        "kanıt",
+        "değerlendirme",
+        "grounding"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "academic/ac-self-rag.md",
+      "snapshot_file": "snapshots/ac-self-rag.json",
+      "notes_sha256": "f27ee1119ab8fcb15bcf911731b9a90e997b3a4b0cb74aa7b6f6a25cbaf80e61",
+      "chunk_count": 2
+    },
+    {
+      "id": "ENG-AGENTS",
+      "type": "engineering",
+      "title": "Building effective agents",
+      "url": "https://www.anthropic.com/engineering/building-effective-agents",
+      "publisher": "Anthropic Engineering",
+      "authors": [
+        "Anthropic Engineering"
+      ],
+      "technology": [
+        "AI agents",
+        "workflows"
+      ],
+      "version_scope": "19 Aralık 2024 yazısı; sayfa tooling değişiklikleri için güncel belgeye yönlendirir",
+      "publication_year": 2024,
+      "stages": [
+        "A0",
+        "A5",
+        "A7",
+        "A9"
+      ],
+      "tags": [
+        "agents",
+        "workflow",
+        "routing",
+        "orchestrator",
+        "complexity",
+        "karmaşıklık",
+        "simple",
+        "evaluation"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "engineering/eng-agents.md",
+      "snapshot_file": "snapshots/eng-agents.json",
+      "notes_sha256": "0d263db9cb7f9127b4fa667a842d42dc9c929104be0ff427d360f4597f5aa4e5",
+      "chunk_count": 2
+    },
+    {
+      "id": "ENG-CONTEXTUAL",
+      "type": "engineering",
+      "title": "Introducing Contextual Retrieval",
+      "url": "https://www.anthropic.com/engineering/contextual-retrieval",
+      "publisher": "Anthropic Engineering",
+      "authors": [
+        "Anthropic Engineering"
+      ],
+      "technology": [
+        "RAG",
+        "retrieval"
+      ],
+      "version_scope": "Mühendislik deneyleri; sonuçlar kendi veri kümesinde doğrulanmalı",
+      "publication_year": 2024,
+      "stages": [
+        "A3",
+        "A4",
+        "A7",
+        "A10"
+      ],
+      "tags": [
+        "BM25",
+        "embedding",
+        "hybrid",
+        "retrieval",
+        "chunk",
+        "bağlam",
+        "rank fusion",
+        "reranking"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "engineering/eng-contextual.md",
+      "snapshot_file": "snapshots/eng-contextual.json",
+      "notes_sha256": "0c0e9155353d8b9e171a8241858783d89e9b7e6868c8a5818a916d4f75c7149c",
+      "chunk_count": 2
+    },
+    {
+      "id": "ENG-CONTEXT",
+      "type": "engineering",
+      "title": "Effective context engineering for AI agents",
+      "url": "https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents",
+      "publisher": "Anthropic Engineering",
+      "authors": [
+        "Anthropic Engineering"
+      ],
+      "technology": [
+        "AI agents",
+        "context"
+      ],
+      "version_scope": "Mühendislik yaklaşımı; ürün/API ayrıntıları güncel belgelerden doğrulanmalı",
+      "publication_year": 2025,
+      "stages": [
+        "A0",
+        "A4",
+        "A6",
+        "A7",
+        "A10"
+      ],
+      "tags": [
+        "context",
+        "bağlam",
+        "compaction",
+        "notes",
+        "karar",
+        "memory",
+        "progress",
+        "token"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "engineering/eng-context.md",
+      "snapshot_file": "snapshots/eng-context.json",
+      "notes_sha256": "20f929f0f682bb788f18afaeaf5f2ea21d5a56a7596571e43bbe8718f2e9238a",
+      "chunk_count": 2
+    },
+    {
+      "id": "ENG-OUTBOX",
+      "type": "engineering",
+      "title": "Transactional outbox pattern",
+      "url": "https://microservices.io/patterns/data/transactional-outbox.html",
+      "publisher": "Microservices.io",
+      "authors": [
+        "Chris Richardson"
+      ],
+      "technology": [
+        "messaging",
+        "transactions"
+      ],
+      "version_scope": "Mimari desen; belirli RabbitMQ veya ORM API'si değildir",
+      "stages": [
+        "B0",
+        "B3",
+        "B4",
+        "B5",
+        "B8",
+        "B9"
+      ],
+      "tags": [
+        "transactional outbox",
+        "outbox",
+        "commit",
+        "transaction",
+        "relay",
+        "idempotent",
+        "duplicate",
+        "inbox",
+        "mesaj"
+      ],
+      "last_verified_on": "2026-10-11",
+      "verification": "primary_page_read",
+      "notes_file": "engineering/eng-outbox.md",
+      "snapshot_file": "snapshots/eng-outbox.json",
+      "notes_sha256": "399ecd121d5a74d3c67a2ca2d2a60bf74a2f3bd6a13c5fb3d4d7c14995be4921",
+      "chunk_count": 2
+    }
+  ]
+}

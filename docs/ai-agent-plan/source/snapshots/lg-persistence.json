@@ -1,0 +1,10 @@
+{
+  "source_id": "LG-PERSISTENCE",
+  "url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/lg-persistence.md",
+  "notes_sha256": "9355db6db7c2bdfae648679676689cd32f3a3741d6d048519ffa1ef1e838ab8a"
+}

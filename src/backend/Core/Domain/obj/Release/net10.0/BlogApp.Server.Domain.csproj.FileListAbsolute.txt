@@ -1,0 +1,12 @@
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\bin\Release\net10.0\BlogApp.Server.Domain.deps.json
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\bin\Release\net10.0\BlogApp.Server.Domain.dll
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\bin\Release\net10.0\BlogApp.Server.Domain.pdb
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\BlogApp.Server.Domain.GeneratedMSBuildEditorConfig.editorconfig
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\BlogApp.Server.Domain.AssemblyInfoInputs.cache
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\BlogApp.Server.Domain.AssemblyInfo.cs
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\BlogApp.Server.Domain.csproj.CoreCompileInputs.cache
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\BlogApp.Server.Domain.sourcelink.json
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\BlogApp.Server.Domain.dll
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\refint\BlogApp.Server.Domain.dll
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\BlogApp.Server.Domain.pdb
+D:\MrBekoXBlogApp\src\BlogApp.Server\BlogApp.Server.Domain\obj\Release\net10.0\ref\BlogApp.Server.Domain.dll

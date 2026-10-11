@@ -45,6 +45,30 @@ services:
       - backend-net
 
   # ==========================================
+  # RabbitMQ 4.x — Backend ↔ AI Agent Messaging (B2)
+  # ==========================================
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    container_name: blogapp-rabbitmq
+    environment:
+      # Dev varsayılanları düz metin kalabilir; .env ile overrides edilir.
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-blogapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-blogapp_dev}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    networks:
+      - backend-net
+
+  # ==========================================
   # .NET 10 Backend — REST API + SignalR Hubs
   # ==========================================
   backend:
@@ -148,5 +172,6 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  rabbitmq_data:
   backend_uploads:
   backend_keys:

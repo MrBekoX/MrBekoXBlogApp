@@ -1,6 +1,6 @@
 # AI agent uygulama aşamaları ilerleme kaydı
 
-Aktif uygulama aşaması: W5 (A8; B6, B7, B8)
+Aktif uygulama aşaması: W6 (A9 → B9 ∥ B10)
 
 Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar ürün kodu geliştirmesini gösterir. Durumlar yalnız gerçek implementasyon ve çalıştırılmış kontrollerle güncellenir.
 
@@ -20,14 +20,14 @@ Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar 
 | A6 | Doğrulandı | 2026-10-12. Dört ayrı adaptör (search_web/read_source/extract_text/assess_source); SSRF koruması DNS+redirect-pin'li (metadata-redirect ve DNS-rebinding testli), boyut/tür/timeout sınırları, kaynak-içi talimat veri olarak, her deneme BudgetGuard olayı. WebSourceRecord → donuk A1 sözleşmelerine daraltma köprüleri (D015). Gate: tests/web 127 passed (124 mock + 3 gerçek ağ). F1 (assess_many kendisiyle kopya) sonradan düzeltildi → 131 passed. Rapor: phase-reports/A6-rapor.md. |
 | A7 | Doğrulandı | 2026-10-12. 10 adım dedicated node'lara eşlendi (Send'li paralel worker'lar, ortak bütçe atomik rezervasyonu, sayfa metinleri ArtifactStore'da); ClaimEvidenceRecord → EvidenceItem daraltması (D015); programatik kanıt kontrolü (ID varlığı/URL/hash/aralık) — uydurma kaynak ID yapısal olarak dışlandı; terminal: completed/partial/cancelled/failed; beş kabul senaryosu gerçek HTTP mock fixture'larıyla. Gate: tests/research 30 passed. Bilinen sınırlar (rapor F2/F3): kural tabanlı destek sınıflaması; aynı turda aynı URL iki okuma (bütçe üst sınırlı). Rapor: phase-reports/A7-rapor.md. |
 | B5 | Doğrulandı | 2026-10-12. Python AgentEventPublisher (terminal olay + jobs.status AYNI transaction; run başına atomik event_sequence INSERT..ON CONFLICT ile; seyrekleştirme; AlreadyTerminal koruması; migration 0002 additive). .NET AgentEventInbox + AgentRunStatus additive terminal genişletmesi + projection kolonları + AddAgentEventInbox migration; projection handler FOR UPDATE ile inbox+projection TEK transaction, terminal-öncelik saf rules sınıfında, bilinmeyen run_id quarantined+ACK, commit sonrası ACK, AgentRunsHub committed projection yayını. Gate: tests/events + dotnet test yeşil. Rapor: phase-reports/B5-rapor.md. |
-| A8 | Başlanmadı | — |
+| A8 | Doğrulandı | 2026-10-12. FileCheckpointStore (atomik tmp+replace+fsync; restart benzetimi testli), kararlı execution_id + dış doğrulama noktası, run başına tek-yazar sözleşmesi, ResumePartition (kanıt/bulgular yeniden kullanılır, model adımları ayrı), devam ettirilen çalışmada iptal/deadline, CHECKPOINT_SCHEMA_VERSION + STATE_SCHEMA_VERSION ayrımı, uyumsuz checkpoint anlaşılır reddi, evaluate_resume (FULL_REUSE/EVIDENCE_STALE/NOT_RESUMABLE). DB-backed store bilinçli olarak kurulmadı (D016). Gate: tests/checkpoint yeşil + broker-dışı regresyon. Rapor: phase-reports/A8-rapor.md. |
+| B8 | Doğrulandı | 2026-10-12. BlogPost.ContentRevision (D008; xmin kullanılmadı) + additive migration (posts.content_revision + agent_content_syncs watermark); AgentContentEventService (publish/unpublish/delete → revision+1 + ArticleContentChangedV1 outbox AYNI SaveChanges transaction'ında; taslak taşınmaz; görüntülenme revision dokunmaz); 6 handler'a additive kablolama; ContentSnapshotSyncService (batch 50 + watermark, tek transaction); AgentResultPresentationGuard (sunum öncesi yayın erişim denetimi). Python: content consumer + ContentSyncState (ters sıra, tombstone, çatışma, orphan-completed koruması, StaleExecutionRejected). Gerçek pgvector B11'e bırakıldı. Gate: tests/content_sync + dotnet yeşil. Rapor: phase-reports/B8-rapor.md (F1 jsonb kök-tip bulgusu düzeltildi; F2 Program.cs kablolaması B10'a). |
 | A9 | Başlanmadı | — |
 | A10 | Başlanmadı | — |
 | B3 | Başlanmadı | — |
 | B4 | Başlanmadı | — |
-| B6 | Başlanmadı | — |
-| B7 | Başlanmadı | — |
-| B8 | Başlanmadı | — |
+| B6 | Doğrulandı | 2026-10-12. worker.py + job_store additive (claim_next_job FOR UPDATE SKIP LOCKED, renew_lease, complete/fail atomik guard: running+fencing+cancel-intent-yok), alembic 0003 (agent.jobs + agent.cancel_intents, orchestrator store sözleşmesine göre), A8 resume ile kesinti devamları, fast/research kapasite ayrımı, bütçe yeniden yürütmede korunur (test: reserved==2 kalır). İnceleyici red döndü → GERÇEK eşzamanlılık testleriyle kapandı (asyncio.gather iki claim: kazanan 1; 4 işe 4 eşzamanlı claim: 4 benzersiz fencing). Gate: tests/worker yeşil. Rapor: phase-reports/B6-rapor.md. |
+| B7 | Doğrulandı | 2026-10-12. Hata üçlüsü ayrımı; retry kademeleri 10sn/30sn/2dk → DLQ (confirm-before-ACK, aynı message_id); DLQ replay yeniden doğrulama; backlog + en eski iş yaşı ölçümü; sistem düzeyi kapasite sınırı; .NET CancelAgentRunCommand (B3 deseni) + python kontrol consumer'ı (agent.control.q); cancel intent terminal değil; terminal-öncelik kuralları (B6 store sözleşmesiyle); reaper (her iki taraf). Gate: tests/control + dotnet yeşil. Rapor: phase-reports/B7-rapor.md. |
 | B9 | Başlanmadı | — |
 | B10 | Başlanmadı | — |
 | B11 | Başlanmadı | — |

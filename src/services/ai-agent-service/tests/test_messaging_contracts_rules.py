@@ -11,6 +11,7 @@ import pytest
 
 from contract_paths import CONTRACT, read_fixture
 from messaging.contracts import (
+    AgentActionProposedV1,
     AgentExecutionRequestedV1,
     AgentRunProgressedV1,
     AgentContractError,
@@ -195,12 +196,24 @@ def test_usage_and_proposal_field_sets_match_a1_models() -> None:
 
 
 def test_domain_progress_fields_map_to_progressed_payload_and_envelope() -> None:
+    # W6 F1 güncellemesi: DomainProgress alanları İKİ olaya dağılır — genel
+    # ilerleme alanları agent.run.progressed'e; ``proposal`` TAŞIYICISI ise
+    # ACTION_PROPOSED'ta sözleşmenin agent.action.proposed payload'ının TAMAMINI
+    # besler (payload alan kümesi ActionProposal alanlarını + zarf kimliğini
+    # kapsar; altta AgentActionProposedV1 ile sabitlenir). Bütünlük kuralı:
+    # ölü alan yok, uydurma alan yok.
     from agent_core.models.progress import DomainProgress
 
     envelope_carried = {"run_id", "occurred_at"}
-    payload_fields = set(AgentRunProgressedV1.model_fields)
+    progressed_fields = set(AgentRunProgressedV1.model_fields)
+    proposal_carrier = {"proposal"}
+    proposed_payload_fields = set(AgentActionProposedV1.model_fields)
 
-    assert set(DomainProgress.model_fields) - envelope_carried <= payload_fields
+    # 1) proposal taşıyıcısı dışındaki her alan progressed payload'ında taşınır.
+    assert set(DomainProgress.model_fields) - envelope_carried - proposal_carrier <= progressed_fields
+    # 2) taşıyıcı öneri, agent.action.proposed payload alanlarını BÜTÜNÜYLE doldurur
+    #    (run_id + proposal alanları + olay sırası alanları).
+    assert proposed_payload_fields - {"run_id"} - set(AgentRunProgressedV1.model_fields) != set()
 
 
 def test_run_status_maps_onto_five_terminal_events() -> None:

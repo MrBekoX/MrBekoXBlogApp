@@ -42,6 +42,7 @@ from .contracts import (
     AgentEnvelope,
     AgentErrorCode,
     AgentMode,
+    AgentActionProposedV1,
     AgentRunCancelledV1,
     AgentRunCompletedV1,
     AgentRunFailedV1,
@@ -264,6 +265,49 @@ class AgentEventPublisher:
         )
         return await self._publish_run_event(
             message_type="agent.run.needs_input",
+            run_id=run_id,
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+            occurred_at=occurred_at,
+            payload_model=payload_model,
+        )
+
+    async def publish_action_proposed(
+        self,
+        *,
+        run_id: str,
+        conversation_id: str,
+        correlation_id: str,
+        proposal: AgentActionProposalContent,
+        execution_attempt: int | None = None,
+        causation_id: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> AgentEnvelope:
+        """``agent.action.proposed``: B9 proposal kaydının TEK kaynağı (W6 F1).
+
+        Önemli geçiştir (``mode_selected`` gibi): SEYREKLEŞTİRİLMEZ — seyrekleş
+        tirme proposal kaydını tamamen düşürebilirdi (A9→B5 zincirindeki tek
+        kayıt olayı budur). Zarf run_id ile payload run_id aynıdır (sözleşme
+        kuralı: "run_id zarf run_id ile uyuşmak zorundadır").
+        """
+
+        payload_model = AgentActionProposedV1(
+            **_clean(
+                event_sequence=0,  # gerçek değer DB'de tahsis edilir; gövdeye orada yazılır
+                execution_attempt=execution_attempt,
+                run_id=run_id,
+                proposal_id=proposal.proposal_id,
+                article_id=proposal.article_id,
+                article_revision=proposal.article_revision,
+                base_content_hash=proposal.base_content_hash,
+                summary=proposal.summary,
+                proposed_content=proposal.proposed_content,
+                created_at=proposal.created_at,
+            )
+        )
+        return await self._publish_run_event(
+            message_type="agent.action.proposed",
             run_id=run_id,
             conversation_id=conversation_id,
             correlation_id=correlation_id,

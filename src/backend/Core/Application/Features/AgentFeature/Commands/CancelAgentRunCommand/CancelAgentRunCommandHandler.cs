@@ -107,7 +107,13 @@ public sealed class CancelAgentRunCommandHandler(
                         request.RunId, "replay", requestedAt));
                 }
 
-                var correlationId = currentUser.CorrelationId ?? Guid.NewGuid().ToString("D");
+                // correlation_id sözleşmede kanonik UUID'dir; HTTP TraceIdentifier gibi
+                // UUID olmayan iz değerleri sözleşmeye uygun GUID ile değiştirilir
+                // (B10'un resume hattında bulunan gizli hatanın cancel karşılığı).
+                var callerCorrelation = currentUser.CorrelationId;
+                var correlationId = Guid.TryParseExact(callerCorrelation, "D", out var callerCorrelationId)
+                    ? callerCorrelationId.ToString("D")
+                    : Guid.NewGuid().ToString("D");
                 var (envelopeJson, messageId) = AgentControlEnvelopeComposer.ComposeCancellationRequested(
                     request.RunId,
                     run.ConversationId,

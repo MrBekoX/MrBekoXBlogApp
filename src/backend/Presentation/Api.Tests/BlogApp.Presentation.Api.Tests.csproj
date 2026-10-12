@@ -17,6 +17,12 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- L009 önlemi: broker+postgres fixture koleksiyonları postgres bağlantı havuzunu
+       tüketmeden SIRALI koşar (xunit.runner.json çıktıya kopyalanmalı). -->
+  <ItemGroup>
+    <None Include="xunit.runner.json" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\API\API.csproj" />
   </ItemGroup>

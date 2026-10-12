@@ -34,7 +34,10 @@ public sealed class AgentRunProjectionHandlerTests
 
         await using var context = _fixture.CreateContext();
         await using var unitOfWork = new UnitOfWork(context);
-        var handler = new AgentRunEventProjectionHandler(unitOfWork, context, TestNullLogger());
+        var handler = new AgentRunEventProjectionHandler(
+            unitOfWork, context, new BlogApp.Infrastructure.Messaging.EfAgentCollaborationStore(context),
+            new BlogApp.Core.Application.Features.AgentFeature.Services.AgentResultPresentationGuard(context),
+            TestNullLogger());
 
         var result = await handler.ApplyAsync(ProgressedEvent(unknownRunId, sequence: 1));
 
@@ -56,7 +59,10 @@ public sealed class AgentRunProjectionHandlerTests
 
         await using var context = _fixture.CreateContext();
         await using var unitOfWork = new UnitOfWork(context);
-        var handler = new AgentRunEventProjectionHandler(unitOfWork, context, TestNullLogger());
+        var handler = new AgentRunEventProjectionHandler(
+            unitOfWork, context, new BlogApp.Infrastructure.Messaging.EfAgentCollaborationStore(context),
+            new BlogApp.Core.Application.Features.AgentFeature.Services.AgentResultPresentationGuard(context),
+            TestNullLogger());
 
         var result = await handler.ApplyAsync(CompletedEvent(run.Id, sequence: 2));
 

@@ -27,6 +27,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<AgentEventInbox> AgentEventInboxes => Set<AgentEventInbox>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<AgentContentSync> AgentContentSyncs => Set<AgentContentSync>();
+    public DbSet<AgentProposal> AgentProposals => Set<AgentProposal>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

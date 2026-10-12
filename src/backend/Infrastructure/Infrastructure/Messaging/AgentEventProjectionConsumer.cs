@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using BlogApp.BuildingBlocks.Messaging;
 using BlogApp.Core.Application.Common.Messaging;
+using BlogApp.Core.Application.Common.Options;
+using BlogApp.Core.Application.Features.AgentFeature.Collaboration;
 using BlogApp.Core.Domain.Enums;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,6 +32,7 @@ public sealed class AgentEventProjectionConsumer(
     IRabbitMqConnectionManager connections,
     RabbitMqSettings settings,
     IServiceScopeFactory scopeFactory,
+    Microsoft.Extensions.Options.IOptions<AgentCollaborationSettings> collaborationOptions,
     ILogger<AgentEventProjectionConsumer> logger)
     : RabbitMqAgentConsumer(connections, settings, AgentMessagingTopology.BackendEventsQueue)
 {
@@ -41,6 +44,7 @@ public sealed class AgentEventProjectionConsumer(
     };
 
     private readonly AgentContractValidator _validator = new();
+    private readonly int _proposalValidityHours = collaborationOptions.Value.ProposalValidityHours;
 
     protected override async Task HandleAsync(
         string exchange,
@@ -88,7 +92,7 @@ public sealed class AgentEventProjectionConsumer(
     }
 
     /// <summary>Payload'ı registry DTO türüne çözer ve projection girdisine eşler.</summary>
-    private static AgentRunEventProjectionEvent BuildProjectionEvent(
+    private AgentRunEventProjectionEvent BuildProjectionEvent(
         AgentEnvelope envelope, System.Text.Json.Nodes.JsonObject payloadNode)
     {
         var spec = AgentMessageTypeRegistry.TryGet(envelope.MessageType, out var messageSpec)
@@ -149,11 +153,52 @@ public sealed class AgentEventProjectionConsumer(
             AgentRunNeedsInputV1 => new AgentRunEventProjectionEvent(
                 AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence, IsTerminal: false),
             AgentActionProposedV1 => new AgentRunEventProjectionEvent(
-                AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence, IsTerminal: false),
+                AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence, IsTerminal: false,
+                ProposalUpsert: BuildProposalUpsert(envelope, (AgentActionProposedV1)payload, _proposalValidityHours)),
             _ => throw new AgentEventRejectedException(
                 "message_type", $"{envelope.MessageType} olay kuyruğunda işlenmez"),
         };
     }
+
+    /// <summary>
+    /// B9: AgentActionProposedV1'den kalıcı proposal upsert'i kurar. İçerik hash'i
+    /// backend'in sakladığı düzenlenebilir içeriğin (summary) UTF-8 SHA-256 özetidir
+    /// (D008 kuralı; B9 TEK TANIM — A9 üreticisi proposal_content_hash'i aynı
+    /// özetin SHA-256'sı olarak üretir). Onay isteği bu sürüme karşı doğrulanır.
+    /// Süre sınırı backend politikasıdır (AgentCollaborationSettings.ProposalValidityHours).
+    /// Upsert yalnız KAYIT üretir — onay değildir (plan B9: onay açık backend eylemiyle alınır).
+    /// Kimlik alanları kanonik UUID olmalıdır: proposal_id Python üreticisi
+    /// (collab/proposal.py new_proposal_id) UUID taahhüdündedir; uymayan değer
+    /// kalıcı sözleşme ihlalidir → DLX (FormatException yerine anlaşılır red).
+    /// </summary>
+    private static AgentProposalUpsert BuildProposalUpsert(
+        AgentEnvelope envelope, AgentActionProposedV1 payload, int proposalValidityHours)
+    {
+        var occurredAt = DateTimeOffset.TryParse(
+            envelope.OccurredAt, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+            out var parsed)
+            ? parsed
+            : DateTimeOffset.UtcNow;
+
+        return new AgentProposalUpsert(
+            RunId: ParseGuid(envelope.RunId!, "run_id"),
+            ProposalId: ParseGuid(payload.ProposalId, "proposal_id"),
+            ContentHash: AgentCollaborationContentHash.Compute(payload.Summary),
+            Summary: payload.Summary,
+            OwnerKey: string.Empty, // sahiplik handler'da kilitli run satırından tamamlanır
+            ExpiresAt: occurredAt.AddHours(proposalValidityHours),
+            ArticleId: ParseGuid(payload.ArticleId, "article_id"),
+            ArticleRevision: payload.ArticleRevision,
+            BaseContentHash: payload.BaseContentHash);
+    }
+
+    /// <summary>Kanonik UUID çözümü; uymayan değer kalıcı ihlal sayılır (DLX).</summary>
+    private static Guid ParseGuid(string value, string field) =>
+        Guid.TryParseExact(value, "D", out var parsed)
+            ? parsed
+            : throw new AgentEventRejectedException(
+                field, $"kanonik UUID bekleniyordu: '{value}'");
 }
 
 /// <summary>Kalıcı sözleşme ihlali: mesaj DLX'e yönlendirilir (temel sınıf kuralı).</summary>

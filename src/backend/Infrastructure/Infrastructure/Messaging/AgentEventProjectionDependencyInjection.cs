@@ -26,6 +26,10 @@ public static class AgentEventProjectionDependencyInjection
     public static IServiceCollection AddAgentEventProjection(
         this IServiceCollection services, IConfiguration configuration)
     {
+        // B9 additive: consumer, AgentCollaborationSettings (proposal süre politikası)
+        // IOptions ile çözülür; bu hat tek başına kurulduğunda da çözümlenebilsin.
+        services.AddOptions();
+
         services.TryAddSingleton<IAgentRunNotifier, NoOpAgentRunNotifier>();
 
         services.TryAddSingleton<AgentContractValidator>(new AgentContractValidator());

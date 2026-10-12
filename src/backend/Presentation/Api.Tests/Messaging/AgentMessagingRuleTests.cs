@@ -28,7 +28,7 @@ public sealed class AgentMessagingRuleTests
     public void Accepted_Action_Requires_Applied_Revision()
     {
         var json = CommandEnvelope("agent.action.result", /*lang=json,strict*/ """
-        {"proposal_id":"prop-1","outcome":"accepted","validated_at":"2026-10-11T10:00:00Z"}
+        {"proposal_id":"7b9c0000-0000-0000-0000-00000000c0de","outcome":"accepted","validated_at":"2026-10-11T10:00:00Z"}
         """);
 
         var result = _validator.Validate(json);
@@ -66,7 +66,7 @@ public sealed class AgentMessagingRuleTests
     public void Action_Proposed_Run_Id_Must_Match_Envelope()
     {
         var json = RunEventEnvelope("agent.action.proposed", /*lang=json,strict*/ $$"""
-        {"event_sequence":6,"run_id":"99999999-9999-4999-8999-999999999999","proposal_id":"prop-1","article_id":"my-blog-post","article_revision":7,"base_content_hash":"{{Hash}}","summary":"ozet","proposed_content":"icerik","created_at":"2026-10-11T09:04:20Z"}
+        {"event_sequence":6,"run_id":"99999999-9999-4999-8999-999999999999","proposal_id":"7b9c0000-0000-0000-0000-00000000c0de","article_id":"1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1","article_revision":7,"base_content_hash":"{{Hash}}","summary":"ozet","proposed_content":"icerik","created_at":"2026-10-11T09:04:20Z"}
         """);
 
         var result = _validator.Validate(json);

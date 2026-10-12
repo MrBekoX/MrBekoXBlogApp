@@ -379,6 +379,8 @@ public sealed class AgentEventProjectionConsumerTests
     private ServiceProvider BuildHost(RecordingNotifier notifier, MemoryLogProvider? logs = null)
     {
         var services = new ServiceCollection();
+        // B9 additive: consumer'ın AgentCollaborationSettings IOptions bağımlılığı için.
+        services.AddOptions();
         services.AddLogging(logging =>
         {
             if (logs is not null)
@@ -395,6 +397,12 @@ public sealed class AgentEventProjectionConsumerTests
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddSingleton<IAgentRunNotifier>(notifier);
         services.AddSingleton(new AgentContractValidator());
+        // B9 additive: projection işleyicisi proposal upsert'i için store'a bağlıdır.
+        services.AddScoped<BlogApp.Core.Application.Features.AgentFeature.Collaboration.IAgentCollaborationStore,
+            BlogApp.Infrastructure.Messaging.EfAgentCollaborationStore>();
+        // W6 F6: terminal bildirim push'ı GET ile aynı sunum denetiminden geçer.
+        services.AddScoped<BlogApp.Core.Application.Features.AgentFeature.Services.IAgentResultPresentationGuard,
+            BlogApp.Core.Application.Features.AgentFeature.Services.AgentResultPresentationGuard>();
         services.AddScoped<AgentRunEventProjectionHandler>();
         services.AddSingleton<AgentEventProjectionConsumer>();
         return services.BuildServiceProvider();

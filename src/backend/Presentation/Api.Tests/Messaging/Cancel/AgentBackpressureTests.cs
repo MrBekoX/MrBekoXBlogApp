@@ -3,6 +3,7 @@ using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Options;
 using BlogApp.Core.Application.Features.AgentFeature.Commands.AcceptAgentRunCommand;
+using BlogApp.Core.Application.Features.AgentFeature.Collaboration;
 using BlogApp.Core.Application.Features.AgentFeature.Services;
 using BlogApp.Core.Domain.Entities;
 using BlogApp.Core.Domain.Enums;
@@ -172,7 +173,9 @@ public class AgentBackpressureTests : IAsyncLifetime
         await using (var scope = _fixture.CreateContext())
         {
             var handler = new AgentRunEventProjectionHandler(
-                new UnitOfWork(scope), scope, NullLogger<AgentRunEventProjectionHandler>.Instance);
+                new UnitOfWork(scope), scope, NoOpCollaborationStore.Instance,
+                new AgentResultPresentationGuard(scope),
+                NullLogger<AgentRunEventProjectionHandler>.Instance);
             var cancelled = await handler.ApplyAsync(CancelledEvent(run.Id, sequence: 1));
             Assert.Equal(AgentEventDecision.Apply, cancelled.Decision);
         }
@@ -180,7 +183,9 @@ public class AgentBackpressureTests : IAsyncLifetime
         await using (var scope = _fixture.CreateContext())
         {
             var handler = new AgentRunEventProjectionHandler(
-                new UnitOfWork(scope), scope, NullLogger<AgentRunEventProjectionHandler>.Instance);
+                new UnitOfWork(scope), scope, NoOpCollaborationStore.Instance,
+                new AgentResultPresentationGuard(scope),
+                NullLogger<AgentRunEventProjectionHandler>.Instance);
             var lateCompletedSameSequence = await handler.ApplyAsync(CompletedEvent(run.Id, sequence: 1));
             var lateCompletedOlder = await handler.ApplyAsync(CompletedEvent(run.Id, sequence: 0));
 
@@ -271,5 +276,27 @@ public class AgentBackpressureTests : IAsyncLifetime
         public string? CorrelationId => null;
         public bool IsAuthenticated => true;
         public bool IsInRole(string role) => false;
+    }
+
+    /// <summary>B9 ctor eklemesine (IAgentCollaborationStore) uyum için no-op test
+    /// çifti: bu testler proposal olayı taşımaz; store metotları çağrılmaz.</summary>
+    private sealed class NoOpCollaborationStore : IAgentCollaborationStore
+    {
+        public static readonly NoOpCollaborationStore Instance = new();
+
+        public Task<ProposalUpsertResult> UpsertProposalAsync(AgentProposalUpsert upsert, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ProposalUpsertResult(ProposalUpsertOutcome.Created, 1));
+
+        public Task<CollaborationRunState?> GetRunStateAsync(Guid runId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<CollaborationRunState?>(null);
+
+        public Task<AgentProposalSnapshot?> GetCurrentProposalAsync(Guid runId, Guid proposalId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AgentProposalSnapshot?>(null);
+
+        public Task<ConfirmationTransition> ConfirmAsync(Guid proposalRowId, string contentHash, DateTimeOffset confirmedAt, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ConfirmationTransition.Confirmed);
+
+        public Task<bool> MarkResumeSentAsync(Guid proposalRowId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
     }
 }

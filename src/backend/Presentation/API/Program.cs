@@ -1,6 +1,7 @@
 using BlogApp.Presentation.Api.Services;
 using BlogApp.Presentation.Api.Endpoints;
 using BlogApp.Presentation.Api.Extensions;
+using BlogApp.Presentation.Api.Health;
 using BlogApp.Presentation.Api.Hubs;
 using BlogApp.Presentation.Api.Middlewares;
 using BlogApp.BuildingBlocks.Messaging;
@@ -15,6 +16,7 @@ using BlogApp.Infrastructure;
 using BlogApp.Infrastructure.Messaging;
 using BlogApp.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -136,6 +138,25 @@ app.RegisterAgentEndpoints();
 
 var internalHosts = builder.Configuration.GetSection("InternalHosts").Get<string[]>() ?? ["localhost", "127.0.0.1"];
 app.MapHealthChecks("/health").RequireHost(internalHosts);
+// B11 sağlık ayrımı (plan satır 561): liveness, hazır-bulunurluk ve agent hattı
+// kontrolleri AYRI uç noktalardadır. Docker/orkestratör container liveness'ı için
+// /health/live kullanılır (bağımlılık yok; broker/DB kapalıyken container
+// restart edilmez — K3). /health/ready db+redis'i denetler (trafiğe hazır).
+// /health/agent broker bağlantısı + outbox backlog'u raporlar (operatör sinyali;
+// Degraded/Unhealthy'de kabul yolu çalışmaya DEVAM EDER, işler beklemde gösterilir).
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false, // liveness: yalnız sürecin yanıt verdiği
+}).RequireHost(internalHosts);
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+}).RequireHost(internalHosts);
+app.MapHealthChecks("/health/agent", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("agent"),
+    ResponseWriter = AgentHealthResponseWriter.WriteAsync, // JSON gövde: backlog sayıları taşınır
+}).RequireHost(internalHosts);
 app.MapHub<PublicCacheHub>("/hubs/public-cache").AllowAnonymous();
 // B5: agent run canlı bildirim hub'ı (replay GET uç noktaları B10'da).
 app.MapHub<AgentRunsHub>(AgentRunsHub.HubPath).AllowAnonymous();

@@ -24,6 +24,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
+    public DbSet<AgentEventInbox> AgentEventInboxes => Set<AgentEventInbox>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

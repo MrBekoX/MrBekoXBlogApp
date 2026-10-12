@@ -414,7 +414,7 @@ class JobStore:
                 "WHERE outbox_id IN ("
                 f"  SELECT outbox_id FROM {self._schema}.outbox_events "
                 "  WHERE published_at IS NULL AND (claimed_until IS NULL OR claimed_until < now()) "
-                "  ORDER BY created_at "
+                "  ORDER BY created_at, outbox_id "
                 "  LIMIT $1 "
                 "  FOR UPDATE SKIP LOCKED) "
                 "RETURNING outbox_id, message_id, message_type, exchange, routing_key, envelope",

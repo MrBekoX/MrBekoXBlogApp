@@ -70,6 +70,17 @@ public class AgentRunConfiguration : IEntityTypeConfiguration<AgentRun>
         builder.Property(x => x.DeadlineAt).IsRequired();
         builder.Property(x => x.AcceptedAt).IsRequired();
 
+        // B5 projection kolonları (additive): terminal-öncelik + sıra koruması DB'de.
+        builder.Property(x => x.LastEventSequence)
+            .IsRequired()
+            .HasDefaultValue(0);
+        builder.Property(x => x.SelectedMode)
+            .HasMaxLength(16);
+        builder.Property(x => x.SourceScope)
+            .HasMaxLength(24);
+        builder.Property(x => x.ResultJson)
+            .HasColumnType("jsonb");
+
         // İstemcinin tekrarlı kabulü: sahip + anahtar benzersiz (Postgres NULL-distinct
         // sorununa karşı OwnerKey sentetik sütundur).
         builder.HasIndex(x => new { x.OwnerKey, x.IdempotencyKey })

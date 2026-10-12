@@ -15,8 +15,9 @@ Kurallar:
 - ``claim_outbox_batch`` FOR UPDATE SKIP LOCKED + ``claimed_until`` lease
   kullandığından aynı kaydı birden fazla relay kontrolsüz almaz.
 
-NOT: Bu relay B4'te yalnız accepted olayını taşır; B5 progress/outcome olayları
-aynı tablo ve relay'i yeniden kullanır.
+NOT: Relay türden bağımsızdır — B4 accepted olayını, B5 progress/mode_selected/
+needs_input/terminal olaylarını AYNI tablo ve relay üzerinden taşır; tür
+politikası publisher'ın ``publish_envelope`` yön/üretici denetimindedir.
 """
 
 from __future__ import annotations

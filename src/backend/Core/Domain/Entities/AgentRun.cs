@@ -67,4 +67,24 @@ public class AgentRun : BaseAuditableEntity
 
     /// <summary>Backend'in sorumluluğu aldığı an (kabul durumuyla Python accepted olayı ayrı anlamlar).</summary>
     public DateTime AcceptedAt { get; set; }
+
+    // ---- B5 projection kolonları (ADDITIVE; migration AddAgentEventInbox ile gelir) ----
+
+    /// <summary>Projection'ın uyguladığı en büyük payload event_sequence'i (run başına monoton).
+    /// Gerileme koruması DB'de budur: sequence <= bu değer gelen olay uygulanmaz (B5).</summary>
+    public long LastEventSequence { get; set; }
+
+    /// <summary>agent.run.mode_selected olayından kesinleşen mod; henüz seçilmediyse null.</summary>
+    public string? SelectedMode { get; set; }
+
+    /// <summary>Terminal sonucun source_scope değeri (completed/partially_completed); diğer olaylarda null.</summary>
+    public string? SourceScope { get; set; }
+
+    /// <summary>Terminal olayın tam sonuç snapshot'ı (payload JSON); terminal olmayan olayda null.
+    /// Plan B5: "Terminal olay tam sonuç snapshot'ı taşısın; eksik bir ilerleme olayı
+    /// tamamlanmayı engellemesin" — snapshot burada kalıcıdır (B10 replay için).</summary>
+    public string? ResultJson { get; set; }
+
+    /// <summary>Terminal olayın zarf occurred_at değeri (UTC); terminal olmayan olayda null.</summary>
+    public DateTime? TerminalAt { get; set; }
 }

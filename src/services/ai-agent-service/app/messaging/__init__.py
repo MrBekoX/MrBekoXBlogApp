@@ -38,6 +38,13 @@ from .job_store import (
 )
 from .intake import EXECUTE_COMMAND_TYPE, IntakeOutcome, IntakePolicyError, IntakeService
 from .outbox import OutboxRelay, RelayBatchResult
+from .events import (
+    AgentEventPublisher,
+    AgentOutcome,
+    AlreadyTerminal,
+    EventPublishError,
+    ThrottledProgress,
+)
 
 __all__ = [
     "BrokerSettings",
@@ -79,4 +86,10 @@ __all__ = [
     "EXECUTE_COMMAND_TYPE",
     "OutboxRelay",
     "RelayBatchResult",
+    # B5: agent olay yayını
+    "AgentEventPublisher",
+    "AgentOutcome",
+    "AlreadyTerminal",
+    "EventPublishError",
+    "ThrottledProgress",
 ]

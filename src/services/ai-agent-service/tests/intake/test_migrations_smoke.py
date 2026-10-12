@@ -30,7 +30,9 @@ def test_agent_schema_is_at_alembic_head(db_pool: Any) -> None:
             return version, [r["table_name"] for r in tables], [r["column_name"] for r in job_columns]
 
     version, tables, job_columns = run(_check())
-    assert version == "0001"
-    assert set(tables) >= {"inbox_messages", "jobs", "outbox_events"}
+    # B5 zincir uzantısı (0002 run_event_sequences + ck_jobs_status genişlemesi)
+    # head'i ilerletti; smoke testi güncel head'i doğrular.
+    assert version == "0002"
+    assert set(tables) >= {"inbox_messages", "jobs", "outbox_events", "run_event_sequences"}
     # İdempotent kabul anahtarı: run_id UNIQUE (B4 adım 4) ve inbox PK consumer kapsamlı.
     assert "run_id" in job_columns

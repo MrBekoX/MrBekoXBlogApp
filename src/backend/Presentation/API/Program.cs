@@ -1,11 +1,18 @@
 using BlogApp.Presentation.Api.Services;
+using BlogApp.Presentation.Api.Endpoints;
 using BlogApp.Presentation.Api.Extensions;
 using BlogApp.Presentation.Api.Hubs;
 using BlogApp.Presentation.Api.Middlewares;
+using BlogApp.BuildingBlocks.Messaging;
 using BlogApp.Core.Application;
+using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Options;
+using BlogApp.Core.Application.Features.AgentFeature.Commands.RecordAgentFeedbackCommand;
+using BlogApp.Core.Application.Features.AgentFeature.Commands.ResumeAgentRunCommand;
+using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentObservationsQuery;
 using BlogApp.Infrastructure;
+using BlogApp.Infrastructure.Messaging;
 using BlogApp.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -44,6 +51,25 @@ builder.Services.AddCorsPolicy(builder.Configuration, builder.Environment);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+
+// ---- B10 agent mesajlaşma ve gözlem hattı kablolaması (B3/B5/B8 servisleri bu faza bağlandı) ----
+// B2 broker temeli: bağlantı yöneticisi + topoloji declarer (K3: bildirim aşağıdaki
+// hosted servis ile başlangıçta çağrılır; broker kapalıysa uygulama fail-fast OLMADAN
+// kalkmaya devam eder — kabul yolu DB outbox'ıdır, yayın relay'inin kendi döngüsü vardır).
+builder.Services.AddRabbitMqAgentMessaging(builder.Configuration);
+builder.Services.AddAgentOutbox(builder.Configuration);          // B3: outbox yazıcı + relay
+builder.Services.AddAgentEventProjection(builder.Configuration); // B5: olay inbox + projection + hub bildirimi
+builder.Services.AddAgentContentEvents(builder.Configuration);   // B8: içerik olayları + sunum denetimi (F2 notu)
+builder.Services.AddAgentCollaboration(builder.Configuration);   // B9: proposal store + iş birliği servisi (projection handler'ın store bağımlılığı)
+builder.Services.AddHostedService<AgentTopologyInitializerHost>();
+
+// B10 endpoint destek servisleri: misafir oturumu, B9-resume durumu, geri bildirim kaydı,
+// agent şeması gözlem bağlantısı.
+builder.Services.AddScoped<IAgentGuestSessionService, AgentGuestSessionService>();
+builder.Services.AddScoped<IAgentResumeStateStore, ProjectionAgentResumeStateStore>();
+builder.Services.AddScoped<IAgentFeedbackStore, ProjectionAgentFeedbackStore>();
+builder.Services.AddSingleton<IAgentSystemDbConnectionFactory, AgentSystemDbConnectionFactory>();
+
 builder.Services.AddSignalR(options =>
 {
     options.KeepAliveInterval = TimeSpan.FromSeconds(serverLimits.SignalRKeepAliveIntervalSeconds);
@@ -106,6 +132,7 @@ app.UseOutputCache();
 app.UseAntiforgery();
 
 app.RegisterAllEndpoints();
+app.RegisterAgentEndpoints();
 
 var internalHosts = builder.Configuration.GetSection("InternalHosts").Get<string[]>() ?? ["localhost", "127.0.0.1"];
 app.MapHealthChecks("/health").RequireHost(internalHosts);

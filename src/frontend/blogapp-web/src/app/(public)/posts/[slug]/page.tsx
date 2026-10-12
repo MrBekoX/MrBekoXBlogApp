@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Calendar, Eye, ArrowLeft, Tag } from 'lucide-react';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
+import { ArticleAgentPanel } from '@/components/agent/article-agent-panel';
 import { CommentsSection } from '@/components/comments/comments-section';
 import { BlogPostingSchema } from '@/components/seo/blog-posting-schema';
 import { BreadcrumbSchema } from '@/components/seo/breadcrumb-schema';
@@ -173,6 +174,13 @@ export default async function PostPage({ params }: PostPageProps) {
             ))}
           </div>
         </>
+      )}
+
+      {/* B10: makaleye soru sorma paneli (ayrı istemci bileşeni; mevcut düzeni etkilemez) */}
+      {post.id && (
+        <div className="my-8">
+          <ArticleAgentPanel articleId={post.id} articleSlug={slug} />
+        </div>
       )}
 
       {/* Comments */}

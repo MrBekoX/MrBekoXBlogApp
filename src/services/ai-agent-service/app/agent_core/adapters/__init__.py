@@ -9,9 +9,21 @@ taşır. Test double sonucu gerçek sağlayıcı entegrasyonu başarısı sayıl
 """
 
 from .config import ProviderSettings, resolve_embedding_provider, resolve_model_provider, resolve_web_search_provider
+from .static_records import (
+    APPROVED_ARTICLE_CATALOG,
+    APPROVED_PROJECTS,
+    APPROVED_PROFILE,
+    StaticProfileRepository,
+    StaticProjectRepository,
+)
 
 __all__ = [
+    "APPROVED_ARTICLE_CATALOG",
+    "APPROVED_PROJECTS",
+    "APPROVED_PROFILE",
     "ProviderSettings",
+    "StaticProfileRepository",
+    "StaticProjectRepository",
     "resolve_embedding_provider",
     "resolve_model_provider",
     "resolve_web_search_provider",

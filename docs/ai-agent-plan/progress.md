@@ -1,6 +1,6 @@
 # AI agent uygulama aşamaları ilerleme kaydı
 
-Aktif uygulama aşaması: W4 (A6→A7, B5)
+Aktif uygulama aşaması: W5 (A8; B6, B7, B8)
 
 Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar ürün kodu geliştirmesini gösterir. Durumlar yalnız gerçek implementasyon ve çalıştırılmış kontrollerle güncellenir.
 
@@ -17,14 +17,14 @@ Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar 
 | A5 | Doğrulandı | 2026-10-12. RouteDecision 8 alan kümesi + RunIntent; 7 ölçütlük kural seti + belirsizlikte yapılandırılmış router modeli (limitler politika profiline eşlenir, LLM limiti doğrudan uygulanmaz); analysis alt graph'ı (plan/gather/evidence/generate); sınırlı+kayıtlı mod yükseltmesi (ModeUpgradeRecord); web yoksa doğru 'kullanılamaz' durumu. Gate: tests/qa+tests/routing 95 passed (iki sırayla). Bulgu: RAG aracı ayna hatası → L008 ile onarıldı. Rapor: phase-reports/A5-rapor.md. |
 | B3 | Doğrulandı | 2026-10-11. AgentRun/OutboxMessage entity'leri, AcceptAgentRunCommand (oturum→makale erişimi→idempotency→sahiplik+kota→turn_sequence→immutable snapshot (D008/L004)→commit-öncesi zarf doğrulama→tek transaction), lease/claim'li outbox relay (confirm sonrası işaretleme, kayıp confirm'de republish, MaxAttempts), EF migration (additive). Gerçek broker+postgres ile entegrasyon testleri. Rapor: phase-reports/B3-rapor.md. |
 | B4 | Doğrulandı | 2026-10-11. Intake consumer: B1 doğrulama→tür/üretici politikası→inbox benzersizliği→run_id+payload hash idempotency→AgentJob+accepted outbox TEK transaction→commit→ACK; graph callback içinde çalıştırılmaz (B6 bağlantı noktası). JobStore/IntakeService/OutboxRelay; **Alembic 1.20.0 kilitlendi** (async/asyncpg env, version_table_schema='agent' — D014), asyncpg+sqlalchemy+alembic pyproject'e eklendi. Gerçek broker + scratch DB (blogdb_agent_test) ile 14 test iki kez koşuldu. Tam suite: 386 passed/1 skipped. Rapor: phase-reports/B4-rapor.md. |
-| A6 | Başlanmadı | — |
-| A7 | Başlanmadı | — |
+| A6 | Doğrulandı | 2026-10-12. Dört ayrı adaptör (search_web/read_source/extract_text/assess_source); SSRF koruması DNS+redirect-pin'li (metadata-redirect ve DNS-rebinding testli), boyut/tür/timeout sınırları, kaynak-içi talimat veri olarak, her deneme BudgetGuard olayı. WebSourceRecord → donuk A1 sözleşmelerine daraltma köprüleri (D015). Gate: tests/web 127 passed (124 mock + 3 gerçek ağ). F1 (assess_many kendisiyle kopya) sonradan düzeltildi → 131 passed. Rapor: phase-reports/A6-rapor.md. |
+| A7 | Doğrulandı | 2026-10-12. 10 adım dedicated node'lara eşlendi (Send'li paralel worker'lar, ortak bütçe atomik rezervasyonu, sayfa metinleri ArtifactStore'da); ClaimEvidenceRecord → EvidenceItem daraltması (D015); programatik kanıt kontrolü (ID varlığı/URL/hash/aralık) — uydurma kaynak ID yapısal olarak dışlandı; terminal: completed/partial/cancelled/failed; beş kabul senaryosu gerçek HTTP mock fixture'larıyla. Gate: tests/research 30 passed. Bilinen sınırlar (rapor F2/F3): kural tabanlı destek sınıflaması; aynı turda aynı URL iki okuma (bütçe üst sınırlı). Rapor: phase-reports/A7-rapor.md. |
+| B5 | Doğrulandı | 2026-10-12. Python AgentEventPublisher (terminal olay + jobs.status AYNI transaction; run başına atomik event_sequence INSERT..ON CONFLICT ile; seyrekleştirme; AlreadyTerminal koruması; migration 0002 additive). .NET AgentEventInbox + AgentRunStatus additive terminal genişletmesi + projection kolonları + AddAgentEventInbox migration; projection handler FOR UPDATE ile inbox+projection TEK transaction, terminal-öncelik saf rules sınıfında, bilinmeyen run_id quarantined+ACK, commit sonrası ACK, AgentRunsHub committed projection yayını. Gate: tests/events + dotnet test yeşil. Rapor: phase-reports/B5-rapor.md. |
 | A8 | Başlanmadı | — |
 | A9 | Başlanmadı | — |
 | A10 | Başlanmadı | — |
 | B3 | Başlanmadı | — |
 | B4 | Başlanmadı | — |
-| B5 | Başlanmadı | — |
 | B6 | Başlanmadı | — |
 | B7 | Başlanmadı | — |
 | B8 | Başlanmadı | — |
@@ -38,7 +38,8 @@ Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar 
 - W2 (2026-10-11): A2/A3/B2 paralel + bütünleştirme incelemesi. 3/3 faz doğrulandı. Commit'ler: 4a19604 (A2), b93ae3c (A3), 259ed6c (B2), f0fb3aa (test paketi + raporlar force-add; L001'in tests/ için tekrarı). Orchestrator doğrulaması: tam pytest + dotnet test ayrıca koşuldu. Ortam olayı: W2 sırasında aynı checkout'ta main'e geçilip d72a607 commit'lenip geri dönüldü ve task kapsamı dışı 6ed4cc7 (web fix) feature branch'e girdi — kullanıcı paralel çalışması olarak kaydedildi (L006); veri kaybı yok (reflog + A2 raporu §6 kanıtlı).
 - W3 (2026-10-11/12): A4→A5 zinciri + B3/B4 paralel + bütünleştirme. 4/4 faz doğrulandı, bütünleştirme incelemesi 0 bulgu. Commit'ler: 468d83e (A4), 0a6b951 (A5), dc81ed9 (B3), 64d3f1f (B4). Tam suite: pytest 386 passed/1 skipped; dotnet test yeşil. Run kazası: sweep adımındaki `git add -f src` node_modules'a dalıp timeout+stale index.lock üretti (L007); dört faz commit'i zarar görmeden geldi, faz raporları orchestrator tarafından tamamlandı. Temizlik: takip edilmiş 78 .pyc + 492 bin/obj dosyası index'ten çıkarıldı; .gitignore'a agent servis test istisnası eklendi (L001 kalıcı çözüm). RAG aracı CRLF ayna bozulması L008 ile onarıldı (rebuild-metadata + .gitattributes eol=lf).
 - W3 amend kuyruğu (2026-10-12): Amend edilen run teslim adımlarını canlı yeniden koştu (2c1244f A5 rapor eki+pyc, 9fb9d96 B3 bin/obj, 938e731 B4 pyc, 4ad063e sweep+gitattributes renormalizasyonu, 9d4036b A4 pyc) — artifact'lar aa1a10b ile temizlendi; 541 dosyalık kirlilik kalıcı olarak 0'a indirildi (W4'ten itibaren force yalnız docs için). Amend sırasında B3, ConfirmLoss test flake'ini kökten düzeltti (testin tam-kopya varsayımı kaldırıldı; gerçek ölçüt: her kopyada aynı message_id + monoton delivery_attempt; üretim kodu değişmedi — davranış tasarım gereği), iki tam koşuda 90/90 doğrulandı. Koşu sırasında broker container'ının dışarıdan restart edildiği docker inspect ile belgelendi (kullanıcı paralel çalışması, L006); aynı koşuda 12 broker testi geçici düştü, sonraki koşuda yeşil. A5, A4'ün F1 açık riskini (retriever'sız makale yolu) yeniden doğrulayarak raporuna §10 ekledi.
-- Ortam notları: RabbitMQ 4.2.9 broker çalışıyor; postgres compose servisi B3/B4 tarafından kullanıldı (agent scratch DB: blogdb_agent_test). Alembic 1.20.0 kurulu.
+- W4 (2026-10-12): A6→A7 zinciri + B5 paralel + bütünleştirme. 3/3 faz doğrulandı, bütünleştirme incelemesi 0 bulgu. Commit'ler: d8f648c (A6), 8800697 (A7), 6c99da1 (B5), 4abd6f0 (raporlar), 32a15c1 (sweep) — force-add yalnız docs (L007 deseni çalıştı, 0 artifact). Doğrulama: pytest tam suite 560 passed/1 skipped (F1 fix sonrası), dotnet test 106/106. A7'nin bildirdiği F1 (assess_many kendisiyle kopya işaretleme) odaklı fix agent'ıyla düzeltildi (tools.py `_others_except_self` + 4 regresyon testi; web 131, research 30 passed) — consumer workaround'ı korundu. Eşzamanlı doğrulama koşumlarının broker çakışması L009 ile kaydedildi (21 başarısızlık geçiciydi, seri koşumda 106/106).
+- Ortam notları: Alembic migration zinciri 0001-0002 (agent şeması); broker çalışıyor; test vhost izolasyonu W5'ten itibaren dispatch kuralı.
 
 ## Açık riskler ve karar bekleyenler
 

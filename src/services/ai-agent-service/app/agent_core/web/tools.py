@@ -64,6 +64,19 @@ __all__ = [
 _EVIDENCE_EXCERPT_CHARS = 400
 
 
+def _others_except_self(record: WebSourceRecord, records: Sequence[WebSourceRecord]) -> list[WebSourceRecord]:
+    """Kopya karşılaştırma kümesi: kaydın KENDİSİ çıkarılır, diğer kayıtlar kalır.
+
+    "Kendisi": nesne kimliği veya DONMUŞ A1 web kaynak kimliği (url+erişim
+    damgası — ``SourceAssessor._source_id``) eşitliği. Yalnız içerik hash'i
+    eşit olan FARKLI kayıtlar kümede kalır; böylece gerçek kopya tespiti
+    bozulmaz (A7-rapor.md F1: ``assess_many`` kaydı kendi kopyası olarak
+    işaretlememeli).
+    """
+    self_id = SourceAssessor._source_id(record)
+    return [other for other in records if other is not record and SourceAssessor._source_id(other) != self_id]
+
+
 class _ExternalWebTool:
     """Bütçe kayıtlı dış araçların ortak çekirdeği: eylem kimliği + geri çekilme."""
 
@@ -305,10 +318,15 @@ class AssessSourceTool:
         *,
         cancel: CancellationToken | None = None,
     ) -> list[SourceAssessment]:
-        """Kayıt kümesini birlikte değerlendirir (kopya/bağımsızlık kümesi tümü)."""
+        """Kayıt kümesini birlikte değerlendirir; her kayıt kendisi hariç.
+
+        Kopya/bağımsızlık kümesi verilen tümü olsa da her kayıt kopya
+        karşılaştırmasında kendisini ``others`` dışında tutar; farklı
+        kayıtlar arasındaki gerçek kopya tespiti etkilenmez.
+        """
         if cancel is not None:
             cancel.raise_if_cancelled()
-        return [self._assessor.assess(record, others=records) for record in records]
+        return [self._assessor.assess(record, others=_others_except_self(record, records)) for record in records]
 
 
 class HttpSourceReader:

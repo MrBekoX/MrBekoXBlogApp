@@ -72,3 +72,12 @@ Her ders kök neden, yapılan düzeltme, tekrarını yakalayan kontrol ve gelece
 - **Düzeltme:** `node docs/ai-agent-plan/source/tools/rebuild-metadata.cjs` ile aynalar LF olarak yeniden üretildi (`verify` → valid:true); `.gitattributes`'a `docs/ai-agent-plan/source/** text eol=lf` kuralı eklendi.
 - **Tekrarını yakalayan kontrol:** Faz başlarında çalıştırılan `search.cjs verify`; valid:false dönerse orchestrator rebuild-metadata çalıştırır.
 - **Gelecekteki önlem:** Üretilmiş makine dosyaları (yaml aynaları) versiyonlanırken .gitattributes eol kuralı eşlik eder; kaynak arşivi değişikliğinden sonra rebuild + verify zorunlu.
+
+## L009 — Paylaşılan broker vhost'unda eşzamanlı test koşumu çakışması
+
+- **Faz/yer:** W4 sonrası orchestrator doğrulaması (2026-10-12).
+- **Belirti:** dotnet test arka plan doğrulaması 21 başarısız gösterdi; aynı komut seri koşuda 106/106 geçti.
+- **Kök neden:** Gerçek-broker testleri (B2/B3/B4/B5 .NET testleri + python messaging testleri) aynı dev vhost'unu ve kuyruk adlarını paylaşıyor; eşzamanlı suite koşumları birbirinin kuyruklarını tüketip purge ediyor. O gün üç koşum (dotnet, python tam suite, fix agent'ın pytest'i) üst üste bindi.
+- **Düzeltme:** Doğrulama koşuları seri yapıldı; yeniden koşumda 106/106 yeşil.
+- **Tekrarını yakalayan kontrol:** Şüpheli başarısızlıkta ilk kontrol: başka bir test koşumu/agent aynı broker'ı kullanıyor mu; seri yeniden koşum.
+- **Gelecekteki önlem:** (1) Orchestrator doğrulama koşumları asla paralel başlatılmaz. (2) W5'ten itibaren her fazın broker entegrasyon testleri KENDİ test vhost'unu ve scratch DB'sini kullanır (dispatch kuralı; B4 scratch-DB deseni broker'a genelleştirildi). (3) Workflow bütünleştirme fazındaki tam suite'ler zaten seridir.

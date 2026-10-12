@@ -299,3 +299,59 @@ def test_mode_selected_web_flag_only_for_deep_research(db_pool, publisher):
                 reason="aykırı kombinasyon",
             )
         )
+
+
+# --------------------------------------------------- W6 F1: action proposed
+
+
+def test_action_proposed_publishes_contract_valid_envelope_and_is_not_throttled(db_pool, publisher):
+    """W6 F1: A9 öneri olayı agent.action.proposed olarak outbox'a yazılır.
+
+    Bu olay B9 backend proposal kaydının TEK kaynağıdır; seyrekleştirme
+    kaydı düşürebileceği için mode_selected gibi önemli geçiş sayılır.
+    """
+    from messaging.contracts.payloads import AgentActionProposalContent
+
+    run_id, conversation_id, correlation_id = make_run_ids()
+    run(seed_accepted_job(db_pool, run_id, conversation_id, correlation_id))
+
+    proposal = AgentActionProposalContent(
+        run_id=run_id,
+        proposal_id="7b9c0000-0000-0000-0000-00000000c0de",
+        article_id="1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
+        article_revision=3,
+        base_content_hash="a" * 64,
+        summary="İş birliği önerisi — konuk yazı.",
+        proposed_content="İş birliği talebi\n\nAmaç: konuk yazı",
+        created_at="2026-10-12T09:00:00Z",
+    )
+
+    first = run(
+        publisher.publish_action_proposed(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            proposal=proposal,
+        )
+    )
+    # Seyrekleştirme YOK: aynı saniyedeki ikinci olay da üretilir (kayıt olayı).
+    second = run(
+        publisher.publish_action_proposed(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            proposal=proposal,
+        )
+    )
+    assert not isinstance(first, ThrottledProgress)
+    assert not isinstance(second, ThrottledProgress)
+    assert second.payload["event_sequence"] == first.payload["event_sequence"] + 1
+
+    parsed = parse_envelope(first.model_dump_json(exclude_none=True).encode("utf-8"))
+    assert parsed.spec.message_type == "agent.action.proposed"
+    assert parsed.envelope.run_id == run_id
+    assert parsed.envelope.payload["proposal_id"] == proposal.proposal_id
+    assert parsed.envelope.payload["run_id"] == run_id  # zarf run_id ile uyuşar
+    assert parsed.envelope.payload["article_revision"] == 3
+    assert parsed.envelope.payload["base_content_hash"] == "a" * 64
+    assert parsed.envelope.payload["summary"].startswith("İş birliği")

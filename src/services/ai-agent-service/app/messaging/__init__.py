@@ -75,6 +75,8 @@ from .control import (
     RESUME_COMMAND_TYPE,
     build_control_consumer,
 )
+from .control_driver import CollaborationResumeDriver, ContinuationBusy
+from .worker import ExecutionDependencies, ExecutionWorker, WorkerSettings
 from .retry import (
     DEFAULT_RETRY_TIERS,
     DlqReplayService,
@@ -179,6 +181,12 @@ __all__ = [
     "RESUME_COMMAND_TYPE",
     "ACTION_RESULT_COMMAND_TYPE",
     "build_control_consumer",
+    # W6 F3: kontrol komutlarının graph devamı sürücüsü + worker yüzeyi
+    "CollaborationResumeDriver",
+    "ContinuationBusy",
+    "ExecutionWorker",
+    "ExecutionDependencies",
+    "WorkerSettings",
     "DeadlineReaper",
     "ReapResult",
 ]

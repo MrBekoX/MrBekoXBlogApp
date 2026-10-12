@@ -849,6 +849,76 @@ class JobStore:
             )
         return row is not None
 
+    async def claim_job_for_continuation(
+        self,
+        run_id: str,
+        worker_id: str,
+        *,
+        lease_seconds: float,
+    ) -> ClaimedJob | None:
+        """Park edilmiş TEK bir işi graph devamı için claim eder (W6 F3).
+
+        Kontrol tüketici sürücüsünün (``control_driver``) hedefli claim'idir:
+        ``needs_input`` sonrası bekleyen ('accepted') iş, ``agent.resume.requested``
+        / ``agent.action.result`` tesliminin graph devamı için bu worker'a
+        geçirilir. ``claim_next_job`` ile AYNI claim sözleşmesi: running geçişi,
+        yeni fencing_token, deneme sayacı artışı, lease yazımı.
+
+        Guard'lar: yalnız ``status='accepted'`` (running iş başka sahibin
+        aynen kalsın — ``None`` döner, sürücü teslimi ACK'sız bırakır);
+        süresi geçmiş iş claim edilmez (terminal B7 reaper'ın); aktif iptal
+        niyeti olan iş claim edilmez (B7 kuralının sürücü karşılığı).
+        Terminal iş de ``None`` döner: sürücü bunu "zaten sonuçlanmış" olarak
+        okuyup idempotent ACK verir (``control_driver._continue``).
+        """
+
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                locked = await conn.fetchrow(
+                    f"SELECT job_id FROM {self._schema}.jobs "
+                    "WHERE run_id = $1 FOR UPDATE",
+                    uuid.UUID(run_id),
+                )
+                if locked is None:
+                    return None
+                row = await conn.fetchrow(
+                    f"UPDATE {self._schema}.jobs SET "
+                    f"status = {JOB_STATUS_RUNNING!r}, "
+                    "lease_owner = $2, "
+                    "lease_until = now() + make_interval(secs => $3), "
+                    "execution_attempt = execution_attempt + 1, "
+                    f"fencing_token = nextval('{self._schema}.job_fencing_seq'), "
+                    "started_at = COALESCE(started_at, now()) "
+                    "WHERE run_id = $1 AND status = $4 "
+                    "  AND (deadline_at IS NULL OR deadline_at > now()) "
+                    "  AND NOT EXISTS ("
+                    f"    SELECT 1 FROM {self._schema}.cancel_intents x WHERE x.run_id = $1) "
+                    "RETURNING job_id, run_id, conversation_id, origin_message_id, "
+                    "payload, envelope, queue_class, deadline_at, execution_attempt, "
+                    "fencing_token, accepted_at, started_at",
+                    uuid.UUID(run_id),
+                    worker_id,
+                    float(lease_seconds),
+                    JOB_STATUS_ACCEPTED,
+                )
+        if row is None:
+            return None
+        return ClaimedJob(
+            job_id=row["job_id"],
+            run_id=str(row["run_id"]),
+            conversation_id=str(row["conversation_id"]),
+            origin_message_id=str(row["origin_message_id"]),
+            payload=json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"],
+            envelope=_decode_envelope_json(row["envelope"]),
+            queue_class=row["queue_class"],
+            deadline_at=row["deadline_at"],
+            execution_attempt=int(row["execution_attempt"]),
+            fencing_token=int(row["fencing_token"]),
+            accepted_at=row["accepted_at"],
+            started_at=row["started_at"],
+            recovered=False,
+        )
+
     async def fail_expired_jobs_beyond_attempts(
         self,
         max_execution_attempts: int,

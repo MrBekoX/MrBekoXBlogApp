@@ -78,6 +78,7 @@ from agent_core.models import (
     ConversationTurn,
     ExecutionContext,
     ModePreference,
+    ProgressKind,
     RunStatus,
     SourceReference,
 )
@@ -93,6 +94,7 @@ from agent_core.ports.checkpoint import CheckpointStore as CheckpointStorePort
 
 from .contracts import AgentEnvelope, Producer, SCHEMA_VERSION
 from .contracts.payloads import (
+    AgentActionProposalContent,
     AgentExecutionRequestedV1,
     AgentRunCompletedV1,
     AgentRunFailedV1,
@@ -169,6 +171,10 @@ class ExecutionDependencies:
     ``content_state`` B8 güncellik projection'udur (``ContentSyncState``);
     bağlandığında yürütme öncesi stale komut denetimi devreye girer
     (``ensure_execution_allowed`` — plan B8: "eski komutu yürütmesin").
+    ``profile_repository``/``project_repository``/``article_catalog`` A9
+    rehberlik kaynaklarıdır (W6 F3): taze yürütmede ve checkpoint devamında
+    çekirdeğe AYNEN aktarılır; bağlı değilken çekirdek dürüst
+    ``config_error`` döner (kayıtsız modele düşmez).
     """
 
     model: ModelProvider
@@ -179,6 +185,9 @@ class ExecutionDependencies:
     web_tools: dict[str, Any] | None = None
     checkpoint_store: CheckpointStorePort | None = None
     content_state: Any | None = None
+    profile_repository: Any | None = None
+    project_repository: Any | None = None
+    article_catalog: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -334,6 +343,31 @@ class _WorkerProgressSink(ProgressSink):
             return
         run_id, conversation_id, correlation_id, causation_id = self._ids
         kind = event.kind if isinstance(event.kind, str) else event.kind.value
+        # W6 F1: A9 öneri olayı sözleşmedeki agent.action.proposed'a çevrilir.
+        # Bu olay B9 proposal kaydının (backend agent_proposals) TEK kaynağıdır;
+        # agent.run.progressed'e düşürülseydi hat tüketicide işlenmezdi (ölü yol).
+        # Sink sözleşme köprüsüdür: domain ActionProposal → B1 transport modeli.
+        proposal = getattr(event, "proposal", None)
+        if kind == ProgressKind.ACTION_PROPOSED.value and proposal is not None:
+            await self._publisher.publish_action_proposed(
+                run_id=run_id,
+                conversation_id=conversation_id,
+                correlation_id=correlation_id,
+                proposal=AgentActionProposalContent(
+                    run_id=str(proposal.run_id),
+                    proposal_id=str(proposal.proposal_id),
+                    article_id=str(proposal.article_id),
+                    article_revision=int(proposal.article_revision),
+                    base_content_hash=str(proposal.base_content_hash),
+                    summary=str(proposal.summary),
+                    proposed_content=str(proposal.proposed_content),
+                    created_at=_utc(proposal.created_at),
+                ),
+                execution_attempt=self._attempt,
+                causation_id=causation_id,
+                occurred_at=event.occurred_at,
+            )
+            return
         result = await self._publisher.publish_progress(
             run_id=run_id,
             conversation_id=conversation_id,
@@ -434,8 +468,31 @@ class ExecutionWorker:
         )
         if claimed is None:
             return CycleResult(idle=True)
+        return await self.execute_claimed(claimed)
+
+    async def execute_claimed(
+        self,
+        claimed: ClaimedJob,
+        *,
+        collab_input: Any | None = None,
+        validated_result: Any | None = None,
+    ) -> CycleResult:
+        """Claim EDİLMİŞ bir işi girdiyle sonucuna kadar yürütür (W6 F3 girişi).
+
+        ``run_once``'in claim sonrası yarısıdır; kontrol tüketici sürücüsü
+        (``control_driver.CollaborationResumeDriver``) hedef run'ı
+        ``claim_job_for_continuation`` ile kendisi claim edip BURAYA girdiyle
+        (``collab_input``/``validated_result``) gelir — A9 checkpoint devamı
+        backend kararını böyle görür. WorkerAborted terminal'siz bırakma
+        kararları CycleResult'a çevrilir (run_once ile aynı sözleşme).
+        """
+
         try:
-            return await self._execute_claimed(claimed)
+            return await self._execute_claimed(
+                claimed,
+                collab_input=collab_input,
+                validated_result=validated_result,
+            )
         except WorkerAborted as abort:
             logger.warning("yürütme terminal'siz bırakıldı: run=%s (%s)", claimed.run_id, abort)
             return CycleResult(
@@ -477,7 +534,13 @@ class ExecutionWorker:
 
     # -------------------------------------------------------------- yürütme
 
-    async def _execute_claimed(self, claimed: ClaimedJob) -> CycleResult:
+    async def _execute_claimed(
+        self,
+        claimed: ClaimedJob,
+        *,
+        collab_input: Any | None = None,
+        validated_result: Any | None = None,
+    ) -> CycleResult:
         run_id = claimed.run_id
         envelope = claimed.envelope
         watch = _LeaseWatch(self._store, run_id, claimed.fencing_token, self._settings)
@@ -526,8 +589,16 @@ class ExecutionWorker:
             )
 
             # A8: checkpoint varsa DEVAM (rota kararı checkpoint'ten okunur).
+            # W6 F3: sürücüden gelen collab_input/validated_result devam
+            # girdisi checkpoint devamına AKTARILIR — aksi halde agent.action.result
+            # agent'a ulaşsa bile A9 onay makinesi sonucu hiç görmezdi.
             resumed = await self._try_resume(
-                claimed, metered=metered, sink=sink, cancel=cancel
+                claimed,
+                metered=metered,
+                sink=sink,
+                cancel=cancel,
+                collab_input=collab_input,
+                validated_result=validated_result,
             )
             if isinstance(resumed, CycleResult):
                 return resumed
@@ -570,7 +641,13 @@ class ExecutionWorker:
                     )
 
                 outcome = await self._execute_prepared(
-                    claimed, prepared=prepared, metered=metered, sink=sink, cancel=cancel
+                    claimed,
+                    prepared=prepared,
+                    metered=metered,
+                    sink=sink,
+                    cancel=cancel,
+                    collab_input=collab_input,
+                    validated_result=validated_result,
                 )
 
             # Lease bu yürütme sırasında kaybedildiyse SONUÇ NE OLURSA OLSUN
@@ -605,6 +682,8 @@ class ExecutionWorker:
         metered: _MeteredModel,
         sink: _WorkerProgressSink,
         cancel: _WorkerCancel,
+        collab_input: Any | None = None,
+        validated_result: Any | None = None,
     ) -> "AgentOutcome | CycleResult | None":
         """Checkpoint'i arar; bulunursa A8 ``resume`` ile devam ettirir.
 
@@ -613,6 +692,11 @@ class ExecutionWorker:
         Checkpoint'teki rota ``deep_research`` ise ve bu claim research
         kapasitesinde DEĞİLSE yürütme devam etmez: iş ertelenir (kapasite
         ayrımı checkpoint'li yolda da korunur).
+
+        W6 F3: ``collab_input``/``validated_result`` A9 resume girdisi olarak
+        çekirdeğe aynen taşınır (sürücü yolu); rehberlik kaynakları da
+        aktarılır — checkpoint'ten devam eden profile/projects/content_suggestion
+        çalışması onaylı kaynaklar olmadan ``config_error``'a düşmez.
         """
 
         execution_id = stable_execution_id(claimed.run_id)
@@ -673,6 +757,8 @@ class ExecutionWorker:
                 run_id=claimed.run_id,
                 execution_id=execution_id,
                 deadline_seconds=remaining,
+                collab_input=collab_input,
+                validated_result=validated_result,
             ),
             checkpoint=self._checkpoint,
             model=metered,
@@ -682,6 +768,9 @@ class ExecutionWorker:
             progress=sink,
             cancel=cancel,
             web_tools=self._deps.web_tools,
+            profile_repository=self._deps.profile_repository,
+            project_repository=self._deps.project_repository,
+            article_catalog=self._deps.article_catalog,
         )
         return outcome
 
@@ -693,6 +782,8 @@ class ExecutionWorker:
         metered: _MeteredModel,
         sink: _WorkerProgressSink,
         cancel: _WorkerCancel,
+        collab_input: Any | None = None,
+        validated_result: Any | None = None,
     ) -> AgentOutcome:
         return await execute_plan(
             prepared,
@@ -703,6 +794,11 @@ class ExecutionWorker:
             progress=sink,
             cancel=cancel,
             web_tools=self._deps.web_tools,
+            profile_repository=self._deps.profile_repository,
+            project_repository=self._deps.project_repository,
+            article_catalog=self._deps.article_catalog,
+            collab_input=collab_input,
+            validated_result=validated_result,
         )
 
     # ------------------------------------------------- iptal terminali + guard
@@ -1106,3 +1202,9 @@ def _clean(**kwargs: Any) -> dict[str, Any]:
 
 def _utcnow_str() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _utc(value: datetime) -> str:
+    """Domain zamanını B1 ``UtcIsoString``'e çevirir (null taşınmaz kuralı)."""
+
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

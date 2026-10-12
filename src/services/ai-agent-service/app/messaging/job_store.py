@@ -57,6 +57,14 @@ __all__ = [
     "build_accepted_envelope",
     "ACCEPTED_MESSAGE_TYPE",
     "JOB_STATUS_ACCEPTED",
+    # B6: lease / fencing / terminal guard (ADDITIVE)
+    "ClaimedJob",
+    "TerminalWriteResult",
+    "JOB_STATUS_QUEUED",
+    "JOB_STATUS_RUNNING",
+    "CLAIMABLE_JOB_STATUSES",
+    "QUEUE_CLASS_FAST",
+    "QUEUE_CLASS_RESEARCH",
 ]
 
 logger = logging.getLogger(__name__)
@@ -66,6 +74,22 @@ ACCEPTED_MESSAGE_TYPE = "agent.run.accepted"
 #: Job durum makinesinin B4'teki tek değeri; B6 lease/execution durumlarını
 #: yeni migration ile genişletir (bkz. ck_jobs_status).
 JOB_STATUS_ACCEPTED = "accepted"
+
+# --- B6: iş durum makinesinin genişletilmesi (migration 0003) -----------------
+
+#: Bekleyen iş (ortak sözleşmedeki karşılık); claim edilebilir.
+JOB_STATUS_QUEUED = "queued"
+#: Claim edilmiş, lease sahibi worker'da yürütülüyor.
+JOB_STATUS_RUNNING = "running"
+
+#: Claim'in seçtiği bekleyen durumlar: B4 kabulünün yazdığı 'accepted' KORUNUR
+#: (mevcut kabul yazımı değişmez — additive kural) ve sözleşmedeki 'queued'
+#: değeri de bekleyen sayılır (B7 test double'ları bu değeri yazar).
+CLAIMABLE_JOB_STATUSES = (JOB_STATUS_ACCEPTED, JOB_STATUS_QUEUED)
+
+#: Yürütme kapasitesi sınıfları (plan B6: derin araştırma ayrı kapasite).
+QUEUE_CLASS_FAST = "fast"
+QUEUE_CLASS_RESEARCH = "research"
 
 INBOX_STATUS_ACCEPTED = "accepted"
 INBOX_STATUS_CONFLICT = "conflict"
@@ -101,10 +125,71 @@ def compute_payload_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+# --- B6: claim / lease / fencing veri tipleri (ADDITIVE) ----------------------
+
+
+@dataclass(frozen=True)
+class ClaimedJob:
+    """``claim_next_job`` sonucu: worker'a devredilmiş iş.
+
+    ``fencing_token`` global ``agent.job_fencing_seq`` dizisinden claim anında
+    tahsis edilir; her yeni claim'de KESİN artar. Eski denemenin token'ı ile
+    terminal yazımı guard'da reddedilir (plan B6: "Eski worker'ın yeni
+    denemenin sonucunu ezmesini fencing kontrolüyle engelle").
+    """
+
+    job_id: uuid.UUID
+    run_id: str
+    conversation_id: str
+    #: Execute komutunun message_id'si; olay zincirinde causation_id kaynağı.
+    origin_message_id: str
+    #: Execute komut payload'ı (sözleşme doğrulaması intake'te yapıldı).
+    payload: dict[str, Any]
+    #: Kabul zarfı (B4'te saklanan; kimlik alanlarının tek kaynağı).
+    envelope: AgentEnvelope
+    queue_class: str
+    deadline_at: datetime | None
+    execution_attempt: int
+    fencing_token: int
+    accepted_at: datetime
+    started_at: datetime | None
+    #: Bu claim bir recovery mi? (önceki denemenin lease'i bitmiş.)
+    recovered: bool = False
+
+
+@dataclass(frozen=True)
+class TerminalWriteResult:
+    """``complete_job``/``fail_job`` sonucu.
+
+    ``outcome`` 'completed'/'failed' ise terminal yazımı ve (verildiyse)
+    terminal olay outbox'a AYNI transaction'da yazıldı demektir. 'rejected'
+    ise ``reason`` gerekçeyi taşır: ``not_found`` | ``not_running`` (iş
+    terminalde) | ``fencing_mismatch`` (eski deneme) | ``cancel_requested``
+    (aktif iptal niyeti var — terminal 'cancelled' geçişini B7 üretir).
+    """
+
+    outcome: str  # "completed" | "failed" | "rejected"
+    reason: str | None = None
+
+    @property
+    def accepted(self) -> bool:
+        return self.outcome != "rejected"
+
+
 def format_utc(dt: datetime) -> str:
     """UtcIsoString sözleşme biçimi ('Z' sonekli UTC ISO 8601)."""
 
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _decode_envelope_json(raw: Any) -> AgentEnvelope:
+    """asyncpg jsonb kolonunu (str) AgentEnvelope'a çözümler (outbox.py deseni)."""
+
+    if isinstance(raw, (str, bytes, bytearray)):
+        data = json.loads(raw)
+    else:
+        data = raw
+    return AgentEnvelope.model_validate(data)
 
 
 def build_accepted_envelope(
@@ -439,6 +524,452 @@ class JobStore:
                 "claimed_until = NULL WHERE outbox_id = $1",
                 outbox_id,
                 error,
+            )
+
+    # ------------------------------------------------- B6: claim / lease / guard
+    #
+    # Ortak store sözleşmesi (entegrasyon sahibi tanımı): claim FOR UPDATE SKIP
+    # LOCKED ile tek worker'a devreder [PG-ISOLATION#C2]; fencing_token global
+    # diziden kesin artar; complete/fail ATOMİK guard'la yalnız sahibini kabul
+    # eder. Terminal yazımı ile terminal olayın outbox'a yazımı AYNI
+    # transaction'dadır (plan B5 kuralının B6 terminal yoluna uygulanışı).
+    #
+    # Eski worker'ın yeniden sahiplenilmiş işe yazamaması üç satırla garanti
+    # edilir: (1) her claim execution_attempt'i artırır ve YENİ fencing_token
+    # alır; (2) complete/fail koşulu status='running' VE fencing eş VE aktif
+    # cancel intent yok; (3) koşul bozulursa satır güncellenmez ve 'rejected'
+    # döner. [RMQ-RELIABILITY#C1] at-least-once teslimde çift yürütme
+    # mükellefiyatının DB tarafındaki karşılığı budur.
+
+    async def claim_next_job(
+        self,
+        worker_id: str,
+        *,
+        lease_seconds: float,
+        queue_class: str | tuple[str, ...] | list[str] = QUEUE_CLASS_FAST,
+        max_execution_attempts: int = 3,
+        now: Callable[[], datetime] | None = None,
+    ) -> ClaimedJob | None:
+        """Bekleyen (veya lease'i bitmiş) bir işi bu worker'a devreder.
+
+        - Seçim ``FOR UPDATE SKIP LOCKED`` ile yapılır: iki worker aynı anda
+          claim çağırdığında iş TEK worker'a gider, diğeri kendi sorgusunda
+          satırı görmez (kilitlenen satır atlanır).
+        - Claim edilen iş ``status='running'`` olur; ``execution_attempt`` bir
+          artar; YENİ ``fencing_token`` tahsis edilir.
+        - SINIRLI recovery: ``status='running'`` ve ``lease_until`` bitmiş iş
+          yalnız ``execution_attempt < max_execution_attempts`` iken yeniden
+          claim edilir (plan B6: "süresi geçen işi SINIRLI recovery ile yeniden
+          sahiplen"); sınırı aşan işler ``fail_expired_jobs_beyond_attempts``
+          ile kapatılır.
+        - Süresi geçmiş (``deadline_at <= now()``) iş claim edilmez; terminal
+          kapanışı B7 reaper politikasındadır.
+        - Aktif iptal niyeti olan iş claim edilmez: iptal, yeni yürütme
+          başlatmaz (plan B7: "Execute komutu henüz gelmediyse iptal kaydı
+          erken başlatmayı engellesin" ilkesinin recovery karşılığı).
+        """
+
+        classes = [queue_class] if isinstance(queue_class, str) else list(queue_class)
+        async with self._pool.acquire() as conn:
+            # CTE, satırı FOR UPDATE SKIP LOCKED ile seçipclaim öncesi durumunu
+            # taşır (RETURNING yalnız GÜNCEL satırı gördüğü için "recovery mi?"
+            # bilgisi CTE'den gelir); dış UPDATE tek satırı durum geçirir.
+            row = await conn.fetchrow(
+                f"WITH picked AS ("
+                f"  SELECT c.job_id, (c.status = {JOB_STATUS_RUNNING!r}) AS was_recoverable "
+                f"  FROM {self._schema}.jobs c "
+                "  WHERE c.queue_class = ANY($3::text[]) "
+                "    AND ("
+                f"      c.status = ANY($4::text[]) "
+                f"      OR (c.status = {JOB_STATUS_RUNNING!r} "
+                "          AND c.lease_until IS NOT NULL AND c.lease_until < now() "
+                "          AND c.execution_attempt < $5) "
+                "    ) "
+                "    AND (c.deadline_at IS NULL OR c.deadline_at > now()) "
+                "    AND NOT EXISTS ("
+                f"      SELECT 1 FROM {self._schema}.cancel_intents x WHERE x.run_id = c.run_id) "
+                "  ORDER BY c.accepted_at, c.job_id "
+                "  LIMIT 1 "
+                "  FOR UPDATE SKIP LOCKED"
+                ") "
+                f"UPDATE {self._schema}.jobs j SET "
+                f"status = {JOB_STATUS_RUNNING!r}, "
+                "lease_owner = $1, "
+                "lease_until = now() + make_interval(secs => $2), "
+                "execution_attempt = j.execution_attempt + 1, "
+                f"fencing_token = nextval('{self._schema}.job_fencing_seq'), "
+                "started_at = COALESCE(j.started_at, now()) "
+                "FROM picked p "
+                "WHERE j.job_id = p.job_id "
+                "RETURNING j.job_id, j.run_id, j.conversation_id, j.origin_message_id, "
+                "j.payload, j.envelope, j.queue_class, j.deadline_at, j.execution_attempt, "
+                "j.fencing_token, j.accepted_at, j.started_at, p.was_recoverable",
+                worker_id,
+                float(lease_seconds),
+                classes,
+                list(CLAIMABLE_JOB_STATUSES),
+                int(max_execution_attempts),
+            )
+        if row is None:
+            return None
+        return ClaimedJob(
+            job_id=row["job_id"],
+            run_id=str(row["run_id"]),
+            conversation_id=str(row["conversation_id"]),
+            origin_message_id=str(row["origin_message_id"]),
+            payload=json.loads(row["payload"]) if isinstance(row["payload"], str) else row["payload"],
+            envelope=_decode_envelope_json(row["envelope"]),
+            queue_class=row["queue_class"],
+            deadline_at=row["deadline_at"],
+            execution_attempt=int(row["execution_attempt"]),
+            fencing_token=int(row["fencing_token"]),
+            accepted_at=row["accepted_at"],
+            started_at=row["started_at"],
+            recovered=bool(row["was_recoverable"]),
+        )
+
+    async def renew_lease(
+        self, run_id: str, fencing_token: int, lease_seconds: float
+    ) -> bool:
+        """Lease'i SADECE sahibiyseniz uzatır (plan B6: "yalnız sahibiyse").
+
+        Fencing token eşleşmezse (iş yeniden claim edilmişse) veya iş artık
+        running değilse ``False`` döner; çağıran worker yürütmesini bırakmalıdır.
+        """
+
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"UPDATE {self._schema}.jobs SET "
+                "lease_until = now() + make_interval(secs => $3) "
+                "WHERE run_id = $1 AND status = $4 AND fencing_token = $2 "
+                "RETURNING job_id",
+                uuid.UUID(run_id),
+                int(fencing_token),
+                float(lease_seconds),
+                JOB_STATUS_RUNNING,
+            )
+        return row is not None
+
+    async def complete_job(
+        self,
+        run_id: str,
+        result_json: dict[str, Any],
+        fencing_token: int,
+        *,
+        outbox_event: AgentEnvelope | None = None,
+    ) -> TerminalWriteResult:
+        """İşi ATOMİK guard'la tamamlar; terminal olayı aynı transaction'da yazar.
+
+        Guard: ``status='running'`` VE ``fencing_token`` eş VE aktif iptal
+        niyeti yok. Koşul sağlanmazsa hiçbir şey yazılmaz ve ``rejected``
+        döner (gerekçe ``reason``'da): eski denemenin sonucu yeni denemeyi
+        EZMEZ; tamamlanma/iptal yarışında terminal-öncelik kuralı DB
+        kısıtlarıyla uygulanır.
+
+        ``outbox_event`` verilirse event_sequence aynı transaction'da tahsis
+        edilip payload'a yazılır ve outbox kaydı eklenir — terminal sonuçla
+        iş durum değişikliği tek atomik birimdir (plan B5 kuralı).
+        """
+
+        return await self._terminal_transition(
+            run_id,
+            result_json=result_json,
+            fencing_token=fencing_token,
+            target_status="completed",
+            outbox_event=outbox_event,
+        )
+
+    async def fail_job(
+        self,
+        run_id: str,
+        result_json: dict[str, Any],
+        fencing_token: int,
+        *,
+        outbox_event: AgentEnvelope | None = None,
+    ) -> TerminalWriteResult:
+        """İşi ``complete_job`` ile AYNI guard'la başarısız kılar."""
+
+        return await self._terminal_transition(
+            run_id,
+            result_json=result_json,
+            fencing_token=fencing_token,
+            target_status="failed",
+            outbox_event=outbox_event,
+        )
+
+    async def _terminal_transition(
+        self,
+        run_id: str,
+        *,
+        result_json: dict[str, Any],
+        fencing_token: int,
+        target_status: str,
+        outbox_event: AgentEnvelope | None,
+    ) -> TerminalWriteResult:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                # ÖN KİLİT (W5 bütünleştirme yarış düzeltmesi): satırı guard'dan
+                # ÖNCE FOR UPDATE ile kilitle. READ COMMITTED'ta UPDATE'in
+                # snapshot'ı statement başında alınır; kilit beklemesi sırasında
+                # commit olan bir cancel intent guard'ın NOT EXISTS'ine görünmez
+                # ve 'intent-önce → complete kazandı' ihlali doğardı. record_
+                # cancel_intent de jobs satırını FOR UPDATE ile kilitlediği için
+                # ön kilit iki transaction'ı satır üstünde serileştirir: guard
+                # HER ZAMAN niyetin commit kararından sonra değerlendirilir.
+                locked = await conn.fetchrow(
+                    f"SELECT job_id FROM {self._schema}.jobs WHERE run_id = $1 FOR UPDATE",
+                    uuid.UUID(run_id),
+                )
+                if locked is None:
+                    return TerminalWriteResult(outcome="rejected", reason="not_found")
+                updated = await conn.fetchrow(
+                    f"UPDATE {self._schema}.jobs SET "
+                    f"status = $4, result_json = $2::jsonb, "
+                    "lease_owner = NULL, lease_until = NULL "
+                    "WHERE run_id = $1 AND status = $3 AND fencing_token = $5 "
+                    "AND NOT EXISTS ("
+                    f"  SELECT 1 FROM {self._schema}.cancel_intents c WHERE c.run_id = $1) "
+                    "RETURNING job_id",
+                    uuid.UUID(run_id),
+                    json.dumps(result_json, ensure_ascii=False),
+                    JOB_STATUS_RUNNING,
+                    target_status,
+                    int(fencing_token),
+                )
+                if updated is None:
+                    reason = await self._diagnose_rejection(conn, run_id, fencing_token)
+                    return TerminalWriteResult(outcome="rejected", reason=reason)
+                if outbox_event is not None:
+                    await self._write_outbox_with_sequence(conn, run_id, outbox_event)
+                return TerminalWriteResult(outcome=target_status, reason=None)
+
+    async def _diagnose_rejection(
+        self, conn: asyncpg.Connection, run_id: str, fencing_token: int
+    ) -> str:
+        """Red gerekçesini ayırt eder (izlenebilirlik; davranış değişmez)."""
+
+        row = await conn.fetchrow(
+            f"SELECT status, fencing_token FROM {self._schema}.jobs WHERE run_id = $1",
+            uuid.UUID(run_id),
+        )
+        if row is None:
+            return "not_found"
+        if row["status"] != JOB_STATUS_RUNNING:
+            return "not_running"
+        if int(row["fencing_token"]) != int(fencing_token):
+            return "fencing_mismatch"
+        return "cancel_requested"
+
+    async def _write_outbox_with_sequence(
+        self, conn: asyncpg.Connection, run_id: str, envelope: AgentEnvelope
+    ) -> None:
+        """Terminal olayı sıra tahsisiyle outbox'a yazar (B5 atomik sıra deseni)."""
+
+        sequence = await self._allocate_event_sequence(conn, run_id)
+        payload = dict(envelope.payload)
+        payload["event_sequence"] = sequence
+        stamped = envelope.model_copy(update={"payload": payload})
+        spec_entry = MESSAGE_TYPE_REGISTRY[stamped.message_type]
+        await conn.execute(
+            f"INSERT INTO {self._schema}.outbox_events "
+            "(outbox_id, message_id, message_type, exchange, routing_key, envelope, created_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)",
+            uuid.uuid4(),
+            uuid.UUID(stamped.message_id),
+            stamped.message_type,
+            spec_entry.exchange,
+            spec_entry.routing_key,
+            stamped.model_dump_json(exclude_none=True),
+            datetime.now(timezone.utc),
+        )
+
+    async def _allocate_event_sequence(self, conn: asyncpg.Connection, run_id: str) -> int:
+        """Run başına atomik monoton sequence (migration 0002 tablosu)."""
+
+        row = await conn.fetchrow(
+            f"INSERT INTO {self._schema}.run_event_sequences (run_id, last_sequence, updated_at) "
+            "VALUES ($1, 1, now()) "
+            f"ON CONFLICT (run_id) DO UPDATE SET "
+            f"last_sequence = {self._schema}.run_event_sequences.last_sequence + 1, "
+            "updated_at = now() "
+            "RETURNING last_sequence",
+            uuid.UUID(run_id),
+        )
+        return int(row["last_sequence"])
+
+    async def requeue_job(
+        self,
+        run_id: str,
+        fencing_token: int,
+        *,
+        queue_class: str | None = None,
+        reset_attempt: bool = False,
+    ) -> bool:
+        """İşi guard'la bekleyen durumuna döndürür (terminal DEĞİL).
+
+        Kullanımlar: ``needs_input`` terminali (iş beklemeye döner, checkpoint
+        korunur — resume talebi yeniden claim eder) ve derin araştırma
+        ertelemesi (``queue_class='research'`` — plan B6 ayrı kapasite).
+        ``reset_attempt`` erteleme içindir: rota sonrası yürütme BAŞLAMADIYSA
+        deneme sayacı recovery sınırını tüketmemeli; fencing_token monoton
+        kaldığı için güvenlidir.
+        """
+
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"UPDATE {self._schema}.jobs SET "
+                f"status = {JOB_STATUS_ACCEPTED!r}, lease_owner = NULL, lease_until = NULL, "
+                "queue_class = COALESCE($3::text, queue_class), "
+                f"execution_attempt = {'0' if reset_attempt else 'execution_attempt'} "
+                "WHERE run_id = $1 AND status = $2 AND fencing_token = $4 "
+                "RETURNING job_id",
+                uuid.UUID(run_id),
+                JOB_STATUS_RUNNING,
+                queue_class,
+                int(fencing_token),
+            )
+        return row is not None
+
+    async def release_job_lease(self, run_id: str, fencing_token: int) -> bool:
+        """Yürütme bırakılırken lease'i hemen kurtarılabilir kılar (terminal yazmaz).
+
+        ``lease_until = now()``: iş running kalır ama claim'in recovery koşulu
+        anında eşleşir; transient hatada lease süresi kadar bekleme olmaz.
+        """
+
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"UPDATE {self._schema}.jobs SET "
+                "lease_owner = NULL, lease_until = now() "
+                "WHERE run_id = $1 AND status = $3 AND fencing_token = $2 "
+                "RETURNING job_id",
+                uuid.UUID(run_id),
+                int(fencing_token),
+                JOB_STATUS_RUNNING,
+            )
+        return row is not None
+
+    async def fail_expired_jobs_beyond_attempts(
+        self,
+        max_execution_attempts: int,
+        *,
+        error_code: str = "provider_error",
+        error_message: str = "yürütme denemesi sınırı aşıldı; iş recovery ile kapatıldı",
+    ) -> list[str]:
+        """Lease'i bitmiş, deneme sınırını aşmış işleri kalıcı olarak kapatır.
+
+        SINIRLI recovery'nin diğer yüzü: sınırı aşan iş sonsuz re-claim
+        döngüsüne girmez. Guard: ``status='running'`` VE ``lease_until`` bitmiş
+        VE ``execution_attempt >= max`` VE aktif iptal niyeti YOK (iptal niyeti
+        varsa terminal 'cancelled' geçişini B7'nin koşullu UPDATE'i üretir).
+        Terminal başarısızlık olayı iş durumuyla AYNI transaction'da outbox'a
+        yazılır (plan B5 kuralı).
+        """
+
+        closed: list[str] = []
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT run_id, conversation_id, envelope, origin_message_id, "
+                f"execution_attempt FROM {self._schema}.jobs c "
+                "WHERE status = $1 AND lease_until IS NOT NULL AND lease_until < now() "
+                "AND execution_attempt >= $2 "
+                "AND NOT EXISTS ("
+                f"  SELECT 1 FROM {self._schema}.cancel_intents x WHERE x.run_id = c.run_id)",
+                JOB_STATUS_RUNNING,
+                int(max_execution_attempts),
+            )
+            for row in rows:
+                run_id = str(row["run_id"])
+                attempt = int(row["execution_attempt"])
+                # Kimlik alanları kabul zarfından okunur (jobs tablosunda
+                # correlation_id kolonu yoktur; zarf tek kaynaktır).
+                stored = _decode_envelope_json(row["envelope"])
+                async with conn.transaction():
+                    updated = await conn.fetchrow(
+                        f"UPDATE {self._schema}.jobs SET "
+                        "status = $3, result_json = $4::jsonb, "
+                        "lease_owner = NULL, lease_until = NULL "
+                        "WHERE run_id = $1 AND status = $2 "
+                        "AND execution_attempt >= $5 "
+                        "AND lease_until IS NOT NULL AND lease_until < now() "
+                        "AND NOT EXISTS ("
+                        f"  SELECT 1 FROM {self._schema}.cancel_intents c WHERE c.run_id = $1) "
+                        "RETURNING job_id",
+                        row["run_id"],
+                        JOB_STATUS_RUNNING,
+                        "failed",
+                        json.dumps(
+                            {
+                                "outcome": "failed",
+                                "error_code": error_code,
+                                "error_message": error_message,
+                                "execution_attempt": attempt,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        int(max_execution_attempts),
+                    )
+                    if updated is None:
+                        continue  # eşzamanlı reaper/worker kazandı
+                    envelope = AgentEnvelope(
+                        message_id=str(uuid.uuid4()),
+                        message_type="agent.run.failed",
+                        schema_version=SCHEMA_VERSION,
+                        run_id=run_id,
+                        conversation_id=str(row["conversation_id"]),
+                        correlation_id=stored.correlation_id,
+                        causation_id=str(row["origin_message_id"]),
+                        occurred_at=format_utc(datetime.now(timezone.utc)),
+                        producer=Producer.AGENT_PY,
+                        payload={
+                            "event_sequence": 0,
+                            "execution_attempt": attempt,
+                            "error_code": error_code,
+                            "error_message": error_message,
+                        },
+                    )
+                    await self._write_outbox_with_sequence(conn, run_id, envelope)
+                closed.append(run_id)
+        if closed:
+            logger.warning(
+                "deneme sınırını aşan %d iş kalıcı başarısızla kapatıldı: %s",
+                len(closed),
+                closed,
+            )
+        return closed
+
+    async def has_cancel_intent(self, run_id: str) -> bool:
+        """Aktif iptal niyeti var mı? (worker'ın güvenli sınır kontrolü okuması.)"""
+
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT run_id FROM {self._schema}.cancel_intents WHERE run_id = $1",
+                uuid.UUID(run_id),
+            )
+        return row is not None
+
+    async def fetch_job_full(self, run_id: str) -> asyncpg.Record | None:
+        """İş satırının tamamı (lease/attempt/fencing/result dahil) — gözlem ve test."""
+
+        async with self._pool.acquire() as conn:
+            return await conn.fetchrow(
+                f"SELECT job_id, run_id, conversation_id, origin_message_id, payload_hash, "
+                "status, queue_class, lease_owner, lease_until, execution_attempt, "
+                "fencing_token, result_json, deadline_at, accepted_at, started_at "
+                f"FROM {self._schema}.jobs WHERE run_id = $1",
+                uuid.UUID(run_id),
+            )
+
+    async def count_cancel_intents(self) -> int:
+        async with self._pool.acquire() as conn:
+            return await conn.fetchval(f"SELECT count(*) FROM {self._schema}.cancel_intents")
+
+    async def next_fencing_token(self) -> int:
+        """Dizinin güncel değerini okumadan BİR SONRAKİ token'ı tahsis eder (test/gözlem)."""
+
+        async with self._pool.acquire() as conn:
+            return int(
+                await conn.fetchval(f"SELECT nextval('{self._schema}.job_fencing_seq')")
             )
 
     # ------------------------------------------------------------- gözlem için

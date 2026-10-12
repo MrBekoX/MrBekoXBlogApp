@@ -1,0 +1,10 @@
+{
+  "source_id": "RMQ-CONFIRMS",
+  "url": "https://www.rabbitmq.com/docs/confirms",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/rmq-confirms.md",
+  "notes_sha256": "fd7b9ae5f056dbc8fe2c1744781f9cf6cd0143d6b139695396405620c7a134ca"
+}

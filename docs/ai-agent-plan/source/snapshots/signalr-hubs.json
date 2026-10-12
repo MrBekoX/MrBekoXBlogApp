@@ -1,0 +1,10 @@
+{
+  "source_id": "SIGNALR-HUBS",
+  "url": "https://learn.microsoft.com/en-us/aspnet/core/signalr/hubs?view=aspnetcore-10.0",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/signalr-hubs.md",
+  "notes_sha256": "c185cfbad55748bd5783f806812c079d22e1664398a3591f4af4ffd4077f410f"
+}

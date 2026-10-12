@@ -1,0 +1,37 @@
+{
+  "message_id": "11111111-1111-4111-8111-111111111112",
+  "message_type": "agent.execute.requested",
+  "schema_version": 1,
+  "occurred_at": "2026-10-11T09:00:00Z",
+  "producer": "backend-net",
+  "payload": {
+    "user_ref": "user-42",
+    "question": "Secili paragrafi aciklar misin?",
+    "language": "tr",
+    "mode_preference": "analysis",
+    "budget_profile": "analysis-default",
+    "article_id": "my-blog-post",
+    "article_revision": 7,
+    "article_content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "context_snapshot_reference": "agent/article-snapshot/my-blog-post/7",
+    "selected_text": "Onemli paragraf",
+    "conversation_history": [
+      {
+        "role": "user",
+        "content": "Merhaba",
+        "created_at": "2026-10-11T08:58:00Z"
+      },
+      {
+        "role": "assistant",
+        "content": "Merhaba, nasil yardimci olabilirim?",
+        "created_at": "2026-10-11T08:58:05Z"
+      }
+    ]
+  },
+  "correlation_id": "ccccccc1-0000-4000-8000-000000000003",
+  "run_id": "aaaaaaa1-0000-4000-8000-000000000001",
+  "conversation_id": "bbbbbbb1-0000-4000-8000-000000000002",
+  "causation_id": "ddddddd1-0000-4000-8000-000000000004",
+  "deadline_at": "2026-10-11T09:06:00Z",
+  "trace_context": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}

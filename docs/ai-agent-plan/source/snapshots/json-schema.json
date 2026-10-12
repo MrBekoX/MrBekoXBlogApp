@@ -1,0 +1,10 @@
+{
+  "source_id": "JSON-SCHEMA",
+  "url": "https://json-schema.org/understanding-json-schema/reference/object",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/json-schema.md",
+  "notes_sha256": "5ce51f0231c96b4c80bb065fa3540e03f45345b713aec611f90a7d28638df64d"
+}

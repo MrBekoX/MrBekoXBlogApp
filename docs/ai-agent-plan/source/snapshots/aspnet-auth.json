@@ -1,0 +1,10 @@
+{
+  "source_id": "ASPNET-AUTH",
+  "url": "https://learn.microsoft.com/en-us/aspnet/core/security/authorization/roles?view=aspnetcore-10.0",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/aspnet-auth.md",
+  "notes_sha256": "23b3ea62b294106acd803251dd8e4c163ad21bf20d7476d75093d9bfd5377224"
+}

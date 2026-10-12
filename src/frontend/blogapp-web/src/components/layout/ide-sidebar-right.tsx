@@ -61,7 +61,7 @@ export async function IdeSidebarRight() {
               className="flex items-center gap-3 p-2 rounded bg-white/5 hover:bg-white/10 text-xs transition-colors border border-ide-border/50 text-gray-400 hover:text-white font-mono"
             >
               <Github className="w-4 h-4 text-gray-500 shrink-0" />
-              Github Repos
+              Github
             </a>
             <a
               href={LINKEDIN_URL}
@@ -70,7 +70,7 @@ export async function IdeSidebarRight() {
               className="flex items-center gap-3 p-2 rounded bg-white/5 hover:bg-white/10 text-xs transition-colors border border-ide-border/50 text-gray-400 hover:text-white font-mono"
             >
               <Linkedin className="w-4 h-4 text-gray-500 shrink-0" />
-              LinkedIn Pro
+              LinkedIn
             </a>
           </div>
         </div>

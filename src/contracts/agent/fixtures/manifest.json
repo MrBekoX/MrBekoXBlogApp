@@ -1,0 +1,244 @@
+{
+  "contract_version": 1,
+  "description": "B1 ortak dogrulama fixture'lari. Iki dil (dotnet ve python) ayni dosyalari okur; expect/reason/schema_expect beklentileri her iki dogrulayici icin de gecerlidir. schema_expect=pass, JSON Schema'nin ifade edemedigi kurallarin (yon/uretici uyumu, run kimligi ve deadline zorunlulugu) dogrulayici tarafinda uygulanir.",
+  "categories": [
+    "missing_field",
+    "unknown_version",
+    "unknown_type",
+    "oversized",
+    "wrong_type",
+    "bad_format",
+    "extra_field",
+    "producer_mismatch"
+  ],
+  "cases": [
+    {
+      "file": "valid/agent.execute.requested.json",
+      "expect": "valid",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.execute.requested.with_article.json",
+      "expect": "valid",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.cancel.requested.json",
+      "expect": "valid",
+      "message_type": "agent.cancel.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.resume.requested.json",
+      "expect": "valid",
+      "message_type": "agent.resume.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.action.result.accepted.json",
+      "expect": "valid",
+      "message_type": "agent.action.result",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.action.result.rejected.json",
+      "expect": "valid",
+      "message_type": "agent.action.result",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.accepted.json",
+      "expect": "valid",
+      "message_type": "agent.run.accepted",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.mode_selected.json",
+      "expect": "valid",
+      "message_type": "agent.run.mode_selected",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.progressed.json",
+      "expect": "valid",
+      "message_type": "agent.run.progressed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.needs_input.json",
+      "expect": "valid",
+      "message_type": "agent.run.needs_input",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.completed.json",
+      "expect": "valid",
+      "message_type": "agent.run.completed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.partially_completed.json",
+      "expect": "valid",
+      "message_type": "agent.run.partially_completed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.failed.json",
+      "expect": "valid",
+      "message_type": "agent.run.failed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.cancelled.json",
+      "expect": "valid",
+      "message_type": "agent.run.cancelled",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.action.proposed.json",
+      "expect": "valid",
+      "message_type": "agent.action.proposed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/content.article.changed.json",
+      "expect": "valid",
+      "message_type": "content.article.changed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/content.article.changed.unpublished.json",
+      "expect": "valid",
+      "message_type": "content.article.changed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/content.sync.batch.json",
+      "expect": "valid",
+      "message_type": "content.sync.batch",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/content.sync.completed.json",
+      "expect": "valid",
+      "message_type": "content.sync.completed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/content.profile.changed.json",
+      "expect": "valid",
+      "message_type": "content.profile.changed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/content.project.changed.json",
+      "expect": "valid",
+      "message_type": "content.project.changed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "invalid/missing_required_field.json",
+      "expect": "invalid",
+      "reason": "missing_field",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/missing_envelope_field.json",
+      "expect": "invalid",
+      "reason": "missing_field",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/missing_run_identity.json",
+      "expect": "invalid",
+      "reason": "missing_field",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "invalid/missing_deadline_for_execute.json",
+      "expect": "invalid",
+      "reason": "missing_field",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "invalid/unknown_schema_version.json",
+      "expect": "invalid",
+      "reason": "unknown_version",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/unknown_message_type.json",
+      "expect": "invalid",
+      "reason": "unknown_type",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "invalid/oversized_payload.json",
+      "expect": "invalid",
+      "reason": "oversized",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/payload_not_object.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/wrong_field_type.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/bad_uuid.json",
+      "expect": "invalid",
+      "reason": "bad_format",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/non_utc_timestamp.json",
+      "expect": "invalid",
+      "reason": "bad_format",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/extra_envelope_field.json",
+      "expect": "invalid",
+      "reason": "extra_field",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/extra_payload_field.json",
+      "expect": "invalid",
+      "reason": "extra_field",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/producer_direction_mismatch.json",
+      "expect": "invalid",
+      "reason": "producer_mismatch",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "invalid/malformed_json.json",
+      "expect": "invalid",
+      "reason": "bad_format",
+      "schema_expect": "skip"
+    },
+    {
+      "file": "invalid/bad_enum_value.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/answer_and_report.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "schema_expect": "fail"
+    }
+  ]
+}

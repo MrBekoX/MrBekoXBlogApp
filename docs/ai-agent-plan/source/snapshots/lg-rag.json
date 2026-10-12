@@ -1,0 +1,10 @@
+{
+  "source_id": "LG-RAG",
+  "url": "https://docs.langchain.com/oss/python/langgraph/agentic-rag",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/lg-rag.md",
+  "notes_sha256": "d176c5943ede9e40a1cb721318661a5c9c500e708d4eaa983ec09fd43ff2ba71"
+}

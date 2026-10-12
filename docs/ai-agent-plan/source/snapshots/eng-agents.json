@@ -1,0 +1,10 @@
+{
+  "source_id": "ENG-AGENTS",
+  "url": "https://www.anthropic.com/engineering/building-effective-agents",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "engineering/eng-agents.md",
+  "notes_sha256": "041c357163670c08d592e5c3f431fb3cdf75ed06a43671617bc5c8b9fcda179d"
+}

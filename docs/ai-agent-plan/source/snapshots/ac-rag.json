@@ -1,0 +1,10 @@
+{
+  "source_id": "AC-RAG",
+  "url": "https://arxiv.org/abs/2005.11401",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "academic/ac-rag.md",
+  "notes_sha256": "6ce63161c040369cd0dbb1862293cad930231324d979b4e40b4cdcae50a97042"
+}

@@ -1,0 +1,10 @@
+{
+  "source_id": "RMQ-DOTNET",
+  "url": "https://www.rabbitmq.com/client-libraries/dotnet-api-guide",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/rmq-dotnet.md",
+  "notes_sha256": "3541d07429b2415915eec4d167b9ccdefa5c043265f23de535e153cc9cfb500c"
+}

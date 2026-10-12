@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:agent.resume.requested",
+  "title": "AgentResumeRequestedPayloadV1",
+  "description": "Kesinti sonrası devam isteği; checkpoint referansı zorunludur. user_ref backend kimliği doğruladıktan sonra ekler; tek başına yetki kanıtı değildir.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkpoint_reference", "user_ref"],
+  "properties": {
+    "checkpoint_reference": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "user_ref": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" }
+  }
+}

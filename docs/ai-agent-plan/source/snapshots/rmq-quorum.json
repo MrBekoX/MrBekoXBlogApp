@@ -1,0 +1,10 @@
+{
+  "source_id": "RMQ-QUORUM",
+  "url": "https://www.rabbitmq.com/docs/quorum-queues",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/rmq-quorum.md",
+  "notes_sha256": "5f37fff95afa0e4c663f2f9e2a98ab12ff479f3a280918107eab41238ea18e91"
+}

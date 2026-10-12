@@ -1,0 +1,10 @@
+{
+  "source_id": "RMQ-DLX",
+  "url": "https://www.rabbitmq.com/docs/dlx",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/rmq-dlx.md",
+  "notes_sha256": "48c4b504052e4ead51882e6ec8fc279b89050f84365113b5583d62315eefa243"
+}

@@ -1,0 +1,10 @@
+{
+  "source_id": "PG-ISOLATION",
+  "url": "https://www.postgresql.org/docs/18/transaction-iso.html",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/pg-isolation.md",
+  "notes_sha256": "bb2c1289fa9255e9f959233f3a1a3e109f2381d70e94d3a401180a56ba138a48"
+}

@@ -1,0 +1,10 @@
+{
+  "source_id": "PYDANTIC-MODELS",
+  "url": "https://pydantic.dev/docs/validation/latest/concepts/models/",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/pydantic-models.md",
+  "notes_sha256": "700e9fa5aa1f89ad1b0684bdcf3a4173bf12f343b09081353deedba107dd8267"
+}

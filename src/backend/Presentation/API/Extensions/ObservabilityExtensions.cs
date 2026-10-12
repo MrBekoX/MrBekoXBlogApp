@@ -1,4 +1,5 @@
 using BlogApp.BuildingBlocks.Options;
+using BlogApp.Presentation.Api.Health;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Serilog;
@@ -68,6 +69,19 @@ public static class ObservabilityExtensions
                 name: "redis",
                 tags: new[] { "cache", "ready" });
         }
+
+        // B11 agent sağlık ayrımı (plan satır 561): broker readiness ve outbox backlog
+        // kontrolleri "ready" tag'ine BAĞLANMAZ — yalnız /health/agent (tag "agent")
+        // altında raporlanır; broker kapalıyken uygulama ayakta kalır ve kabul yolu
+        // DB outbox'ıyla çalışır (K3). Bu yüzden iki kontrol broker/agent servislerinin
+        // kayıtlı olmasına koşullu DEĞİLDİR: yoksa da Degraded/Unhealthy raporlar.
+        services.Configure<AgentHealthOptions>(configuration.GetSection(AgentHealthOptions.SectionName));
+        healthChecks.AddCheck<AgentBrokerHealthCheck>(
+            "agent-broker",
+            tags: new[] { "agent", "broker" });
+        healthChecks.AddCheck<AgentOutboxBacklogHealthCheck>(
+            "agent-outbox-backlog",
+            tags: new[] { "agent", "outbox" });
 
         return services;
     }

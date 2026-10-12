@@ -1,0 +1,10 @@
+{
+  "source_id": "FASTAPI-LIFESPAN",
+  "url": "https://fastapi.tiangolo.com/advanced/events/",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/fastapi-lifespan.md",
+  "notes_sha256": "dc448708e1c3a24cc913f137048eed8b29aeff8c7305c59d5cdbe3b560f5b86f"
+}

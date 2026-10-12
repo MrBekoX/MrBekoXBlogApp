@@ -1,0 +1,26 @@
+{
+  "message_id": "44444444-4444-4444-8444-444444444443",
+  "message_type": "content.sync.batch",
+  "schema_version": 1,
+  "occurred_at": "2026-10-11T09:00:00Z",
+  "producer": "backend-net",
+  "payload": {
+    "sync_id": "sync-2026-10-11-001",
+    "batch_index": 0,
+    "total_batches": 3,
+    "items": [
+      {
+        "article_id": "post-a",
+        "article_revision": 12,
+        "content_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+      },
+      {
+        "article_id": "post-b",
+        "article_revision": 4,
+        "content_hash": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+      }
+    ]
+  },
+  "correlation_id": "ccccccc1-0000-4000-8000-000000000003",
+  "trace_context": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}

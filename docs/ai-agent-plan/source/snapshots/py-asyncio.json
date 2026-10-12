@@ -1,0 +1,10 @@
+{
+  "source_id": "PY-ASYNCIO",
+  "url": "https://docs.python.org/3.13/library/asyncio-task.html",
+  "checked_on": "2026-10-11",
+  "kind": "curated_reference_notes",
+  "original_page_cached": false,
+  "original_content_sha256": null,
+  "notes_file": "official/py-asyncio.md",
+  "notes_sha256": "554bacd7af38c6a4573b66601556071c4e07d1b0975ccd88c9967b0ad8fb552e"
+}

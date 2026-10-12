@@ -22,6 +22,73 @@ namespace BlogApp.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("BlogApp.Core.Domain.Entities.AgentContentSync", b =>
+                {
+                    b.Property<Guid>("SyncId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("sync_id");
+
+                    b.Property<int>("BatchSize")
+                        .HasColumnType("integer")
+                        .HasColumnName("batch_size");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ItemCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("item_count");
+
+                    b.Property<long>("RevisionWatermark")
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision_watermark");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<int>("TotalBatches")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_batches");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text");
+
+                    b.HasKey("SyncId");
+
+                    b.HasIndex("StartedAt")
+                        .HasDatabaseName("IX_agent_content_syncs_started_at");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_agent_content_syncs_status");
+
+                    b.ToTable("agent_content_syncs", (string)null);
+                });
+
             modelBuilder.Entity("BlogApp.Core.Domain.Entities.AgentEventInbox", b =>
                 {
                     b.Property<string>("ConsumerName")
@@ -217,6 +284,12 @@ namespace BlogApp.Infrastructure.Persistence.Migrations
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<long>("ContentRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("content_revision");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");

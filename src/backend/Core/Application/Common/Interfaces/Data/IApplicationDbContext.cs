@@ -22,6 +22,9 @@ public interface IApplicationDbContext
     /// <summary>Agent olay tüketim idempotency kayıtları (B5).</summary>
     DbSet<AgentEventInbox> AgentEventInboxes { get; }
 
+    /// <summary>İlk içerik senkronizasyonu watermark kayıtları (B8, ADDITIVE).</summary>
+    DbSet<AgentContentSync> AgentContentSyncs { get; }
+
     /// <summary>Transactional outbox kayıtları (B3).</summary>
     DbSet<OutboxMessage> OutboxMessages { get; }
 

@@ -100,7 +100,7 @@ public sealed class AgentOutboxDatabaseFixture : IAsyncLifetime
         return user;
     }
 
-    public async Task<BlogPost> SeedPostAsync(Guid authorId, string title, PostStatus status)
+    public async Task<BlogPost> SeedPostAsync(Guid authorId, string title, PostStatus status, long contentRevision = 0)
     {
         await using var context = CreateContext();
         var post = new BlogPost
@@ -110,6 +110,7 @@ public sealed class AgentOutboxDatabaseFixture : IAsyncLifetime
             Content = $"# {title}\n\nBu B3 test içeriğidir. Agent soruları için kullanılır.",
             Status = status,
             AuthorId = authorId,
+            ContentRevision = contentRevision,
         };
         if (status == PostStatus.Published)
         {

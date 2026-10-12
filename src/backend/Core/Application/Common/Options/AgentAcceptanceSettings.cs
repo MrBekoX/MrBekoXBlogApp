@@ -15,6 +15,12 @@ public sealed class AgentAcceptanceSettings
     /// <summary>Sahip başına eşzamanlı (çözümlenmemiş) iş üst sınırı; limit kontrolü kabulde uygulanır.</summary>
     public int MaxActiveRunsPerOwner { get; set; } = 3;
 
+    /// <summary>Sistem düzeyi eşzamanlı (çözümlenmemiş) iş üst sınırı (B7 backpressure):
+    /// tek kullanıcının kotası boş olsa bile toplam kapasite aşıldığında yeni iş
+    /// kabul edilmez; kuyruk derinliğine ek olarak kabul edilmiş iş backlog'una
+    /// kapı düzeyinde sınır koyar (plan satır 422-423).</summary>
+    public int MaxActiveRunsTotal { get; set; } = 100;
+
     /// <summary>Mod bazlı iş bitiş zamanı (dakika); K6: deadline sahibi backend'dir.</summary>
     public int FastDeadlineMinutes { get; set; } = 2;
 

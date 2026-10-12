@@ -1,5 +1,6 @@
 using BlogApp.Core.Application.Common.BusinessRuleEngine;
 using BlogApp.Core.Application.Common.Errors;
+using BlogApp.Core.Application.Common.Interfaces.Messaging;
 using BlogApp.Core.Application.Common.Interfaces.Persistence;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Models;
@@ -15,7 +16,8 @@ public class DeletePostCommandHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     IPostBusinessRules postBusinessRules,
-    ICacheService cacheService) : IRequestHandler<DeletePostCommandRequest, Result<Unit>>
+    ICacheService cacheService,
+    IAgentContentEventService contentEvents) : IRequestHandler<DeletePostCommandRequest, Result<Unit>>
 {
     public async Task<Result<Unit>> Handle(DeletePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -35,6 +37,9 @@ public class DeletePostCommandHandler(
             return Result<Unit>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
         }
 
+        // B8: yayımlanmış makalenin silinmesi kaldırma TOMBSTONE'u üretir; taslak silinmesi olay üretmez.
+        var contentBefore = contentEvents.Observe(post);
+
         // Soft delete
         post.IsDeleted = true;
         post.DeletedAt = DateTime.UtcNow;
@@ -42,6 +47,7 @@ public class DeletePostCommandHandler(
 
         try
         {
+            await contentEvents.RecordChangeAsync(post, contentBefore, cancellationToken);
             await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }

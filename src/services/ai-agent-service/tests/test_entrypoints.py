@@ -278,8 +278,16 @@ def test_resume_restores_route_from_checkpoint_without_rerouting() -> None:
     assert model.call_count == 1
 
     checkpoint_id, payload = conftest.run(store.load_latest("run-1"))
-    restored = PreparedRun.model_validate_json(payload)
+    # Üretim yazımı sürümlü zarfladır (W5 bulgusu 3): payload zarf JSON'u;
+    # PreparedRun zarfın gövdesinden çözümlenir.
+    from agent_core.checkpoint.models import CheckpointEnvelope
+
+    envelope = CheckpointEnvelope.model_validate_json(payload.decode("utf-8"))
+    assert checkpoint_id == envelope.checkpoint_id
     assert checkpoint_id == "prepared:run"
+    assert envelope.run_id == "run-1"
+    assert envelope.execution_id == prepared.execution_id
+    restored = PreparedRun.model_validate_json(envelope.payload_bytes().decode("utf-8"))
     assert restored.route == prepared.route
     assert restored.context == prepared.context
 

@@ -207,15 +207,19 @@ def test_prepare_and_route_uses_router_model_only_for_ambiguity() -> None:
 
 def test_prepared_run_checkpoint_roundtrips_a5_route_fields() -> None:
     from agent_core.adapters.test_doubles import FakeCheckpointStore
+    from agent_core.checkpoint.models import CheckpointEnvelope
     from agent_core.entrypoints import PreparedRun
 
     store = FakeCheckpointStore()
     prepared = run(prepare_and_route(make_ambiguous_context(), checkpoint=store))
 
     checkpoint_id, payload = run(store.load_latest(prepared.context.run_id))
-    restored = PreparedRun.model_validate_json(payload)
+    # Üretim yazımı sürümlü zarfladır (W5 bulgusu 3): PreparedRun zarf gövdesinden çözümlenir.
+    envelope = CheckpointEnvelope.model_validate_json(payload.decode("utf-8"))
+    restored = PreparedRun.model_validate_json(envelope.payload_bytes().decode("utf-8"))
 
     assert checkpoint_id == "prepared:run"
+    assert envelope.execution_id == prepared.execution_id
     assert restored.route == prepared.route
     assert restored.route.budget_profile_id == "router-profile"
     assert restored.route.intent.value == "summarize"  # kural kararı: özet sınıfı soru

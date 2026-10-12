@@ -1,4 +1,5 @@
 using BlogApp.Core.Application.Common.Errors;
+using BlogApp.Core.Application.Common.Interfaces.Messaging;
 using BlogApp.Core.Application.Common.Interfaces.Persistence;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Models;
@@ -15,7 +16,8 @@ public class CreatePostCommandHandler(
     ICurrentUserService currentUserService,
     ITagService tagService,
     ICacheService cacheService,
-    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<CreatePostCommandRequest, Result<Guid>>
+    IHtmlSanitizerService htmlSanitizer,
+    IAgentContentEventService contentEvents) : IRequestHandler<CreatePostCommandRequest, Result<Guid>>
 {
     public async Task<Result<Guid>> Handle(CreatePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -82,6 +84,11 @@ public class CreatePostCommandHandler(
         };
 
         post.CalculateReadingTime();
+
+        // B8: yayımlanarak oluşturulan makale için içerik olayı, makale kaydıyla AYNI
+        // SaveChanges transaction'ına yazılır (taslak oluşturma olay üretmez).
+        var contentBefore = contentEvents.Observe(post);
+        await contentEvents.RecordChangeAsync(post, contentBefore, cancellationToken);
 
         await unitOfWork.PostsWrite.AddAsync(post, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);

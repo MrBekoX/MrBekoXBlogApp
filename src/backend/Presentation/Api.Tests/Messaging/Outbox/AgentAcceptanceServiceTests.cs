@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Features.AgentFeature.Commands.AcceptAgentRunCommand;
@@ -123,6 +124,62 @@ public class AgentAcceptanceServiceTests : IAsyncLifetime
 
         // snapshot'ta yayınlanma zamanı UTC ISO biçiminde (D008 anlam sözlüğü)
         Assert.Contains("published_at", run.ContextSnapshotJson);
+    }
+
+    [Fact]
+    public async Task Accept_WithPublishedArticle_ExecuteCommandCarriesArticleTriple()
+    {
+        // W5 bulgusu 4i: execute komutu makale bağlamını article_id/article_revision/
+        // article_content_hash ÜÇLÜSÜ halinde taşır (B1 all-or-none); worker'ın B8
+        // stale komut guard'ı bu üçlüyle çalışır. Kabul snapshot'ı da revision'ı yazar.
+        var user = await _fixture.SeedUserAsync("triple-user");
+        var post = await _fixture.SeedPostAsync(user.Id, "B3 Üçlü Testi", PostStatus.Published, contentRevision: 7);
+        var handler = CreateHandler(user.Id);
+
+        var result = await handler.Handle(ValidRequest("triple-1", post.Id), CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.ErrorDetail?.ToString() ?? "bilinmeyen hata");
+
+        await using var context = _fixture.CreateContext();
+        var message = context.OutboxMessages.Single();
+        var payload = JsonDocument.Parse(message.EnvelopeJson).RootElement.GetProperty("payload");
+
+        Assert.Equal(post.Id.ToString("D"), payload.GetProperty("article_id").GetString());
+        Assert.Equal(7, payload.GetProperty("article_revision").GetInt64());
+        var expectedHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(post.Content))).ToLowerInvariant();
+        Assert.Equal(expectedHash, payload.GetProperty("article_content_hash").GetString());
+
+        // Saklanan zarf üçlüyle B1 sözleşme doğrulayıcısından geçer.
+        var validation = new AgentContractValidator(new AgentMessagingSettings()).Validate(message.EnvelopeJson);
+        Assert.True(validation.IsValid, $"zarf doğrulaması: {validation.Error?.ToString()}");
+
+        // Kabul snapshot'ı revizyonu yazar (yalnız hash/published_at değil).
+        var run = context.AgentRuns.Single(r => r.Id == result.Value!.RunId);
+        var snapshot = JsonDocument.Parse(run.ContextSnapshotJson).RootElement;
+        Assert.Equal("7", snapshot.GetProperty("article_revision").GetString());
+    }
+
+    [Fact]
+    public void Compose_WithPartialArticleTriple_IsRejectedWithoutEnvelope()
+    {
+        // all-or-none: eksik üçlü B1 sözleşme ihlalidir; composer zarf ÜRETMEZ.
+        Assert.Throws<ArgumentException>(() => AgentCommandEnvelopeComposer.ComposeExecutionRequested(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid().ToString("D"),
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            producer: "backend-net",
+            userRef: "u:00000000-0000-0000-0000-000000000001",
+            question: "soru",
+            language: "tr",
+            modePreference: "fast",
+            budgetProfile: "standard",
+            contextSnapshotReference: null,
+            selectedText: null,
+            articleId: "00000000-0000-0000-0000-000000000002",
+            articleRevision: null,
+            articleContentHash: new string('a', 64)));
     }
 
     [Fact]

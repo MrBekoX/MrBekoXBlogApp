@@ -19,7 +19,10 @@ public static class AgentCommandEnvelopeComposer
     };
 
     /// <summary>ExecutionRequested zarfı üretir; dönüş (zarf JSON'u, message_id). message_id outbox
-    /// kaydına yazılır ve tekrar yayınlarda korunur (plan satır 301).</summary>
+    /// kaydına yazılır ve tekrar yayınlarda korunur (plan satır 301). Makale bağlamı
+    /// article_id/article_revision/article_content_hash ÜÇLÜSÜ halinde taşınır (B1 sözleşme
+    /// all-or-none kuralı; W5 bulgusu 4i): biri varsa üçü birden yazılır, hiçbiri yoksa alan
+    /// yazılmaz (makalesiz genel sorular).</summary>
     public static (string EnvelopeJson, string MessageId) ComposeExecutionRequested(
         Guid runId,
         Guid conversationId,
@@ -33,8 +36,19 @@ public static class AgentCommandEnvelopeComposer
         string modePreference,
         string budgetProfile,
         string? contextSnapshotReference,
-        string? selectedText)
+        string? selectedText,
+        string? articleId = null,
+        long? articleRevision = null,
+        string? articleContentHash = null)
     {
+        var hasAny = articleId is not null || articleRevision is not null || articleContentHash is not null;
+        var hasAll = articleId is not null && articleRevision is not null && articleContentHash is not null;
+        if (hasAny && !hasAll)
+        {
+            throw new ArgumentException(
+                "Makale referansı article_id/article_revision/article_content_hash üçlüsü halinde taşınır (B1 all-or-none); eksik üçlü komut üretmez.");
+        }
+
         var messageId = Guid.NewGuid().ToString("D");
 
         var envelope = new AgentEnvelope
@@ -59,6 +73,9 @@ public static class AgentCommandEnvelopeComposer
                     BudgetProfile = budgetProfile,
                     ContextSnapshotReference = contextSnapshotReference,
                     SelectedText = selectedText,
+                    ArticleId = articleId,
+                    ArticleRevision = articleRevision,
+                    ArticleContentHash = articleContentHash,
                 },
                 SerializerOptions),
         };

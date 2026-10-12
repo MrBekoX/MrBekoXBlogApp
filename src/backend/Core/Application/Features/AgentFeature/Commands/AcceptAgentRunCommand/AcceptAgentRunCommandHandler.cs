@@ -122,7 +122,8 @@ public sealed class AcceptAgentRunCommandHandler(
                     return Result<AgentRunAcceptedDto>.Failure(Error.Forbidden("Konuşma başka bir oturuma ait."));
                 }
 
-                // 3) Limit: sahip başına eşzamanlı (çözümlenmemiş) iş üst sınırı.
+                // 3) Limit: sahip başına eşzamanlı (çözümlenmemiş) iş üst sınırı
+                //    + sistem düzeyi kapasite sınırı (B7 backpressure).
                 var activeRuns = await dbContext.AgentRuns
                     .AsNoTracking()
                     .CountAsync(r => r.OwnerKey == ownerKey && r.Status == AgentRunStatus.Accepted, ct);
@@ -130,6 +131,15 @@ public sealed class AcceptAgentRunCommandHandler(
                 {
                     return Result<AgentRunAcceptedDto>.Failure(Error.Domain(
                         $"Eşzamanlı agent iş sınırına ulaşıldı ({settings.MaxActiveRunsPerOwner}). Devam eden işler bitmeden yeni iş kabul edilmez."));
+                }
+
+                var activeTotal = await dbContext.AgentRuns
+                    .AsNoTracking()
+                    .CountAsync(r => r.Status == AgentRunStatus.Accepted, ct);
+                if (activeTotal >= settings.MaxActiveRunsTotal)
+                {
+                    return Result<AgentRunAcceptedDto>.Failure(Error.Domain(
+                        $"Sistem agent kapasitesi dolu ({settings.MaxActiveRunsTotal}). Lütfen kısa süre sonra tekrar deneyin."));
                 }
 
                 // 5) turn_sequence: konuşma içinde monoton; (ConversationId, TurnSequence) unique ile korunur.
@@ -141,9 +151,12 @@ public sealed class AcceptAgentRunCommandHandler(
 
                 var runId = Guid.NewGuid();
                 var deadlineAt = occurredAt.AddMinutes(DeadlineMinutesFor(settings, request.ModePreference));
-                var (snapshotJson, contentHash, snapshotReference) = BuildContextSnapshot(runId, turnSequence, request, article);
+                var (snapshotJson, contentHash, snapshotReference, articleRevision) =
+                    BuildContextSnapshot(runId, turnSequence, request, article);
 
                 // 5) Immutable zarf üretimi ve commit öncesi sözleşme doğrulaması.
+                //    Makale bağlamı üçlü halinde taşınır (B1 all-or-none; W5 bulgusu 4i):
+                //    worker stale komut guard'ı (B8) bu üçlüyle çalışır.
                 var userRef = userId is not null ? $"u:{userId.Value:D}" : $"g:{guestSessionId}";
                 var (envelopeJson, messageId) = AgentCommandEnvelopeComposer.ComposeExecutionRequested(
                     runId,
@@ -158,7 +171,10 @@ public sealed class AcceptAgentRunCommandHandler(
                     modePreference: request.ModePreference,
                     budgetProfile: request.BudgetProfile,
                     contextSnapshotReference: snapshotReference,
-                    selectedText: request.SelectedText);
+                    selectedText: request.SelectedText,
+                    articleId: article?.Id.ToString("D"),
+                    articleRevision: articleRevision,
+                    articleContentHash: article is null ? null : contentHash);
 
                 var contractResult = new AgentContractValidator(messagingOptions.Value).Validate(envelopeJson);
                 if (!contractResult.IsValid)
@@ -256,18 +272,22 @@ public sealed class AcceptAgentRunCommandHandler(
 
     /// <summary>Immutable bağlam snapshot'ı: kabul anındaki makale özeti + soru bağlamı (K7:
     /// içerik mesaja gömülmez; snapshot hash referansı taşır). content_hash = UTF-8 SHA-256 (D008);
-    /// BlogPost.Version kullanılmaz (L004).</summary>
-    private static (string SnapshotJson, string? ContentHash, string SnapshotReference) BuildContextSnapshot(
-        Guid runId, long turnSequence, AcceptAgentRunCommandRequest request, BlogPost? article)
+    /// BlogPost.Version kullanılmaz (L004). article_revision kabul anındaki backend-atandı
+    /// monoton yayımlanmış içerik anıdır (BlogPost.ContentRevision); komut üçlüsünün
+    /// article_revision kaynağı budur (W5 bulgusu 4i).</summary>
+    private static (string SnapshotJson, string? ContentHash, string SnapshotReference, long? ArticleRevision)
+        BuildContextSnapshot(Guid runId, long turnSequence, AcceptAgentRunCommandRequest request, BlogPost? article)
     {
         string? contentHash = null;
         string? publishedAt = null;
+        long? articleRevision = null;
         if (article is not null)
         {
             contentHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(article.Content))).ToLowerInvariant();
             publishedAt = article.PublishedAt is { } published
                 ? AgentCommandEnvelopeComposer.FormatUtc(new DateTimeOffset(published, TimeSpan.Zero))
                 : null;
+            articleRevision = article.ContentRevision;
         }
 
         var snapshot = new Dictionary<string, string?>
@@ -276,6 +296,7 @@ public sealed class AcceptAgentRunCommandHandler(
             ["title"] = article?.Title,
             ["slug"] = article?.Slug,
             ["content_hash"] = contentHash,
+            ["article_revision"] = articleRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["published_at"] = publishedAt,
             ["question"] = request.Question,
             ["language"] = request.Language,
@@ -285,7 +306,7 @@ public sealed class AcceptAgentRunCommandHandler(
 
         var snapshotJson = JsonSerializer.Serialize(snapshot, AgentCommandEnvelopeComposer.SerializerOptions);
         var snapshotReference = $"agent-run/{runId:D}/turn/{turnSequence}";
-        return (snapshotJson, contentHash, snapshotReference);
+        return (snapshotJson, contentHash, snapshotReference, articleRevision);
     }
 
     private static string ComputePayloadHash(AcceptAgentRunCommandRequest request)

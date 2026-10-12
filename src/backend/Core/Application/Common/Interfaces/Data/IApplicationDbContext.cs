@@ -19,6 +19,9 @@ public interface IApplicationDbContext
     /// <summary>Agent iş kabul kayıtları (B3).</summary>
     DbSet<AgentRun> AgentRuns { get; }
 
+    /// <summary>Agent olay tüketim idempotency kayıtları (B5).</summary>
+    DbSet<AgentEventInbox> AgentEventInboxes { get; }
+
     /// <summary>Transactional outbox kayıtları (B3).</summary>
     DbSet<OutboxMessage> OutboxMessages { get; }
 

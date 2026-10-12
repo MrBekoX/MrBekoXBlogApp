@@ -22,6 +22,49 @@ namespace BlogApp.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("BlogApp.Core.Domain.Entities.AgentEventInbox", b =>
+                {
+                    b.Property<string>("ConsumerName")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<long>("EventSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("MessageType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("ConsumerName", "MessageId");
+
+                    b.HasIndex("RunId")
+                        .HasDatabaseName("IX_agent_event_inbox_run");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_agent_event_inbox_status");
+
+                    b.ToTable("agent_event_inbox", (string)null);
+                });
+
             modelBuilder.Entity("BlogApp.Core.Domain.Entities.AgentRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -89,6 +132,11 @@ namespace BlogApp.Infrastructure.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<long>("LastEventSequence")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
                     b.Property<string>("ModePreference")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -107,10 +155,24 @@ namespace BlogApp.Infrastructure.Persistence.Migrations
                         .HasMaxLength(8000)
                         .HasColumnType("character varying(8000)");
 
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("SelectedMode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("SourceScope")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("TerminalAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<long>("TurnSequence")
                         .HasColumnType("bigint");

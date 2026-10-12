@@ -1,7 +1,9 @@
+using BlogApp.Presentation.Api.Services;
 using BlogApp.Presentation.Api.Extensions;
 using BlogApp.Presentation.Api.Hubs;
 using BlogApp.Presentation.Api.Middlewares;
 using BlogApp.Core.Application;
+using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Options;
 using BlogApp.Infrastructure;
 using BlogApp.Infrastructure.Persistence;
@@ -48,6 +50,8 @@ builder.Services.AddSignalR(options =>
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(serverLimits.SignalRClientTimeoutSeconds);
     options.HandshakeTimeout = TimeSpan.FromSeconds(serverLimits.SignalRHandshakeTimeoutSeconds);
 });
+// B5: projection commit'i sonrası agent run canlı bildirim yayını (ince katman).
+builder.Services.AddSingleton<IAgentRunNotifier, SignalRAgentRunNotifier>();
 builder.Services.AddObservabilityServices(builder.Configuration);
 
 // DataProtection — persist keys so cookies survive container restarts
@@ -106,6 +110,8 @@ app.RegisterAllEndpoints();
 var internalHosts = builder.Configuration.GetSection("InternalHosts").Get<string[]>() ?? ["localhost", "127.0.0.1"];
 app.MapHealthChecks("/health").RequireHost(internalHosts);
 app.MapHub<PublicCacheHub>("/hubs/public-cache").AllowAnonymous();
+// B5: agent run canlı bildirim hub'ı (replay GET uç noktaları B10'da).
+app.MapHub<AgentRunsHub>(AgentRunsHub.HubPath).AllowAnonymous();
 app.MapPrometheusScrapingEndpoint("/metrics").RequireHost(internalHosts);
 
 // Run migrations and seeding based on configuration

@@ -12,7 +12,7 @@ using Xunit;
 namespace BlogApp.Presentation.Api.Tests.Messaging.Content;
 
 /// <summary>
-/// B8 makale handler akışının DB kanıtı (gerçek Postgres, scratch blogdb_b8tests):
+/// B8 makale handler akışının DB kanıtı (gerçek Postgres, scratch koşum-başına benzersiz blogdb_b8tests_<epoch-hex>):
 /// içerik olayı outbox kaydı makale değişikliğiyle AYNI transaction'da kalır; görüntülenme
 /// artışı revision dokunmaz; rollback'te hayalet olay oluşmaz.
 /// </summary>

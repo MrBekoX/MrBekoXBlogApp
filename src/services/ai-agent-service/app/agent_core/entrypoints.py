@@ -17,6 +17,11 @@
   çağrı + web kullanılamazlık notu).
 - ``resume``: duraklatılmış çalışmayı checkpoint'ten yükleyip sürdürür;
   route kararını checkpoint'ten okur, yeniden model çağrısıyla hesaplamaz.
+  A8: checkpoint zarf sözleşmeleri (şema sürümü, run ve kararlı yürütme
+  kimliği bağlaması) ``agent_core.checkpoint`` katmanıyla denetlenir;
+  güncel bağlam verildiyse içerik revizyonu kapsam değerlendirmesi yapılır
+  (``FULL_REUSE`` / ``EVIDENCE_STALE`` / ``NOT_RESUMABLE``) ve devam
+  ettirilen çalışmada iptal ile deadline yeniden uygulanır.
 
 Paket dış adaptör olmadan test girdisiyle çağrılabilir: tüm bağımlılıklar
 portlardan gelir ve ``agent_core.adapters.test_doubles`` ile koşulur.
@@ -24,10 +29,19 @@ portlardan gelir ve ``agent_core.adapters.test_doubles`` ile koşulur.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from .analysis.models import AnalysisConfig
 from .analysis.runner import run_article_analysis
+from .budget.policy import Deadline
+from .checkpoint.models import CheckpointKind, ResumeScope, new_execution_id
+from .checkpoint.resume import (
+    evaluate_resume,
+    load_resume_payload,
+    save_checkpoint,
+    validate_execution_id,
+)
 from .errors import AgentErrorCode, PortError
 from .models import (
     AgentMode,
@@ -45,7 +59,14 @@ from .models import (
     UtcDatetime,
     compute_content_hash,
 )
-from .ports import BudgetStore, CheckpointStore, CancellationToken, ModelProvider, ProgressSink
+from .ports import (
+    BudgetStore,
+    CheckpointStore,
+    CancellationToken,
+    ModelProvider,
+    ModelResponse,
+    ProgressSink,
+)
 from .ports.budget import BudgetKind
 from .ports.model import ModelRequest
 from .qa.models import QaFlowConfig
@@ -63,18 +84,38 @@ class PreparedRun(BusinessModel):
     """Hazırlık girişinin çıktısı: bağlam + bir kez hesaplanmış rota kararı.
 
     Checkpoint'e serileştirilir; ``resume`` bu değeri geri yükler.
+
+    ``execution_id`` (A8): çalıştırma zincirinin KARARLI kimliğidir; hazırlıkta
+    bir kez atanır (dış adaptör verebilir — ``prepare_and_route``), checkpoint
+    zincirine bağlanır ve resume'da denetlenir. İstemci yetki kaynağı değildir.
     """
 
     context: ExecutionContext
     route: RouteDecision
     prepared_at: UtcDatetime
+    execution_id: str | None = None
 
 
 class ResumeRequest(BusinessModel):
-    """Resume girişi; ``checkpoint_id`` verilmezse en son checkpoint kullanılır."""
+    """Resume girişi; ``checkpoint_id`` verilmezse en son checkpoint kullanılır.
+
+    A8 alanları (tümü seçime bağlı; A1 çağrıları değişmez):
+
+    - ``execution_id``: beklenen kararlı yürütme kimliği; checkpoint başka bir
+      yürütme zincirine bağlıysa anlaşılır ``validation_error`` döner.
+    - ``deadline_seconds``: devam ettirilen çalışma için kalan süre sınırı;
+      dolduğunda ``timeout`` terminali üretilir (süreç asılı kalmaz).
+    - ``current_context``: güncel içerik bağlamı; verilirse revizyon kapsamı
+      değerlendirilir (``evaluate_resume``) — içerik kaldırılmışsa/gerilemişse
+      devam ``stale_snapshot`` ile reddedilir, revizyon ilerlemişse makale
+      kanıtları yeniden kullanılmadan güncel bağlamla sürülür.
+    """
 
     run_id: Identifier
     checkpoint_id: str | None = None
+    execution_id: str | None = None
+    deadline_seconds: float | None = None
+    current_context: ExecutionContext | None = None
 
 
 def _utcnow() -> datetime:
@@ -135,6 +176,7 @@ async def prepare_and_route(
     progress: ProgressSink | None = None,
     cancel: CancellationToken | None = None,
     checkpoint: CheckpointStore | None = None,
+    execution_id: str | None = None,
 ) -> PreparedRun:
     """Hazırlık ve mod seçimi; rota kararı bir kez üretilir.
 
@@ -143,13 +185,24 @@ async def prepare_and_route(
     politika profiline eşlenir (plan A5). ``router_model`` verilmediğinde
     belirsiz durumlar deterministik kuralıyla çözülür (geçiş davranışı).
 
+    A8: ``execution_id`` verilmezse kararlı bir yürütme kimliği üretilir ve
+    ``PreparedRun``'a bağlanır; checkpoint zinciri resume'da bu kimliğe
+    karşı denetlenir. Verilen kimliğin biçimi doğrulanır (dış adaptörün
+    doğrulama sözleşmesi — ``validate_execution_id``).
+
     Raises:
         PortError: ``cancelled`` — iptal sinyali; ``stale_snapshot`` — snapshot
-            bağlamı doğrulanamadı; ``provider_error``/``timeout`` — checkpoint
-            yazımı arızası (yalnız checkpoint verildiğinde).
+            bağlamı doğrulanamadı; ``validation_error`` — yürütme kimliği biçimi
+            geçersiz; ``provider_error``/``timeout`` — checkpoint yazımı arızası
+            (yalnız checkpoint verildiğinde).
     """
     _check_cancel(cancel)
     verify_snapshot_binding(context)
+
+    if execution_id is not None:
+        resolved_execution_id = validate_execution_id(execution_id)
+    else:
+        resolved_execution_id = new_execution_id(context.run_id)
 
     await _publish(progress, context.run_id, ProgressKind.RUN_STARTED, "çalışma hazırlanıyor")
     if context.article_snapshot is not None:
@@ -164,10 +217,24 @@ async def prepare_and_route(
         f"mod seçildi: {route.selected_mode.value} ({route.brief_reason})",
     )
 
-    prepared = PreparedRun(context=context, route=route, prepared_at=_utcnow())
+    prepared = PreparedRun(
+        context=context, route=route, prepared_at=_utcnow(), execution_id=resolved_execution_id
+    )
     if checkpoint is not None:
-        payload = prepared.model_dump_json().encode("utf-8")
-        await checkpoint.save(context.run_id, f"{_PREPARED_CHECKPOINT_PREFIX}:run", payload)
+        # Sürümlü zarfla yazım (W5 bulgusu 3 notu): şema sürümü + run/yürütme
+        # kimliği bağlamı CHECKPOINT ZARFINDA taşınır; ``load_resume_payload``'ın
+        # zarf guard'ları üretim yazımlarında da devreye girer. Zarfsız (A1
+        # dönemi ham PreparedRun JSON) checkpoint'ler okuma tarafında geriye
+        # dönük uyumlulukla yüklenmeye devam eder. Checkpoint kimliği korunur
+        # (``prepared:run``): resume ``load_latest`` sıralaması değişmez.
+        await save_checkpoint(
+            checkpoint,
+            run_id=context.run_id,
+            execution_id=resolved_execution_id,
+            kind=CheckpointKind.PREPARED,
+            payload=prepared.model_dump_json().encode("utf-8"),
+            checkpoint_id=f"{_PREPARED_CHECKPOINT_PREFIX}:run",
+        )
     return prepared
 
 
@@ -476,6 +543,38 @@ async def execute_plan(
     )
 
 
+class _DeadlineBoundedModel:
+    """Resume'da deadline'ı model çağrısı sınırına taşıyan ince sarmalayıcı (A8).
+
+    Plan A2 ilkesinin devam ettirilen çalışmaya uygulanması: iptal ve deadline
+    kontrolleri çağrı sınırlarına konur. Çağrı öncesi süre denetlenir; çağrı
+    kalan süreyle yarıştırılır ve aşılırsa ``PortError(timeout)`` üretilir —
+    süreç asılı kalmaz [PY-ASYNCIO#C2] (iç görev iptal edilir, istisna
+    bastırılmaz).
+    """
+
+    def __init__(self, inner: ModelProvider, deadline: Deadline) -> None:
+        self._inner = inner
+        self._deadline = deadline
+
+    async def complete(
+        self, request: ModelRequest, *, cancel: CancellationToken | None = None
+    ) -> ModelResponse:
+        self._deadline.raise_if_exceeded()
+        try:
+            return await asyncio.wait_for(
+                self._inner.complete(request, cancel=cancel),
+                timeout=self._deadline.remaining(),
+            )
+        except asyncio.TimeoutError:
+            raise PortError(
+                AgentErrorCode.TIMEOUT,
+                f"devam ettirilen çalışmanın süre sınırı doldu "
+                f"({self._deadline.elapsed():.3f}s geçti, kalan yok)",
+                port="resume",
+            ) from None
+
+
 async def resume(
     request: ResumeRequest,
     *,
@@ -491,16 +590,36 @@ async def resume(
 ) -> AgentOutcome:
     """Duraklatılmış çalışmayı checkpoint'ten sürdürür; rota kararı yeniden hesaplanmaz.
 
+    A8 davranışları:
+
+    - Checkpoint zarfı denetlenir: bilinmeyen zarf şema sürümü, başka run ve
+      uyuşmayan yürütme kimliği bağlaması ANLAŞILIR ``validation_error`` ile
+      reddedilir. Zarfsız (A1 dönemi ham payload) checkpoint'ler geriye dönük
+      uyumlulukla aynen yüklenir.
+    - ``current_context`` verildiyse revizyon kapsamı değerlendirilir:
+      ``NOT_RESUMABLE`` (içerik kaldırma/gerileme/başka makale) ``stale_snapshot``
+      ile reddedilir; ``EVIDENCE_STALE`` çalışma GÜNCEL bağlamla sürdürülür —
+      checkpoint'teki makaleye bağlı sonuçların yeniden kullanılmadığı ilerleme
+      olayında bildirilir; ``FULL_REUSE`` checkpoint bağlamıyla sürer.
+    - İptal ve deadline devam ettirilen çalışmada da uygulanır: iptal sinyali
+      her koşulda geçirilir; ``deadline_seconds`` verildiyse model çağrıları
+      kalan süreyle sınırlandırılır.
+
     Raises:
         PortError: ``not_found`` — run için checkpoint yok; ``validation_error``
-            — checkpoint payload'ı bozuk veya başka run'a ait.
+            — payload bozuk, başka run'a/yürütülmeye ait, zarf veya state şema
+            sürümü uyumsuz; ``stale_snapshot`` — revizyon kapsamı devamı
+            engelliyor (kaldırma/gerileme).
     """
     _check_cancel(cancel)
+    started_at = _utcnow()
 
-    if request.checkpoint_id is not None:
-        payload = await checkpoint.load(request.run_id, request.checkpoint_id)
-    else:
-        _, payload = await checkpoint.load_latest(request.run_id)
+    _envelope, payload = await load_resume_payload(
+        checkpoint,
+        request.run_id,
+        request.checkpoint_id,
+        execution_id=request.execution_id,
+    )
 
     try:
         prepared = PreparedRun.model_validate_json(payload.decode("utf-8"))
@@ -516,10 +635,60 @@ async def resume(
             "checkpoint payload'ı istenen run'a ait değil",
             port="resume",
         )
+    if (
+        request.execution_id is not None
+        and prepared.execution_id is not None
+        and prepared.execution_id != request.execution_id
+    ):
+        raise PortError(
+            AgentErrorCode.VALIDATION_ERROR,
+            "yürütme kimliği bağlaması uyuşmuyor: "
+            f"checkpoint={prepared.execution_id}, istenen={request.execution_id}",
+            port="resume",
+        )
+
+    # A8: revizyon kapsamı — kaldırılan/gerileyen içerikte checkpoint'ten devam edilmez.
+    scope_note = ""
+    if request.current_context is not None:
+        verify_snapshot_binding(request.current_context)
+        evaluation = evaluate_resume(
+            checkpoint_context=prepared.context, current_context=request.current_context
+        )
+        if evaluation.scope is ResumeScope.NOT_RESUMABLE:
+            raise PortError(
+                AgentErrorCode.STALE_SNAPSHOT,
+                f"checkpoint'ten devam edilemez: {'; '.join(evaluation.reasons)}",
+                port="resume",
+            )
+        if evaluation.scope is ResumeScope.EVIDENCE_STALE:
+            prepared = prepared.model_copy(update={"context": request.current_context})
+            scope_note = (
+                "; kapsam: evidence_stale — tamamlanmış makale kanıtları/bulguları "
+                "yeniden kullanılmaz, güncel revizyonla sürülüyor"
+            )
+        else:
+            scope_note = "; kapsam: full_reuse"
+
+    deadline = None
+    if request.deadline_seconds is not None:
+        try:
+            deadline = Deadline(request.deadline_seconds)
+        except ValueError as error:
+            raise PortError(
+                AgentErrorCode.VALIDATION_ERROR,
+                f"deadline_seconds geçersiz: {error}",
+                port="resume",
+            ) from error
+        try:
+            deadline.raise_if_exceeded()
+        except PortError as error:
+            return _terminal_outcome(prepared, started_at, error)
+        model = _DeadlineBoundedModel(model, deadline)  # type: ignore[assignment]
 
     await _publish(
         progress, request.run_id, ProgressKind.RUN_RESUMED,
-        f"çalışma checkpoint'ten sürdürüldü (mod: {prepared.route.selected_mode.value})",
+        f"çalışma checkpoint'ten sürdürüldü (mod: {prepared.route.selected_mode.value}"
+        f"{scope_note})",
     )
     return await execute_plan(
         prepared,

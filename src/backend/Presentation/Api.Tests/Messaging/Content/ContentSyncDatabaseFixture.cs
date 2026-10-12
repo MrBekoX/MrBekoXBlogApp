@@ -10,23 +10,33 @@ namespace BlogApp.Presentation.Api.Tests.Messaging.Content;
 
 /// <summary>
 /// B8 test ortamı: docker compose postgres üzerinde İZOLE scratch veritabanı
-/// (L009 deseni: her faz kendi DB'sini kullanır — burada blogdb_b8tests; B3'ün
-/// blogdb_b3tests'i PAYLAŞILMAZ). Migration zinciri (AddContentRevision dahil)
-/// uygulanır; sınıflar arasında tablolar temizlenir. Bağlantı bilgisi ortam
-/// değişkeniyle override edilebilir; parola log'a yazılmaz.
+/// (L009 deseni: her faz kendi DB'sini kullanır; B3'ün DB'si PAYLAŞILMAZ).
+/// Migration zinciri (AddContentRevision dahil) uygulanır; sınıflar arasında
+/// tablolar temizlenir. Bağlantı bilgisi ortam değişkeniyle override edilebilir;
+/// parola log'a yazılmaz.
+///
+/// W6 düzeltmesi: DB adı KOŞUM BAŞINA benzersizdir
+/// (``blogdb_b8tests_<epoch-hex>``). Sabit adla iki eşzamanlı ``dotnet test``
+/// koşumu aynı DB'ye çarpıp birbirinin bağlantılarını
+/// ``DROP ... WITH (FORCE)`` ile kesiyordu (B9 raporu F2). Bayat (2 saatten
+/// eski) koşum DB'leri ve sabit adlı eski desen kalıntısı init'te süpürülür.
 /// </summary>
 public sealed class ContentSyncDatabaseFixture : IAsyncLifetime
 {
-    public const string TestDatabaseName = "blogdb_b8tests";
+    public const string TestDatabasePrefix = "blogdb_b8tests";
 
     private string _devConnectionString = string.Empty;
     private string _testConnectionString = string.Empty;
+
+    /// <summary>Bu koşuma özel veritabanı adı (koşum başına benzersiz).</summary>
+    public string TestDatabaseName { get; private set; } = string.Empty;
 
     public string TestConnectionString => _testConnectionString;
 
     public async Task InitializeAsync()
     {
         _devConnectionString = ResolveDevConnectionString();
+        TestDatabaseName = $"{TestDatabasePrefix}_{DateTimeOffset.UtcNow.ToUnixTimeSeconds():x8}";
 
         var builder = new NpgsqlConnectionStringBuilder(_devConnectionString)
         {
@@ -36,6 +46,7 @@ public sealed class ContentSyncDatabaseFixture : IAsyncLifetime
         await using (var maintenance = new NpgsqlConnection(builder.ConnectionString))
         {
             await maintenance.OpenAsync();
+            await SweepStaleRunDatabasesAsync(maintenance);
             await ExecuteAsync(maintenance,
                 $"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{TestDatabaseName}' AND pid <> pg_backend_pid()");
             await ExecuteAsync(maintenance, $"DROP DATABASE IF EXISTS \"{TestDatabaseName}\" WITH (FORCE)");
@@ -53,8 +64,50 @@ public sealed class ContentSyncDatabaseFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>2 saatten eski koşum DB'lerini süpürür (çökmüş koşumların
+    /// bıraktığı kalıntılar); sabit adlı eski desen DB'si koşum bilgisi taşımadığından
+    /// her süpürmede düşürülür. Güncel koşumların DB'lerine dokunmaz — eşzamanlı
+    /// koşum güvenli.</summary>
+    private static async Task SweepStaleRunDatabasesAsync(NpgsqlConnection maintenance)
+    {
+        var cutoffEpoch = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds();
+        var names = new List<string>();
+        await using (var cmd = maintenance.CreateCommand())
+        {
+            cmd.CommandText =
+                $"SELECT datname FROM pg_database WHERE datname = '{TestDatabasePrefix}' " +
+                $"OR datname LIKE '{TestDatabasePrefix}\\_%' ESCAPE '\\'";
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                names.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (var name in names)
+        {
+            if (name != TestDatabasePrefix)
+            {
+                var suffix = name[(TestDatabasePrefix.Length + 1)..];
+                if (!long.TryParse(suffix, System.Globalization.NumberStyles.HexNumber, null, out var epoch)
+                    || epoch >= cutoffEpoch)
+                {
+                    continue; // çözümlenemeyen ad veya güncel koşum: dokunulmaz
+                }
+            }
+
+            await ExecuteAsync(maintenance,
+                $"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{name}' AND pid <> pg_backend_pid()");
+            await ExecuteAsync(maintenance, $"DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)");
+        }
+    }
+
     public async Task DisposeAsync()
     {
+        // Test DB'sının havuz bağlantılarını istemci tarafında kapat: DROP,
+        // canlı Npgsql havuzuyla yarışmasın.
+        NpgsqlConnection.ClearAllPools();
+
         var builder = new NpgsqlConnectionStringBuilder(_devConnectionString)
         {
             Database = "postgres",
@@ -64,7 +117,21 @@ public sealed class ContentSyncDatabaseFixture : IAsyncLifetime
         await maintenance.OpenAsync();
         await ExecuteAsync(maintenance,
             $"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{TestDatabaseName}' AND pid <> pg_backend_pid()");
-        await ExecuteAsync(maintenance, $"DROP DATABASE IF EXISTS \"{TestDatabaseName}\" WITH (FORCE)");
+
+        // DROP, backend sonlanmasının yayılmasıyla yarışabilir: sınırlı,
+        // artan beklemeli tekrar.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await ExecuteAsync(maintenance, $"DROP DATABASE IF EXISTS \"{TestDatabaseName}\" WITH (FORCE)");
+                return;
+            }
+            catch (NpgsqlException) when (attempt < 3)
+            {
+                await Task.Delay(300 * (attempt + 1));
+            }
+        }
     }
 
     public AppDbContext CreateContext() =>

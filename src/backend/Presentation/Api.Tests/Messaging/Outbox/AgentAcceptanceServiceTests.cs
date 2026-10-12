@@ -18,8 +18,9 @@ using Error = BlogApp.Core.Application.Common.Errors;
 namespace BlogApp.Presentation.Api.Tests.Messaging.Outbox;
 
 /// <summary>
-/// B3 iş kabulü senaryoları — gerçek Postgres (isolated blogdb_b3tests) üzerinde:
-/// oturum doğrulama, makale erişim/limit, idempotency (replay + çakışma), turn_sequence.
+/// B3 iş kabulü senaryoları — gerçek Postgres (koşum başına benzersiz izole
+/// scratch DB, blogdb_b3tests_*) üzerinde: oturum doğrulama, makale
+/// erişim/limit, idempotency (replay + çakışma), turn_sequence.
 /// </summary>
 [Collection("agent-rabbitmq-outbox")]
 public class AgentAcceptanceServiceTests : IAsyncLifetime

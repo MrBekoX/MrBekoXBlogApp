@@ -1,5 +1,6 @@
 using BlogApp.Core.Application.Common.BusinessRuleEngine;
 using BlogApp.Core.Application.Common.Errors;
+using BlogApp.Core.Application.Common.Interfaces.Messaging;
 using BlogApp.Core.Application.Common.Interfaces.Persistence;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Models;
@@ -18,7 +19,8 @@ public class UpdatePostCommandHandler(
     IPostBusinessRules postBusinessRules,
     ITagService tagService,
     ICacheService cacheService,
-    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<UpdatePostCommandRequest, Result<Unit>>
+    IHtmlSanitizerService htmlSanitizer,
+    IAgentContentEventService contentEvents) : IRequestHandler<UpdatePostCommandRequest, Result<Unit>>
 {
     public async Task<Result<Unit>> Handle(UpdatePostCommandRequest request, CancellationToken cancellationToken)
     {
@@ -45,6 +47,10 @@ public class UpdatePostCommandHandler(
         {
             return Result<Unit>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
         }
+
+        // B8: değişim öncesi yayın durumu + içerik özeti (görünürlük geçişi/gerçek içerik
+        // değişimi ayrımı için).
+        var contentBefore = contentEvents.Observe(post);
 
         // BOLA check: Authors can only edit their own posts
         var currentUserId = currentUserService.UserId;
@@ -157,6 +163,8 @@ public class UpdatePostCommandHandler(
 
         try
         {
+            // B8: gerekiyorsa revision artışı + içerik olayı AYNI SaveChanges transaction'ında.
+            await contentEvents.RecordChangeAsync(post, contentBefore, cancellationToken);
             await unitOfWork.PostsWrite.UpdateAsync(post, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }

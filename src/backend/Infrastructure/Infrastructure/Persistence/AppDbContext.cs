@@ -23,6 +23,11 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
+    public DbSet<AgentEventInbox> AgentEventInboxes => Set<AgentEventInbox>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<AgentContentSync> AgentContentSyncs => Set<AgentContentSync>();
+    public DbSet<AgentProposal> AgentProposals => Set<AgentProposal>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -120,6 +120,21 @@ export default function AdminDashboardPage() {
         )}
       </div>
 
+      {/* B10: agent yönetim gözlemleri bağlantısı (additive) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Agent Gözlemleri</CardTitle>
+              <CardDescription>İş kuyruğu, outbox gecikmesi, projection ve geri bildirim özetleri</CardDescription>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/mrbekox-console/dashboard/agent">Gözlemleri Aç</Link>
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

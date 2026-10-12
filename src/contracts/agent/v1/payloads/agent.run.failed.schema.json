@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:agent.run.failed",
+  "title": "AgentRunFailedPayloadV1",
+  "description": "Terminal başarısızlık olayı: error_code ortak AgentErrorCode kümesinden bir koddur (W0 §1.5); A1 kuralı gereği failed durumunda zorunludur.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_sequence", "error_code"],
+  "properties": {
+    "event_sequence": { "type": "integer", "minimum": 0 },
+    "execution_attempt": { "type": "integer", "minimum": 1 },
+    "fencing_token": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "error_code": { "$ref": "urn:blog-agent:v1:common#/$defs/agent_error_code" },
+    "error_message": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "selected_mode": { "$ref": "urn:blog-agent:v1:common#/$defs/agent_mode" },
+    "usage": { "$ref": "urn:blog-agent:v1:common#/$defs/usage_record" }
+  }
+}

@@ -14,7 +14,23 @@ public interface IApplicationDbContext
     DbSet<User> Users { get; }
     DbSet<Comment> Comments { get; }
     DbSet<RefreshToken> RefreshTokens { get; }
+    DbSet<IdempotencyRecord> IdempotencyRecords { get; }
+
+    /// <summary>Agent iş kabul kayıtları (B3).</summary>
+    DbSet<AgentRun> AgentRuns { get; }
+
+    /// <summary>Agent olay tüketim idempotency kayıtları (B5).</summary>
+    DbSet<AgentEventInbox> AgentEventInboxes { get; }
+
+    /// <summary>İlk içerik senkronizasyonu watermark kayıtları (B8, ADDITIVE).</summary>
+    DbSet<AgentContentSync> AgentContentSyncs { get; }
+
+    /// <summary>İş birliği proposal kalıcı kayıtları (B9, ADDITIVE): sürüm/hash/run
+    /// sahipliği/süre sınırı; onay ve resume durum makinesi bunun üstünde yürür.</summary>
+    DbSet<AgentProposal> AgentProposals { get; }
+
+    /// <summary>Transactional outbox kayıtları (B3).</summary>
+    DbSet<OutboxMessage> OutboxMessages { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
-

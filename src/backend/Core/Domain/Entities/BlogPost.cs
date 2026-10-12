@@ -19,6 +19,17 @@ public class BlogPost : BaseAuditableEntity
     public int LikeCount { get; set; }
     public bool IsFeatured { get; set; }
     public uint Version { get; private set; }
+
+    /// <summary>
+    /// Backend'in atadığı, makale başına monoton içerik revizyonu (D008). Yalnız makale
+    /// İÇERİĞİ veya yayın GÖRÜNÜRLÜĞÜ değiştiğinde artar (yayınla/güncelle/yayından
+    /// kaldır/sil); görüntülenme sayısı gibi ilgisiz güncellemeler bu değeri değiştirmez
+    /// (plan B8). <see cref="Version"/> (xmin rowversion) bir MVCC concurrency token'ıdır
+    /// ve revizyon anlamı TAŞIMAZ (L004) — ArticleContentChangedV1.article_revision bu
+    /// alandan beslenir. 0 = henüz yayımlanmış içerik anı kaydedilmemiş.
+    /// </summary>
+    public long ContentRevision { get; set; }
+
     public string? MetaTitle { get; set; }
     public string? MetaDescription { get; set; }
     public string? MetaKeywords { get; set; }

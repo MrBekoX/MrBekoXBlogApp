@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:content.project.changed",
+  "title": "ProjectContentChangedPayloadV1",
+  "description": "Proje rehberi içeriği değişti (Backend → Python). İçerik gömülmez; hash + snapshot referansı taşınır (K7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project_id", "project_revision", "content_hash"],
+  "properties": {
+    "project_id": { "$ref": "urn:blog-agent:v1:common#/$defs/identifier" },
+    "project_revision": { "type": "integer", "minimum": 0 },
+    "content_hash": { "$ref": "urn:blog-agent:v1:common#/$defs/hash_hex" },
+    "context_snapshot_reference": { "type": "string", "minLength": 1, "maxLength": 512 }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v1:payload:agent.run.needs_input",
+  "title": "AgentRunNeedsInputPayloadV1",
+  "description": "Agent kullanıcı girdisi bekliyor; en az bir açık soru zorunludur (A1 RunStatus.NEEDS_INPUT kuralı).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_sequence", "unresolved_questions"],
+  "properties": {
+    "event_sequence": { "type": "integer", "minimum": 0 },
+    "execution_attempt": { "type": "integer", "minimum": 1 },
+    "fencing_token": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "unresolved_questions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1, "maxLength": 20000 }
+    },
+    "usage": { "$ref": "urn:blog-agent:v1:common#/$defs/usage_record" }
+  }
+}

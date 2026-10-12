@@ -17,7 +17,13 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
 
-    <PackageReference Include="HtmlSanitizer" Version="9.0.892" />
+    <!-- W5 güvenlik duyuruları (kapı NU1902/NU1903): HtmlSanitizer 9.2.x geçişli
+         AngleSharp'i 1.7.2'ye taşır (GHSA-pgww-w46g-26qg yaması 1.5.0).
+         ImageSharp 3.1.12 bilinçli olarak BURADA TUTULDU: yüksek GHSA'ların tek
+         yaması 4.1.2+'dadır ama ImageSharp 4.x Release build'i Six Labors
+         lisansı olmadan ERROR ile durur (bu checkout'ta doğrulandı); lisans
+         edinme sahibin kararıdır — sürüm yükseltmesi o kararla birlikte yapılır. -->
+    <PackageReference Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>
 

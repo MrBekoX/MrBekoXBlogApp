@@ -45,6 +45,47 @@ services:
       - backend-net
 
   # ==========================================
+  # RabbitMQ 4.x — Backend ↔ AI Agent Messaging (B2; B11 sürüm kilidi)
+  # ==========================================
+  # Sürüm kilidi (plan satır 557): broker imgesi 4.2.9'a SABİTLENMİŞTİR
+  # ("4.2-management" yüzen etiketi ile istemci sürümleri
+  # RabbitMQ.Client 7.2.2 / aio-pika 9.5.8 arasındaki uyum koşulu
+  # sürüklenmesin). Tag registry'de doğrulandı (B11). Yükseltme
+  # operations/topoloji-ve-surum-kilidi.md adımlarıyla yapılır.
+  #
+  # Ağ sınırı (plan satır 560): AMQP (5672) ve management UI (15672) yalnız
+  # 127.0.0.1'e bound — broker'a ve yönetim arayüzüne yalnız host erişir;
+  # frontend-net/backend-net köprüleri dışından yayın yok. Üretimde management
+  # portu YA hiç yayınlanmalı YA ayrı bir yönetim ağında tutulmalı
+  # (operations/topoloji-ve-surum-kilidi.md §4).
+  #
+  # PGVECTOR KARARI (B11): postgres imgesi pgvector/pgvector'a ÇEVRİLMEDİ.
+  # Gerekçe: A3 PgvectorContentIndex gerçek entegrasyona hazır değil
+  # (app/agent_core/content/pgvector.py iskelet — kurulusta PortError;
+  # pyproject'te sürücü yok; gerçek embedding sağlayıcısı yok). Düşük riskli
+  # DEĞİL; adımlar + rollback operations/pgvector-karari.md'de.
+  rabbitmq:
+    image: rabbitmq:4.2.9-management
+    container_name: blogapp-rabbitmq
+    environment:
+      # Dev varsayılanları düz metin kalabilir; .env ile overrides edilir.
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-blogapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-blogapp_dev}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    networks:
+      - backend-net
+
+  # ==========================================
   # .NET 10 Backend — REST API + SignalR Hubs
   # ==========================================
   backend:
@@ -84,9 +125,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # B11 (plan satır 558/561): yalnız BAŞLANGIÇ SIRALAMASI — broker sağlık
+      # koşulu backend'i broker kapalıyken düşürmez (K3: kabul yolu DB outbox'ı;
+      # broker yoksa relay kendi döngüsünde bekler). Container liveness'ı
+      # /health/live'dır: bağımlılık denetlemez, broker kesintisi restart üretmez.
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      # B11: liveness ayrımı — /health bağımlılık denetimleri içerir; container
+      # tekrar başlatma kararı yalnız "süreç yanıtlıyor mu" sorusuna bağlanır.
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health/live" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -148,5 +197,6 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  rabbitmq_data:
   backend_uploads:
   backend_keys:

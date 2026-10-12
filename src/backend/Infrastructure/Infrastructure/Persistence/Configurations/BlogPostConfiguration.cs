@@ -33,6 +33,12 @@ public class BlogPostConfiguration : IEntityTypeConfiguration<BlogPost>
             .HasColumnName("xmin")
             .IsRowVersion();
 
+        // B8: backend-atandı monoton içerik revizyonu (D008); yalnız içerik/görünürlük
+        // değişiminde artar. 0 varsayılanı eski kayıtlar için "yayımlanmış an yok" demektir.
+        builder.Property(p => p.ContentRevision)
+            .HasColumnName("content_revision")
+            .HasDefaultValue(0L);
+
         builder.Property(p => p.FeaturedImageUrl)
             .HasMaxLength(500);
 

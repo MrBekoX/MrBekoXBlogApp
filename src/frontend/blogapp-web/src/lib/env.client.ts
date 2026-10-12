@@ -10,4 +10,7 @@ const SIGNALR_BASE_URL = process.env.NEXT_PUBLIC_SIGNALR_URL || BASE_URL;
 
 export const PUBLIC_CACHE_HUB_URL = `${SIGNALR_BASE_URL}/hubs/public-cache`;
 
+/** B10: agent run canlı bildirim hub'ı (AgentRunsHub; sahipliği backend doğrular). */
+export const AGENT_RUNS_HUB_URL = `${SIGNALR_BASE_URL}/hubs/agent-runs`;
+
 export const HUB_URL = PUBLIC_CACHE_HUB_URL;

@@ -1,5 +1,6 @@
 using BlogApp.Core.Application.Common.BusinessRuleEngine;
 using BlogApp.Core.Application.Common.Errors;
+using BlogApp.Core.Application.Common.Interfaces.Messaging;
 using BlogApp.Core.Application.Common.Interfaces.Persistence;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Models;
@@ -17,6 +18,7 @@ public class PublishPostCommandHandler(
     ICacheService cacheService,
     IPostBusinessRules postBusinessRules,
     ICurrentUserService currentUserService,
+    IAgentContentEventService contentEvents,
     ILogger<PublishPostCommandHandler> logger) : IRequestHandler<PublishPostCommandRequest, Result<Unit>>
 {
     public async Task<Result<Unit>> Handle(PublishPostCommandRequest request, CancellationToken cancellationToken)
@@ -39,12 +41,17 @@ public class PublishPostCommandHandler(
             return Result<Unit>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
         }
 
+        // B8: yayın görünürlüğü kazanımı content_revision artışı + updated olayı demektir.
+        var contentBefore = contentEvents.Observe(post);
+
         post.Publish();
         post.UpdatedAt = DateTime.UtcNow;
         post.UpdatedBy = currentUserService.UserName;
 
         try
         {
+            // Zaten yayındaysa görünürlük değişimi yoktur; RecordChangeAsync olay yazmaz.
+            await contentEvents.RecordChangeAsync(post, contentBefore, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException ex)
@@ -70,6 +77,7 @@ public class UnpublishPostCommandHandler(
     ICacheService cacheService,
     IPostBusinessRules postBusinessRules,
     ICurrentUserService currentUserService,
+    IAgentContentEventService contentEvents,
     ILogger<UnpublishPostCommandHandler> logger) : IRequestHandler<UnpublishPostCommandRequest, Result<Unit>>
 {
     public async Task<Result<Unit>> Handle(UnpublishPostCommandRequest request, CancellationToken cancellationToken)
@@ -92,12 +100,17 @@ public class UnpublishPostCommandHandler(
             return Result<Unit>.Failure(Error.NotFound(PostBusinessRuleMessages.PostNotFoundGeneric));
         }
 
+        // B8: görünürlük kaybı = kaldırma TOMBSTONE'u (content_hash taşınmaz), revision +1.
+        var contentBefore = contentEvents.Observe(post);
+
         post.Unpublish();
         post.UpdatedAt = DateTime.UtcNow;
         post.UpdatedBy = currentUserService.UserName;
 
         try
         {
+            // Zaten yayında değilse görünürlük değişimi yoktur; RecordChangeAsync olay yazmaz.
+            await contentEvents.RecordChangeAsync(post, contentBefore, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException ex)

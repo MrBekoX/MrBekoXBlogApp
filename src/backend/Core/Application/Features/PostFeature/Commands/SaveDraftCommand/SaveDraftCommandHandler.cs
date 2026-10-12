@@ -1,4 +1,5 @@
 using BlogApp.Core.Application.Common.Errors;
+using BlogApp.Core.Application.Common.Interfaces.Messaging;
 using BlogApp.Core.Application.Common.Interfaces.Persistence;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Models;
@@ -17,7 +18,8 @@ public class SaveDraftCommandHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     ITagService tagService,
-    IHtmlSanitizerService htmlSanitizer) : IRequestHandler<SaveDraftCommandRequest, Result<Guid>>
+    IHtmlSanitizerService htmlSanitizer,
+    IAgentContentEventService contentEvents) : IRequestHandler<SaveDraftCommandRequest, Result<Guid>>
 {
     public async Task<Result<Guid>> Handle(SaveDraftCommandRequest request, CancellationToken cancellationToken)
     {
@@ -41,6 +43,9 @@ public class SaveDraftCommandHandler(
 
         BlogPost post;
 
+        // B8: değişim öncesi yayın durumu + içerik özeti; taslak yaşam döngüsü olay üretmez.
+        ArticleContentObservation contentBefore;
+
         if (dto.Id.HasValue)
         {
             // Mevcut taslağı güncelle
@@ -52,6 +57,10 @@ public class SaveDraftCommandHandler(
             }
 
             post = existingPost;
+
+            // B8: taslak kaydetme çoğunlukla olay üretmez (taslak taşınmaz); ANCAK kayıt
+            // yayımlanmış bir makaleye dokunuyorsa içerik gerçekten değişmiş olabilir.
+            contentBefore = contentEvents.Observe(post);
 
             // Sadece kendi yazısını veya Admin/Editor güncelleyebilir
             var user = await unitOfWork.UsersRead.GetByIdAsync(userId.Value, cancellationToken);
@@ -129,6 +138,8 @@ public class SaveDraftCommandHandler(
 
             post.CalculateReadingTime();
 
+            contentBefore = contentEvents.Observe(post);
+
             await unitOfWork.PostsWrite.AddAsync(post, cancellationToken);
         }
 
@@ -145,6 +156,8 @@ public class SaveDraftCommandHandler(
 
         try
         {
+            // B8: gerekiyorsa revision artışı + içerik olayı AYNI SaveChanges transaction'ında.
+            await contentEvents.RecordChangeAsync(post, contentBefore, cancellationToken);
             await unitOfWork.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)

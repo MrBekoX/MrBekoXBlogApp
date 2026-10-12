@@ -2,6 +2,8 @@ using System.Data;
 using System.Globalization;
 using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Interfaces.Persistence;
+using BlogApp.Core.Application.Features.AgentFeature.Collaboration;
+using BlogApp.Core.Application.Features.AgentFeature.Services;
 using BlogApp.Core.Domain.Entities;
 using BlogApp.Core.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +21,9 @@ namespace BlogApp.Core.Application.Common.Messaging;
 /// <param name="SelectedMode">mode_selected olayında seçilen mod; diğerlerinde null.</param>
 /// <param name="ProgressMessage">progressed olayındaki message alanı; bildirimde taşınır.</param>
 /// <param name="SourceScope">Terminal sonuçta source_scope; diğerlerinde null.</param>
+/// <param name="ProposalUpsert">AgentActionProposedV1 olayının kalıcı proposal upsert'i
+/// (B9, ADDITIVE): consumer doldurur; Apply kararında aynı transaction'da store'a yazılır.
+/// Upsert yalnız KAYIT üretir; onay üretmez (onay açık backend eylemidir).</param>
 public sealed record AgentRunEventProjectionEvent(
     string ConsumerName,
     AgentEnvelope Envelope,
@@ -28,7 +33,8 @@ public sealed record AgentRunEventProjectionEvent(
     AgentRunStatus? TerminalStatus = null,
     string? SelectedMode = null,
     string? ProgressMessage = null,
-    string? SourceScope = null);
+    string? SourceScope = null,
+    AgentProposalUpsert? ProposalUpsert = null);
 
 /// <summary>Bir olayın projection sonucu.</summary>
 /// <param name="Decision">Saf kural kararları: Apply/Duplicate/Stale.</param>
@@ -54,10 +60,16 @@ public sealed record AgentEventProjectionResult(
 /// geç gelen eski olay terminal durumu geriye götürmez
 /// (<see cref="AgentRunEventProjectionRules"/>); bilinmeyen run_id kalıcı
 /// ``quarantined`` inbox kaydıyla ACK'lanır (sınırlı politika: sonsuz retry yok).
+/// W6 F6: terminal bildiriminin ResultJson'ı GET ile AYNI
+/// <see cref="IAgentResultPresentationGuard"/> denetiminden geçer — yayın
+/// erişimini kaybetmiş makaleye dayanan sonuç push'ta maskelenir (istemci
+/// tazelemeyi guard'lı GET'ten yapar).
 /// </summary>
 public sealed class AgentRunEventProjectionHandler(
     IUnitOfWork unitOfWork,
     IApplicationDbContext dbContext,
+    IAgentCollaborationStore collaborationStore,
+    IAgentResultPresentationGuard presentationGuard,
     ILogger<AgentRunEventProjectionHandler> logger)
 {
     public const string ConsumerName = "backend-agent-events";
@@ -140,6 +152,19 @@ public sealed class AgentRunEventProjectionHandler(
                 run.SelectedMode = @event.SelectedMode;
             }
 
+            // B9: proposal olayı uygulandıysa kalıcı proposal kaydı AYNI transaction'da
+            // upsert edilir (idempotent; aynı sürüm tekrarı no-op). Kayıt onay DEĞİLDİR:
+            // onay yalnız açık backend eylemiyle alınır (AgentCollaborationService).
+            // Sahiplik istemciden gelmez: kilitli run satırının OwnerKey'i yazılır.
+            if (@event.ProposalUpsert is { } proposalUpsert)
+            {
+                var ownedUpsert = proposalUpsert with { OwnerKey = run.OwnerKey };
+                var upsert = await collaborationStore.UpsertProposalAsync(ownedUpsert, ct);
+                logger.LogInformation(
+                    "[AgentProjection] proposal kaydı: run {RunId} proposal {ProposalId} v{Version} ({Outcome})",
+                    runId, ownedUpsert.ProposalId, upsert.Version, upsert.Outcome);
+            }
+
             if (@event.IsTerminal)
             {
                 run.Status = @event.TerminalStatus!.Value;
@@ -159,6 +184,26 @@ public sealed class AgentRunEventProjectionHandler(
                 "[AgentProjection] olay uygulandı: run {RunId} seq {Seq} type {Type} status {Status}",
                 runId, @event.EventSequence, @event.Envelope.MessageType, run.Status);
 
+            // W6 F6: push yolu GET ile AYNI sunum denetiminden geçer (B8 kuralı
+            // "sunmadan önce yayın erişim denetimi"). Yayından kalkmış/silinmiş
+            // makaleye dayanan terminal sonuç SignalR push payload'ında TAŞINMAZ;
+            // istemci durum/status bildirimini alır, içeriği guard'lı GET'ten
+            // ("içerik kullanılamıyor" kararıyla) tazeler. Denetim yalnız okur;
+            // projection kaydı değişmez.
+            var pushResultJson = @event.IsTerminal ? @event.PayloadJson : null;
+            if (pushResultJson is not null)
+            {
+                var presentation = await presentationGuard.CheckAsync(
+                    new AgentRunResultContext(runId, run.ArticleId, pushResultJson), ct);
+                if (!presentation.IsPresentable)
+                {
+                    pushResultJson = null;
+                    logger.LogInformation(
+                        "[AgentProjection] terminal sonuç push'ta maskelendi (yayın erişimi yok): run {RunId}",
+                        runId);
+                }
+            }
+
             var notification = new AgentRunNotification
             {
                 RunId = runId.ToString("D"),
@@ -168,7 +213,7 @@ public sealed class AgentRunEventProjectionHandler(
                 EventSequence = @event.EventSequence,
                 Message = @event.ProgressMessage ?? string.Empty,
                 OccurredAt = @event.Envelope.OccurredAt,
-                ResultJson = @event.IsTerminal ? @event.PayloadJson : null,
+                ResultJson = pushResultJson,
             };
             return new AgentEventProjectionResult(
                 AgentEventDecision.Apply, RunUnknown: false, InboxStatus: "applied", Notification: notification);

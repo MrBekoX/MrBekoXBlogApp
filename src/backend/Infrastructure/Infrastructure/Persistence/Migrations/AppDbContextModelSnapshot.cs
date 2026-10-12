@@ -132,6 +132,102 @@ namespace BlogApp.Infrastructure.Persistence.Migrations
                     b.ToTable("agent_event_inbox", (string)null);
                 });
 
+            modelBuilder.Entity("BlogApp.Core.Domain.Entities.AgentProposal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ArticleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("ArticleRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("BaseContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ConfirmedContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OwnerKey")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<Guid>("ProposalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId")
+                        .HasDatabaseName("IX_agent_proposals_run");
+
+                    b.HasIndex("OwnerKey", "Status")
+                        .HasDatabaseName("IX_agent_proposals_owner_status");
+
+                    b.HasIndex("ProposalId", "ContentHash")
+                        .IsUnique()
+                        .HasDatabaseName("UX_agent_proposals_proposal_content");
+
+                    b.HasIndex("ProposalId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("UX_agent_proposals_proposal_version");
+
+                    b.ToTable("agent_proposals", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_agent_proposals_status", "\"Status\" IN ('proposed', 'confirmed', 'resume_sent')");
+                        });
+                });
+
             modelBuilder.Entity("BlogApp.Core.Domain.Entities.AgentRun", b =>
                 {
                     b.Property<Guid>("Id")

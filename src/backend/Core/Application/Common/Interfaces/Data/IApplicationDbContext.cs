@@ -25,6 +25,10 @@ public interface IApplicationDbContext
     /// <summary>İlk içerik senkronizasyonu watermark kayıtları (B8, ADDITIVE).</summary>
     DbSet<AgentContentSync> AgentContentSyncs { get; }
 
+    /// <summary>İş birliği proposal kalıcı kayıtları (B9, ADDITIVE): sürüm/hash/run
+    /// sahipliği/süre sınırı; onay ve resume durum makinesi bunun üstünde yürür.</summary>
+    DbSet<AgentProposal> AgentProposals { get; }
+
     /// <summary>Transactional outbox kayıtları (B3).</summary>
     DbSet<OutboxMessage> OutboxMessages { get; }
 

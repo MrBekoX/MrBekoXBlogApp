@@ -28,6 +28,12 @@ class RunIntent(StrEnum):
     ``RESEARCH`` güncellik/dış kanıt dahil araştırma görevidir; ``COMPARE``
     karşılaştırma veya senaryoya uyarlama, ``EXPLAIN`` seçili metin/kod
     açıklaması, ``SUMMARIZE`` makaleyi bütün olarak soran özet sınıfıdır.
+
+    A9 additive üyeler (plan A9: "Profil, proje, içerik önerisi ve iş
+    birliği niyetlerini router'a bağla"): ``PROFILE`` profil tanıtımı,
+    ``PROJECTS`` proje rehberi, ``CONTENT_SUGGESTION`` ilgiye göre makale
+    önerisi, ``COLLABORATION`` iş birliği hazırlığı. Bu niyetler onaylı
+    kayıtlardan deterministik akışlarla yürütülür; makale retrieval'sızdır.
     """
 
     ARTICLE_QA = "article_qa"
@@ -36,6 +42,10 @@ class RunIntent(StrEnum):
     COMPARE = "compare"
     RESEARCH = "research"
     GENERAL = "general"
+    PROFILE = "profile"
+    PROJECTS = "projects"
+    CONTENT_SUGGESTION = "content_suggestion"
+    COLLABORATION = "collaboration"
 
 
 class AgentMode(StrEnum):

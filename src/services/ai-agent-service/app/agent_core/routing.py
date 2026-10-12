@@ -21,6 +21,13 @@ uygulama; doğrulanmış politika profiline eşle."
 - A5'te web araçları bağlı değildir (A6): ``needs_web=true`` kararlarının
   yürütmede özelliğin kullanılamaz olduğu doğru durumla bildirilir
   (``entrypoints.execute_plan``).
+- A9 (additive): profil tanıtımı, proje rehberi, makale önerisi ve iş
+  birliği niyetleri ``RunIntent``'e bağlanır (``classify_guidance_intent``).
+  Bu niyetler deterministiktir: AUTO tercihte mod FAST'a sabitlenir, router
+  modeline danışılmaz ve ``needs_web`` false kalır; yürütme onaylı kayıt
+  akışlarıyladır (``guidance``/``collab`` paketleri). Kişisel bağlam
+  sinyali ("benim projem") bu sınıflamanın ÖNÜNDE kalır — eksik kişisel
+  bilgi yine tahminle tamamlanmaz.
 """
 
 from __future__ import annotations
@@ -51,8 +58,10 @@ __all__ = [
     "RouterSuggestion",
     "AMBIGUOUS_QUESTION_THRESHOLD",
     "DEEP_RESEARCH_QUESTION_THRESHOLD",
+    "GUIDANCE_INTENTS",
     "MAX_ANSWER_HEADINGS",
     "build_router_request",
+    "classify_guidance_intent",
     "clarification_question_for",
     "decide_mode",
     "is_multi_part_question",
@@ -114,6 +123,65 @@ _PERSONAL_CONTEXT_SIGNALS = (
     "my project", "my setup", "my environment", "my config", "for my",
 )
 
+# --- A9: site rehberliği ve iş birliği niyet sinyalleri (additive) ---
+# Katlanmış metinde alt dizin; sinyaller A5 sinyal kümesiyle AYNI kuralda
+# FOLD_TEXT (Türkçe katlama + casefold, boşluk korunur) BİÇİMİNDE saklanır
+# (mevcut kod tabanı kuralı: "araştır" değil "arastir"). Kişisel bağlam
+# sinyalleri ("benim projem") bu sınıflamayı EZER — "Benim projemde kuyruk..."
+# bir rehberlik sorusu değil, eksik-bilgi sorusudur.
+
+_PROFILE_SIGNALS = (
+    "kimdir", "kim bu", "yazari kim", "sahibi kim", "sahibi", "tanit", "profili",
+    "profil", "profile", "who is", "who are you", "about the author",
+    "about you", "kim yazdi", "kim yazmis",
+    # Uydurulması yasak profil alanları (deneyim/ücret/müsaitlik) profil
+    # akışına bağlanır: needs_input ile dürüstçe karşılanır, genel model
+    # yoluna uydurma cevap üretmesi için bırakılmaz. Çakışmaya açık
+    # ("rate"→"generate", "hire"→"higher") belirteçler bilinçli dışarıda.
+    "ucret", "ucreti", "fiyat", "musaitlik", "musait mi",
+    "your rate", "hourly rate", "pricing", "are you available", "freelance",
+)
+
+_PROJECT_SIGNALS = (
+    "projeler", "projeleri", "projesi", "hangi proje", "proje rehberi",
+    "projects", "portfolio",
+)
+
+_COLLABORATION_SIGNALS = (
+    "is birligi", "isbirligi", "collaborat", "partnership",
+    "birlikte calis", "beraber calis", "guest post", "konuk yaz",
+    "konuk makale", "contribute",
+)
+
+_SUGGESTION_SIGNALS = (
+    "makale oner", "yazi oner", "icerik oner", "konu oner", "ne okumali",
+    "hangi makaleyi okumali", "article recommend", "recommend articles",
+    "what should i read",
+)
+
+#: A9 niyeti → sinyal kümesi; sıra çakışmada önceliktir (collab > profile >
+#: projects > suggestion).
+_GUIDANCE_INTENT_SIGNALS: tuple[tuple[RunIntent, tuple[str, ...]], ...] = (
+    (RunIntent.COLLABORATION, _COLLABORATION_SIGNALS),
+    (RunIntent.PROFILE, _PROFILE_SIGNALS),
+    (RunIntent.PROJECTS, _PROJECT_SIGNALS),
+    (RunIntent.CONTENT_SUGGESTION, _SUGGESTION_SIGNALS),
+)
+
+#: Onaylı kayıt akışlarıyla yürütülen niyetler (plan A9).
+GUIDANCE_INTENTS = frozenset(
+    {RunIntent.PROFILE, RunIntent.PROJECTS, RunIntent.CONTENT_SUGGESTION, RunIntent.COLLABORATION}
+)
+
+#: AUTO tercihte bu niyetler FAST'ta yürür: onaylı kayıttan deterministik
+#: cevap; araştırma/çok bölümlü analiz gerektirmez.
+_GUIDANCE_REASONS: dict[RunIntent, str] = {
+    RunIntent.PROFILE: "profil tanıtımı: onaylı profil kayıtlarından deterministik cevap",
+    RunIntent.PROJECTS: "proje rehberi: onaylı proje kayıtlarından deterministik cevap",
+    RunIntent.CONTENT_SUGGESTION: "makale önerisi: onaylı katalogdan gerekçeli öneri",
+    RunIntent.COLLABORATION: "iş birliği hazırlığı: detay çıkarımı ve onaylı öneri akışı",
+}
+
 
 def _folded(text: str) -> str:
     return fold_text(text)
@@ -152,6 +220,19 @@ def references_personal_context(question: str) -> bool:
     """Soru kullanıcının kişisel proje/ortam bilgisini mi gerektiriyor?"""
     folded = _folded(question)
     return any(signal in folded for signal in _PERSONAL_CONTEXT_SIGNALS)
+
+
+def classify_guidance_intent(question: str) -> RunIntent | None:
+    """A9 niyet sinyali: profil/proje/öneri/iş birliği; sinyal yoksa ``None``.
+
+    Çağıran, kişisel bağlam sinyaliyle birleşimi kendisi denetlemelidir
+    (``_intent_for`` "benim projem" sınıfını bu sınıflamaya sokmaz).
+    """
+    folded = _folded(question)
+    for intent, signals in _GUIDANCE_INTENT_SIGNALS:
+        if any(signal in folded for signal in signals):
+            return intent
+    return None
 
 
 # --- Çok bölümlü soru ayrıştırma (ölçüt 2; analysis alt akışının başlıkları) ---
@@ -271,6 +352,12 @@ def _intent_for(
 
     if is_generic_question(question):
         return RunIntent.SUMMARIZE
+    # A9 (additive): kişisel bağlam sinyali rehberlik sınıflamasını ezer —
+    # "benim projem" soruları eksik bilgi akışıyla sorulur, rehberlikle değil.
+    if not references_personal_context(question):
+        guidance = classify_guidance_intent(question)
+        if guidance is not None:
+            return guidance
     return RunIntent.ARTICLE_QA if article_bound else RunIntent.GENERAL
 
 
@@ -292,6 +379,10 @@ def _is_ambiguous(context: ExecutionContext, *, mode: AgentMode) -> bool:
     if mode is AgentMode.ANALYSIS:
         return False
     if references_personal_context(question):
+        return False
+    # A9 (additive): rehberlik/iş birliği niyetleri deterministiktir; router
+    # modeline danışılmaz (kesin karar sınıfı).
+    if classify_guidance_intent(question) is not None:
         return False
     if references_article(question) and not (context.article_id or context.article_snapshot):
         return True
@@ -407,6 +498,11 @@ def _rule_decision(context: ExecutionContext, *, mode: AgentMode) -> RouteDecisi
     research = _has_research_signal(question)
     explicit_deep = context.mode_preference is ModePreference.DEEP_RESEARCH
     intent = _intent_for(question, has_selection=has_selection, mode=mode, article_bound=article_bound)
+    # A9 (additive): rehberlik/iş birliği niyeti AUTO tercihte FAST'a sabitlenir —
+    # onaylı kayıttan deterministik cevap; araştırma/analysis alt akışı gereksizdir.
+    guidance_intent = intent in GUIDANCE_INTENTS
+    if guidance_intent and context.mode_preference is ModePreference.AUTO:
+        mode = AgentMode.FAST
 
     if context.mode_preference is not ModePreference.AUTO:
         reason = f"kullanıcı tercihi: {context.mode_preference.value}"
@@ -416,6 +512,8 @@ def _rule_decision(context: ExecutionContext, *, mode: AgentMode) -> RouteDecisi
         reason = "araştırma sinyali: alt sorular/çok aşamalı araştırma"
     elif freshness:
         reason = "güncellik sorusu: güncel dış kanıt gerekiyor"
+    elif guidance_intent:
+        reason = _GUIDANCE_REASONS[intent]
     elif is_multi_part_question(question):
         reason = "çok bölümlü soru: birden fazla bölüm ilişkilendirilmeli"
     elif is_comparison_question(question):
@@ -427,16 +525,21 @@ def _rule_decision(context: ExecutionContext, *, mode: AgentMode) -> RouteDecisi
 
     needs_clarification = references_personal_context(question)
     needs_web = mode is AgentMode.DEEP_RESEARCH and (explicit_deep or freshness or research)
+    source_scope: SourceScope | None = None
+    if needs_web:
+        source_scope = SourceScope.ARTICLE_AND_WEB
+    elif guidance_intent:
+        source_scope = {
+            RunIntent.PROFILE: SourceScope.PROFILE,
+            RunIntent.PROJECTS: SourceScope.PROJECTS,
+        }.get(intent, SourceScope.GENERAL)
+    else:
+        source_scope = SourceScope.ARTICLE if article_bound else SourceScope.GENERAL
     return RouteDecision(
         run_id=context.run_id,
         selected_mode=mode,
         intent=intent,
-        source_scope=(
-            SourceScope.ARTICLE_AND_WEB
-            if needs_web
-            else SourceScope.ARTICLE if article_bound
-            else SourceScope.GENERAL
-        ),
+        source_scope=source_scope,
         needs_web=needs_web,
         needs_clarification=needs_clarification,
         clarification_question=(
@@ -464,16 +567,24 @@ def _merge_suggestion(
     needs_web = suggestion.needs_web and mode is AgentMode.DEEP_RESEARCH
     article_bound = bool(context.article_id or context.article_snapshot)
     reason = suggestion.brief_reason or base.brief_reason
-    return RouteDecision(
-        run_id=context.run_id,
-        selected_mode=mode,
-        intent=suggestion.intent,
-        source_scope=(
+    # A9 (additive): öneri yine de rehberlik niyeti taşıyorsa kapsam aynı eşlemeyle verilir.
+    if suggestion.intent in GUIDANCE_INTENTS and not needs_web:
+        source_scope = {
+            RunIntent.PROFILE: SourceScope.PROFILE,
+            RunIntent.PROJECTS: SourceScope.PROJECTS,
+        }.get(suggestion.intent, SourceScope.GENERAL)
+    else:
+        source_scope = (
             SourceScope.ARTICLE_AND_WEB
             if needs_web
             else SourceScope.ARTICLE if article_bound
             else SourceScope.GENERAL
-        ),
+        )
+    return RouteDecision(
+        run_id=context.run_id,
+        selected_mode=mode,
+        intent=suggestion.intent,
+        source_scope=source_scope,
         needs_web=needs_web,
         needs_clarification=suggestion.needs_clarification,
         clarification_question=suggestion.clarification_question,

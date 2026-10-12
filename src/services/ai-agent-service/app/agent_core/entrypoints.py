@@ -22,6 +22,16 @@
   güncel bağlam verildiyse içerik revizyonu kapsam değerlendirmesi yapılır
   (``FULL_REUSE`` / ``EVIDENCE_STALE`` / ``NOT_RESUMABLE``) ve devam
   ettirilen çalışmada iptal ile deadline yeniden uygulanır.
+  A9 (additive): resume girdisi iş birliği hazırlığı için cevap/düzenleme/
+  doğrulanmış onay taşıyabilir (``ResumeRequest.collab_input`` +
+  ``ResumeRequest.validated_result``).
+
+A9 (additive): profil/proje/öneri niyetleri onaylı kayıtlardan deterministik
+``guidance`` akışıyla, iş birliği niyeti ``collab`` durum makinesiyle
+yürütülür; her ikisi de model çağrısı yapmaz. İş birliği ``needs_input``
+adımlarında DURUR ve güncel ``PreparedRun`` (``collab_state`` dâhil) A8
+checkpoint zincirine yazılır; başarı yalnız doğrulanmış backend sonucuyla
+bildirilir — agent kayıt atmaz, e-posta göndermez.
 
 Paket dış adaptör olmadan test girdisiyle çağrılabilir: tüm bağımlılıklar
 portlardan gelir ve ``agent_core.adapters.test_doubles`` ile koşulur.
@@ -42,7 +52,11 @@ from .checkpoint.resume import (
     save_checkpoint,
     validate_execution_id,
 )
+from .collab.models import CollabResumeInput, CollaborationState
+from .collab.runner import run_collaboration
 from .errors import AgentErrorCode, PortError
+from .guidance.models import ArticleCatalogEntry
+from .guidance.runner import run_guidance
 from .models import (
     AgentMode,
     AgentOutcome,
@@ -53,10 +67,12 @@ from .models import (
     ModeUpgradeRecord,
     ProgressKind,
     RouteDecision,
+    RunIntent,
     RunStatus,
     SourceScope,
     UsageRecord,
     UtcDatetime,
+    ValidatedActionResult,
     compute_content_hash,
 )
 from .ports import (
@@ -88,12 +104,16 @@ class PreparedRun(BusinessModel):
     ``execution_id`` (A8): çalıştırma zincirinin KARARLI kimliğidir; hazırlıkta
     bir kez atanır (dış adaptör verebilir — ``prepare_and_route``), checkpoint
     zincirine bağlanır ve resume'da denetlenir. İstemci yetki kaynağı değildir.
+
+    ``collab_state`` (A9, additive): iş birliği niyetinin checkpoint'te taşınan
+    hazırlık state'i; ``None`` iş birliği dışındaki tüm çalışmalarda varsayılandır.
     """
 
     context: ExecutionContext
     route: RouteDecision
     prepared_at: UtcDatetime
     execution_id: str | None = None
+    collab_state: CollaborationState | None = None
 
 
 class ResumeRequest(BusinessModel):
@@ -109,6 +129,14 @@ class ResumeRequest(BusinessModel):
       değerlendirilir (``evaluate_resume``) — içerik kaldırılmışsa/gerilemişse
       devam ``stale_snapshot`` ile reddedilir, revizyon ilerlemişse makale
       kanıtları yeniden kullanılmadan güncel bağlamla sürülür.
+
+    A9 alanları (additive; iş birliği niyeti için):
+
+    - ``collab_input``: eksik alan cevapları, öneri düzenlemesi veya
+      doğrulanmış onay (``collab.CollabResumeInput``).
+    - ``validated_result``: backend'in doğrulanmış kayıt kararı
+      (``ValidatedActionResult``); onaylı devrede ZORUNLUDUR — sonucuz onay
+      başarı varsaymaz, ``validation_error`` ile reddedilir.
     """
 
     run_id: Identifier
@@ -116,6 +144,8 @@ class ResumeRequest(BusinessModel):
     execution_id: str | None = None
     deadline_seconds: float | None = None
     current_context: ExecutionContext | None = None
+    collab_input: CollabResumeInput | None = None
+    validated_result: ValidatedActionResult | None = None
 
 
 def _utcnow() -> datetime:
@@ -370,6 +400,12 @@ async def execute_plan(
     analysis_config: AnalysisConfig | None = None,
     web_search=None,
     web_tools: dict[str, object] | None = None,
+    profile_repository=None,
+    project_repository=None,
+    article_catalog: list[ArticleCatalogEntry] | None = None,
+    checkpoint: CheckpointStore | None = None,
+    collab_input: CollabResumeInput | None = None,
+    validated_result: ValidatedActionResult | None = None,
 ) -> AgentOutcome:
     """Hazırlanmış planı yürütür; rota kararını yeniden hesaplamaz.
 
@@ -391,6 +427,14 @@ async def execute_plan(
       verilmiş olması. ``web_tools`` verilmediğinde A5 geçiş davranışı
       korunur: tek model çağrısı + web kullanılamazlık notu (makaleye bağlı
       olmayan derin araştırma bu fazın kapsamı değildir).
+    - A9: ``profile``/``projects``/``content_suggestion`` niyetleri
+      ``profile_repository``/``project_repository``/``article_catalog``
+      onaylı kaynaklarıyla deterministik rehberlik akışında yürür; onaylı
+      kaynak bağlı değilken dürüst ``config_error`` döner (kayıtsız model
+      çağrısına düşülmez). ``collaboration`` niyeti ``checkpoint`` zorunlu
+      durum makinesinde yürür: eksik detayda needs_input + checkpoint,
+      öneri üretimi, düzenleme → yeni sürüm, onay yalnız doğrulanmış
+      ``validated_result`` ile sonuçlanır — agent kayıt atmaz.
 
     ``content`` (``ContentRepository``) yalnız referans taşıyan bağlamların
     (K7) içerik getirmesi içindir. ``web_search`` portu graph tarafından
@@ -419,6 +463,62 @@ async def execute_plan(
     # Plan A5: eksik bağlam/kişisel bilgi tahminle tamamlanmaz.
     if route.needs_clarification:
         return _clarification_outcome(prepared, started_at)
+
+    # Plan A9 (additive): rehberlik niyetleri onaylı kayıtlardan deterministik
+    # yürütülür; model çağrısı yapılmaz. Onaylı kaynak bağlı değilken akış
+    # kayıtsız modele DÜŞMEZ — dürüst config_error terminali döner.
+    if route.intent in (RunIntent.PROFILE, RunIntent.PROJECTS, RunIntent.CONTENT_SUGGESTION):
+        guidance_result = await run_guidance(
+            prepared.context,
+            route,
+            profile_repository=profile_repository,
+            project_repository=project_repository,
+            article_catalog=article_catalog,
+            progress=progress,
+            cancel=cancel,
+        )
+        return guidance_result.outcome
+
+    # Plan A9 (additive): iş birliği hazırlığı durum makinesi. needs_input
+    # adımlarında DURULUR ve güncel PreparedRun (collab_state dâhil) A8
+    # checkpoint zincirine yazılır; onay yalnız doğrulanmış backend sonucuyla
+    # işlenir — agent kayıt atmaz, e-posta göndermez.
+    if route.intent is RunIntent.COLLABORATION:
+        if checkpoint is None:
+            # needs_input durumunun saklanması sözleşmenin parçasıdır; depo
+            # olmadan akış durdurulamaz — anlaşılır config_error döner.
+            return AgentOutcome(
+                selected_mode=route.selected_mode,
+                status=RunStatus.FAILED,
+                source_scope=_scope_for(prepared),
+                usage=_build_usage(prepared, started_at),
+                error_code=AgentErrorCode.CONFIG_ERROR,
+                error_message=(
+                    "iş birliği hazırlığı checkpoint deposu olmadan yürütülemez: "
+                    "needs_input durumunun saklanması (A8) zorunludur"
+                ),
+            )
+        collab_state, collab_outcome = await run_collaboration(
+            prepared.context,
+            route,
+            state=prepared.collab_state,
+            collab_input=collab_input,
+            validated_result=validated_result,
+            progress=progress,
+            cancel=cancel,
+        )
+        prepared.collab_state = collab_state
+        execution_id = prepared.execution_id or new_execution_id(run_id)
+        prepared.execution_id = execution_id
+        await save_checkpoint(
+            checkpoint,
+            run_id=run_id,
+            execution_id=execution_id,
+            kind=CheckpointKind.PREPARED,
+            payload=prepared.model_dump_json().encode("utf-8"),
+            checkpoint_id=f"{_PREPARED_CHECKPOINT_PREFIX}:run",
+        )
+        return collab_outcome
 
     # Plan A7: makale merkezli derin araştırma graph'ı (web araç kümesi bağlıysa).
     if (
@@ -587,6 +687,9 @@ async def resume(
     cancel: CancellationToken | None = None,
     web_search=None,
     web_tools: dict[str, object] | None = None,
+    profile_repository=None,
+    project_repository=None,
+    article_catalog: list[ArticleCatalogEntry] | None = None,
 ) -> AgentOutcome:
     """Duraklatılmış çalışmayı checkpoint'ten sürdürür; rota kararı yeniden hesaplanmaz.
 
@@ -609,7 +712,9 @@ async def resume(
         PortError: ``not_found`` — run için checkpoint yok; ``validation_error``
             — payload bozuk, başka run'a/yürütülmeye ait, zarf veya state şema
             sürümü uyumsuz; ``stale_snapshot`` — revizyon kapsamı devamı
-            engelliyor (kaldırma/gerileme).
+            engelliyor (kaldırma/gerileme). A9: iş birliği devamında
+            ``validation_error`` — bilinmeyen alan, öneri olmayan yerde
+            düzenleme/onay, proposal sürüm uyuşmazlığı veya sonucuz onay.
     """
     _check_cancel(cancel)
     started_at = _utcnow()
@@ -700,4 +805,10 @@ async def resume(
         cancel=cancel,
         web_search=web_search,
         web_tools=web_tools,
+        profile_repository=profile_repository,
+        project_repository=project_repository,
+        article_catalog=article_catalog,
+        checkpoint=checkpoint,
+        collab_input=request.collab_input,
+        validated_result=request.validated_result,
     )

@@ -10,7 +10,11 @@
   fast → analysis yükseltmesi yapabilir; ``needs_clarification`` kararı
   tahminle değil ``needs_input`` terminaliyle döner; ``needs_web`` kararında
   web araçları bağlı değilse özelliğin kullanılamaz olduğu doğru durumla
-  bildirilir (web gerçekleştirimi A6/A7 kapsamıdır).
+  bildirilir.
+  A7: makaleye bağlı deep_research çalışması ``web_tools`` (A6
+  ``build_web_tools`` çıktısı) verildiğinde A7 derin araştırma graph'ını
+  koşar; ``web_tools`` verilmediğinde A5 geçiş davranışı korunur (tek
+  çağrı + web kullanılamazlık notu).
 - ``resume``: duraklatılmış çalışmayı checkpoint'ten yükleyip sürdürür;
   route kararını checkpoint'ten okur, yeniden model çağrısıyla hesaplamaz.
 
@@ -46,6 +50,7 @@ from .ports.budget import BudgetKind
 from .ports.model import ModelRequest
 from .qa.models import QaFlowConfig
 from .qa.runner import run_article_qa
+from .research.runner import run_deep_research
 from .routing import is_multi_part_question, route_for_context
 
 __all__ = ["PreparedRun", "ResumeRequest", "execute_plan", "prepare_and_route", "resume"]
@@ -297,6 +302,7 @@ async def execute_plan(
     qa_config: QaFlowConfig | None = None,
     analysis_config: AnalysisConfig | None = None,
     web_search=None,
+    web_tools: dict[str, object] | None = None,
 ) -> AgentOutcome:
     """Hazırlanmış planı yürütür; rota kararını yeniden hesaplamaz.
 
@@ -313,13 +319,16 @@ async def execute_plan(
     - ``needs_clarification`` kararında model çağrısı yapılmaz; açık soruyla
       ``needs_input`` terminali döner: eksik kişisel bilgi tahminle
       tamamlanmaz (plan A5).
-    - ``deep_research`` A1 tek-çağrı yolunda kalır (A6–A7 kapsamı);
-      ``needs_web`` kararlarında web araçları bağlı değilse rapora
-      kullanılamazlık durumu eklenir.
+    - ``deep_research`` A7 derin araştırma graph'ını koşar: koşul — makaleye
+      bağlı bağlam ve ``web_tools`` (A6 ``build_web_tools`` çıktısı)
+      verilmiş olması. ``web_tools`` verilmediğinde A5 geçiş davranışı
+      korunur: tek model çağrısı + web kullanılamazlık notu (makaleye bağlı
+      olmayan derin araştırma bu fazın kapsamı değildir).
 
     ``content`` (``ContentRepository``) yalnız referans taşıyan bağlamların
-    (K7) içerik getirmesi içindir. ``web_search`` portu A5'te çağrılmaz;
-    yalnız bağlantı durumunun doğru bildirilmesi için kabul edilir.
+    (K7) içerik getirmesi içindir. ``web_search`` portu graph tarafından
+    doğrudan çağrılmaz; yalnız bağlantı durumunun doğru bildirilmesi için
+    kabul edilir — gerçek web erişimi ``web_tools`` kümesiyladır.
 
     GEÇİŞ DAVRANIŞI (B4 kapanacak): ``retriever`` verilmediğinde makale
     bağlamlı çalışma A1 tek-çağrı yolunda kalır. Bu, kanıtsız makale cevabı
@@ -343,6 +352,24 @@ async def execute_plan(
     # Plan A5: eksik bağlam/kişisel bilgi tahminle tamamlanmaz.
     if route.needs_clarification:
         return _clarification_outcome(prepared, started_at)
+
+    # Plan A7: makale merkezli derin araştırma graph'ı (web araç kümesi bağlıysa).
+    if (
+        route.selected_mode is AgentMode.DEEP_RESEARCH
+        and _is_article_bound(prepared.context)
+        and web_tools is not None
+    ):
+        research_result = await run_deep_research(
+            prepared.context,
+            route,
+            model=model,
+            web_tools=web_tools,
+            content=content,
+            store=budget,
+            cancel=cancel,
+            progress=progress,
+        )
+        return research_result.outcome
 
     if (
         _is_article_bound(prepared.context)
@@ -460,6 +487,7 @@ async def resume(
     progress: ProgressSink | None = None,
     cancel: CancellationToken | None = None,
     web_search=None,
+    web_tools: dict[str, object] | None = None,
 ) -> AgentOutcome:
     """Duraklatılmış çalışmayı checkpoint'ten sürdürür; rota kararı yeniden hesaplanmaz.
 
@@ -502,4 +530,5 @@ async def resume(
         progress=progress,
         cancel=cancel,
         web_search=web_search,
+        web_tools=web_tools,
     )

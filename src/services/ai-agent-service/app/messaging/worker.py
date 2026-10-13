@@ -374,6 +374,7 @@ class _WorkerProgressSink(ProgressSink):
             correlation_id=correlation_id,
             kind=kind,
             message=event.message,
+            detail=event.detail,
             execution_attempt=self._attempt,
             causation_id=causation_id,
         )

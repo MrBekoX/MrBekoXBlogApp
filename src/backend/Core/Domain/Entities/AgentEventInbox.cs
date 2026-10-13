@@ -34,6 +34,18 @@ public class AgentEventInbox
     /// <summary>Yoksayma/karantina gerekçesi (uygulanan olayda boş).</summary>
     public string? Detail { get; set; }
 
+    /// <summary>
+    /// Uygulanan olayın doğrulanmış payload JSON'u (agent live-steps replay türetme
+    /// kaynağı; ADDITIVE). Yalnız ``applied`` satırlarda doludur — replay sorgusu
+    /// zaten yalnız applied kayıtları döndürür. Boyut zarf üst sınırıyla sınırlıdır;
+    /// eski (migration öncesi) satırlarda NULL kalır ve replay alanları null döner.
+    /// </summary>
+    public string? PayloadJson { get; set; }
+
+    /// <summary>Progressed olayının kullanıcı-dostu TR mesajı (payload ``message``);
+    /// diğer olay türlerinde NULL.</summary>
+    public string? ProgressMessage { get; set; }
+
     /// <summary>Kayittaştırma anı (tekrar teslimde güncellenmez).</summary>
     public DateTime CreatedAt { get; set; }
 }

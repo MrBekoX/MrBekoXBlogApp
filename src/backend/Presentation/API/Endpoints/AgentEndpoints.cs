@@ -465,6 +465,11 @@ public static class AgentEndpoints
                         item.MessageType,
                         item.MessageId,
                         item.OccurredAt,
+                        // Ortak olay yüzeyi (agent live-steps, ADDITIVE): JSON
+                        // replay ile AYNI türetme (handler DTO'su) paylaşılır.
+                        item.Kind,
+                        item.Message,
+                        item.Detail,
                         runStatus = page.Value.RunStatus,
                         lastEventSequence = page.Value.LastEventSequence,
                     });

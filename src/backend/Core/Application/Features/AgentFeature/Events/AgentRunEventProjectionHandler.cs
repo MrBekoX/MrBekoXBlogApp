@@ -176,7 +176,8 @@ public sealed class AgentRunEventProjectionHandler(
                 }
             }
 
-            await InsertInboxAsync(@event, messageId, runId, "applied", null, ct);
+            await InsertInboxAsync(@event, messageId, runId, "applied", null, ct,
+                payloadJson: @event.PayloadJson, progressMessage: @event.ProgressMessage);
             await unitOfWork.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
@@ -226,7 +227,9 @@ public sealed class AgentRunEventProjectionHandler(
         Guid runId,
         string status,
         string? detail,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? payloadJson = null,
+        string? progressMessage = null)
     {
         await dbContext.AgentEventInboxes.AddAsync(new AgentEventInbox
         {
@@ -237,6 +240,10 @@ public sealed class AgentRunEventProjectionHandler(
             EventSequence = @event.EventSequence,
             Status = status,
             Detail = detail,
+            // Agent live-steps replay türetme kaynağı (ADDITIVE): yalnız UYGULANAN
+            // kayıt replay'in parçasıdır; stale/quarantined satırlar payload'sız kalır.
+            PayloadJson = payloadJson,
+            ProgressMessage = progressMessage,
             CreatedAt = DateTime.UtcNow,
         }, ct);
     }

@@ -68,7 +68,12 @@ internal static class AgentB10TestHost
     }
 
     public static async Task SeedAppliedEventAsync(
-        AppDbContext context, Guid runId, long eventSequence, string messageType)
+        AppDbContext context,
+        Guid runId,
+        long eventSequence,
+        string messageType,
+        string? payloadJson = null,
+        string? progressMessage = null)
     {
         context.AgentEventInboxes.Add(new AgentEventInbox
         {
@@ -78,6 +83,10 @@ internal static class AgentB10TestHost
             RunId = runId,
             EventSequence = eventSequence,
             Status = "applied",
+            // Agent live-steps replay türetme girdisi (ADDITIVE; projection
+            // handler'ın applied kayda yazdığı sütunların test karşılığı).
+            PayloadJson = payloadJson,
+            ProgressMessage = progressMessage,
             CreatedAt = DateTime.UtcNow,
         });
         await context.SaveChangesAsync();

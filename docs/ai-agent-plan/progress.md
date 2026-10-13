@@ -68,3 +68,20 @@ Sınırlar: token-parça cevap akışı yok (altyapı seyrekleştirilmiş progre
 ## Aşama sonu kayıt formatı
 
 Aşama kimliği, yapılan işler, değişen dosyalar, kullanılan [KAYNAK#C1] kimlikleri, gerçek test çıktıları, belirsizlikler ve sonraki adım kaydedilir.
+
+## Canlı işlem adımları — tamamlanma denetimi (2026-10-13 akşam)
+
+Yöntem: workflow orkestrasyonu — 2 salt-okunur denetçi (backend/frontend kontrol listesi, dosya+fonksiyon kanıtlı), 8 bağımsız bulgu doğrulayıcı, backend/frontend düzeltici, world.run kapıları. 18 bulgu (8'i bağımsız doğrulandı); 8'i kod değişikliği gerektirdi, giderildi ve kapılar yeniden koşuldu.
+
+Düzeltmeler:
+- `tool_error` progress kind'ı uçtan uca (additive): contracts/enums.py + agent_core/models/enums.py + common.schema.json + AgentMessageTypeRegistry.cs; research/nodes.py'de dört araç hata noktasında küratörlü `{node, code, error_id}` detail ile yayın — akış kısmi yolda sürer, terminal durumu belirlemez; worker.py `detail=event.detail` köprüsü.
+- Frontend dürüst adım durumları: failed kırmızı / cancelled gri / partial+needs_input+tool_error amber; yeşil+`tamamlandı` yalnız gerçek başarıda (sr-only ekleriyle).
+- `agent.run.needs_input` yüzeylendi: `isWaitingInputKind` + "Devam et" → `agentApi.resumeRun(expectedInputVersion=needs_input event_sequence)`; durum rozeti nabızsız "Girdi bekleniyor".
+- localStorage restore'da 403/404 kalıcı erişilemezlikte `starting` kilitlenmesi giderildi: çalışma kaldırılır, kayıt temizlenir, `runForbidden`/`runNotFound` ile bildirilir; geçici ağ hatasında eski self-heal korunur.
+- Monoton filtre model sözleşmesine taşındı: `buildAgentSteps` `event_sequence <= son görülen` olayı kendisi eler (duplicate listeyle idempotent); bileşen imleci ek güvence.
+
+Test eki: backend sayfalama (after/limit/HasMore + MaxPageSize=200 clamp), çok adımlı progressed+tool_error yüzeyi, SSE `error` dalı, E2E replay `kind='cancelled'`; frontend duplicate/stale/needs_input/tool_error model testleri; Python tool_error yayın + detail köprü testleri.
+
+Doğrulama (fix + eklemeler sonrası): dotnet **212/212**; pytest **825 passed, 1 skipped**; vitest **8 dosya/40 test**; next build yeşil.
+
+Kalan bilinen sınırlar: token-parça akış yok; adım paneli yalnız en son mesaja bağlı (tek aktif çalışma modeliyle tutarlı); replay OccurredAt backend tüketim anı (SignalR'da üretim anı — kozmetik); 2sn'lik progress throttle aynı kind'ın meşru ikinci örneğini düşürebilir (belgelenmiş tasarım kararı); WCAG kontrast hesapları ölçülmedi (statik).

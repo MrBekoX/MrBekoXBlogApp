@@ -60,6 +60,14 @@
 
 /* Light Theme - Warm Cream & Terracotta */
 :root {
+  /* Font families loaded via Google Fonts CDN <link> in app/layout.tsx (runtime, not build
+     time). Each name resolves only when the font is available; the fallbacks in the
+     font-family declarations below keep typography working offline. */
+  --font-source-sans: 'Source Sans 3';
+  --font-jetbrains-mono: 'JetBrains Mono';
+  --font-merriweather: 'Merriweather';
+  --font-crimson-text: 'Crimson Text';
+
   --radius: 0.75rem;
   --background: oklch(0.98 0.005 80);
   --foreground: oklch(0.15 0.02 50);

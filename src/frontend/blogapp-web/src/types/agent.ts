@@ -81,6 +81,14 @@ export interface AgentRunEvent {
   messageType: string;
   messageId: string;
   occurredAt: string;
+  /** Ortak olay sözleşmesi: progressed'te payload.kind (ör. retrieval_started);
+   * terminal olaylarda messageType'tan türetilir (completed/failed/cancelled/partial);
+   * agent.action.proposed → action_proposed. Eski kayıtlarda absent olabilir. */
+  kind?: string;
+  /** progressed olayında inbox.ProgressMessage (kullanıcı-dostu TR cümle); terminalde null. */
+  message?: string | null;
+  /** progressed payload.detail (küratörlü kullanıcı-dostu alanlar); yoksa null. */
+  detail?: Record<string, string> | null;
 }
 
 export interface AgentRunEvents {

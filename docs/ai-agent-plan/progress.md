@@ -1,6 +1,6 @@
 # AI agent uygulama aşamaları ilerleme kaydı
 
-Aktif uygulama aşaması: TÜM DALGALAR TAMAMLANDI (W0–W7) — nihai rapor + PR hazırlığı
+Aktif uygulama aşaması: Canlı işlem adımları — sohbet arayüzü (feature/agent-live-steps, PR incelemesinde)
 
 Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar ürün kodu geliştirmesini gösterir. Durumlar yalnız gerçek implementasyon ve çalıştırılmış kontrollerle güncellenir.
 
@@ -52,6 +52,18 @@ Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar 
 - Python migration aracı kilitlendi: Alembic 1.20.0 (D014). A3'ün gerçek pgvector entegrasyonu B8'de.
 - Gerçek LLM/embedding sağlayıcısı hâlâ devrede değil; fixture/test-double başarısı gerçek sağlayıcı başarısı sayılmaz.
 - B2 gerçek broker doğrulaması yerel Docker broker'la yapıldı; üretim quorum/TLS kurulumu B11'de.
+
+## Canlı işlem adımları çalışması (2026-10-13)
+
+İnceleme: Frontend → Backend → AI Agent Service akışı dosya/fonksiyon referanslarıyla doğrulandı (agent-api.ts → AgentEndpoints.cs:51 → AcceptAgentRunCommand+outbox → intake.py → worker.py → events.py:168 publish_progress → AgentRunEventProjectionHandler → AgentRunsHub + GET events JSON/SSE). Eksik: progress kind/message/detail replay'e taşmıyordu (agent_event_inbox'ta sütun yoktu) ve panelde canlı adım UI yoktu.
+
+Uygulama (feature/agent-live-steps, commit 4a1934b backend + 871eb16 frontend):
+- Backend: AgentRunEventDto'ya Kind/Message/Detail (additive); agent_event_inbox'a PayloadJson+ProgressMessage sütunları (migration AddAgentEventInboxPayload); projection applied kayda yazıyor; handler kalıcı sütunlardan türetiyor (değer başına 500 karakter kesim; bozuk JSON → null, olay düşmez); terminal/action_proposed kind'ları MessageType'tan; SSE gövdesi dahil. Escalation kararı: (A) kalıcı şema — orchestrator onaylı.
+- Frontend: SignalR RunUpdated tetikleyici + getEvents(after) replay toparlama (4sn polling kaldırıldı); monoton eventSequence filtresi; agent-steps-model.ts (kind türetme, tek sıralı adım listesi, eşli süre) + vitest testleri; agent-steps.tsx daraltılabilir accordion (16 kind TR/EN etiket, durum/süre/güvenli özet, çalışan adım vurgusu, reduced-motion); agent-chat-markdown.tsx (react-markdown+gfm+highlight); gerçek cancel/tekrar/boş durum; akıllı scroll + "Yeni içerik" pill; aria-live/klavye/mobil.
+
+Doğrulama (orchestrator, seri): dotnet test **212/212**; npm build yeşil; **vitest 8 dosya/35 test** yeşil.
+
+Sınırlar: token-parça cevap akışı yok (altyapı seyrekleştirilmiş progress — adımlar canlı, cevap terminalde tam); gerçek LLM sağlayıcısı yok (test_executor işaretli); tarayıcı otomasyonlu görsel E2E koşulmadı.
 
 ## Aşama sonu kayıt formatı
 

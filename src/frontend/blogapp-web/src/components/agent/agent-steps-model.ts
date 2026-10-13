@@ -11,7 +11,9 @@
  * - terminal olaylarda messageType son ekinden türet:
  *     agent.run.completed → completed, agent.run.failed → failed,
  *     agent.run.cancelled → cancelled, agent.run.partially_completed → partial;
- * - agent.action.proposed → action_proposed.
+ * - agent.action.proposed → action_proposed;
+ * - agent.run.needs_input → needs_input (B9: çalışma TERMINAL DEĞİLDİR, ek
+ *   girdi bekler; GET 'Accepted' döner — resume ile devam edilir).
  * Alan endpoint'e henüz eklenmemişse (eski kayıt) kind absent olabilir; bu
  * durumda olay GERÇEKTİR ama alt türü bilinmiyordur → genel 'progress' adımı.
  */
@@ -32,6 +34,8 @@ export const AGENT_STEP_KINDS = [
   'generation_completed',
   'validation_completed',
   'action_proposed',
+  'needs_input',
+  'tool_error', // progressed payload'tan: tekil dış araç hatası (akış kısmi yolda sürer)
   'completed',
   'failed',
   'cancelled',
@@ -40,12 +44,13 @@ export const AGENT_STEP_KINDS = [
 
 export type AgentStepKind = (typeof AGENT_STEP_KINDS)[number] | 'progress';
 
-/** Terminal + proposal olaylarında messageType → kind (kablo adları: AgentMessageTypeRegistry). */
+/** Terminal + proposal/needs_input olaylarında messageType → kind (kablo adları: AgentMessageTypeRegistry). */
 const KIND_BY_MESSAGE_TYPE: Record<string, AgentStepKind> = {
   'agent.run.completed': 'completed',
   'agent.run.partially_completed': 'partial',
   'agent.run.failed': 'failed',
   'agent.run.cancelled': 'cancelled',
+  'agent.run.needs_input': 'needs_input',
   'agent.action.proposed': 'action_proposed',
 };
 
@@ -54,6 +59,12 @@ const KNOWN_KINDS = new Set<string>(AGENT_STEP_KINDS);
 /** Terminal olay türleri (adım listesini kapatır). */
 export function isTerminalKind(kind: string): boolean {
   return kind === 'completed' || kind === 'partial' || kind === 'failed' || kind === 'cancelled';
+}
+
+/** Çalışmayı TERMINAL olarak KAPATMAYAN bekleme türü: needs_input (B9) —
+ * "çalışıyor" nabzı durmalı ama besteci/kapatma terminal davranışı görmez. */
+export function isWaitingInputKind(kind: string): boolean {
+  return kind === 'needs_input';
 }
 
 /**
@@ -75,6 +86,7 @@ export function deriveEventKind(event: Pick<AgentRunEvent, 'kind' | 'messageType
     .toLowerCase();
   if (tail === 'partiallycompleted' || tail === 'partially_completed') return 'partial';
   if (tail === 'completed' || tail === 'failed' || tail === 'cancelled') return tail;
+  if (tail === 'needs_input' || tail === 'needsinput') return 'needs_input';
   if (tail === 'proposed' || tail === 'actionproposed') return 'action_proposed';
   if (tail === 'progressed') return 'progress'; // kind'ı gelmemiş progressed kaydı
   return null;
@@ -107,6 +119,11 @@ export interface AgentStepVM {
  * (olay gerçek; etiketi genel). Sıra olayların geliş sırasıdır — paralel
  * worker olayları tek listede, sahte paralellik gösterilmeden akar.
  *
+ * MONOTON FİLTRE (model sözleşmesi): event_sequence'i son işlenen diziden
+ * BÜYÜK olmayan olay (aynı sequence'in tekrarı ya da geç/stale replay)
+ * YOK SAYILIR — duplicate listeyle çağrı buildAgentSteps idempotenttir ve
+ * adım çoğaltmaz (bileşen imleci ek güvencedir, tek başına yeterli değildir).
+ *
  * Eşli tamamlama adımı (ör. research_round_completed) en yakın eşleşen
  * başlangıca/aynı-tür önceki adıma bağlanır: agent_core'da research_started
  * BİR KEZ, research_round_completed HER TUR için bir kez yayınlanır
@@ -116,8 +133,13 @@ export interface AgentStepVM {
 export function buildAgentSteps(events: AgentRunEvent[]): AgentStepVM[] {
   const steps: AgentStepVM[] = [];
   const consumedStarts = new Set<number>();
+  // B5 sözleşmesi: event_sequence 1'den monoton artar; <= son görülen = duplicate/geç.
+  let lastSequence = 0;
 
   for (const event of events) {
+    if (event.eventSequence <= lastSequence) continue; // duplicate/geç olay: adım çoğaltamaz
+    lastSequence = event.eventSequence;
+
     const kind = deriveEventKind(event);
     if (!kind) continue; // adım gösterilemeyen idari olay (ör. agent.run.accepted)
 

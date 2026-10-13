@@ -16,8 +16,10 @@ import { agentStepKindLabels, agentTexts, type AgentLang } from '@/lib/agent-i18
 import {
   formatDuration,
   isTerminalKind,
+  isWaitingInputKind,
   settledStepDurationMs,
   summarizeDetail,
+  type AgentStepKind,
   type AgentStepVM,
 } from './agent-steps-model';
 
@@ -38,7 +40,8 @@ export function AgentStepsPanel({ steps, runActive, lang, open, onToggle, now }:
   const t = agentTexts[lang];
   const kindLabels = agentStepKindLabels[lang];
   const last = steps[steps.length - 1];
-  const lastIsRunning = runActive && !isTerminalKind(last.kind);
+  // needs_input (B9) terminal DEĞİLDİR ama çalışmıyor da: nabız yok, bekleme gösterilir.
+  const lastIsRunning = runActive && !isTerminalKind(last.kind) && !isWaitingInputKind(last.kind);
 
   return (
     <div className="rounded border border-ide-border bg-black/20" data-testid="agent-steps">
@@ -73,6 +76,9 @@ export function AgentStepsPanel({ steps, runActive, lang, open, onToggle, now }:
             const duration = stepDurationText(step, steps[index + 1], isRunning, now, lang);
             const summary = step.message ?? '';
             const detailLines = isRunning ? [] : summarizeDetail(step.detail);
+            // Yerleşmiş adımın dürüst durumu: başarıdan AYRI başarısızlık/iptal/
+            // kısmi/bekleme görselleştirmesi (nokta rengi + ekran okuyucu eki).
+            const settled = isRunning ? null : settledStepStatus(step.kind, t);
 
             return (
               <li
@@ -85,15 +91,15 @@ export function AgentStepsPanel({ steps, runActive, lang, open, onToggle, now }:
                   <span
                     aria-hidden="true"
                     className={`mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                      isRunning ? 'bg-ide-primary motion-safe:animate-pulse' : 'bg-emerald-500'
+                      isRunning ? 'bg-ide-primary motion-safe:animate-pulse' : settled!.dot
                     }`}
                   />
                   <span
-                    className={`flex-1 text-xs ${isRunning ? 'font-medium text-ide-primary' : 'text-gray-300'}`}
+                    className={`flex-1 text-xs ${isRunning ? 'font-medium text-ide-primary' : settled!.tone}`}
                   >
                     {label}
                     <span className="sr-only">
-                      {isRunning ? ` — ${t.stepRunning}` : ` — ${t.stepDone}`}
+                      {isRunning ? ` — ${t.stepRunning}` : ` — ${settled!.sr}`}
                     </span>
                   </span>
                   {duration && (
@@ -124,6 +130,31 @@ export function AgentStepsPanel({ steps, runActive, lang, open, onToggle, now }:
       )}
     </div>
   );
+}
+
+/** Yerleşmiş adımın durum görünümü: nokta rengi, etiket tonu ve ekran okuyucu
+ * eki kind'tan türetilir — başarısız/iptal/kısmi adımlar 'tamamlandı' YAZILMAZ
+ * (yeşil nokta + "— tamamlandı" yalnız gerçek başarı ve nötr yerleşim içindir). */
+function settledStepStatus(
+  kind: AgentStepKind,
+  t: (typeof agentTexts)['tr'],
+): { dot: string; tone: string; sr: string } {
+  switch (kind) {
+    case 'failed':
+      return { dot: 'bg-red-500', tone: 'text-red-400', sr: t.stepFailed };
+    case 'cancelled':
+      return { dot: 'bg-gray-500', tone: 'text-gray-400', sr: t.stepCancelled };
+    case 'partial':
+      return { dot: 'bg-amber-500', tone: 'text-amber-400', sr: t.stepPartial };
+    case 'needs_input':
+      return { dot: 'bg-amber-400', tone: 'text-amber-400', sr: t.stepNeedsInput };
+    case 'tool_error':
+      // Tekil araç hatası: adım başarısız ama çalışma kısmi yolda sürer —
+      // run hatasının kırmızısı değil amber.
+      return { dot: 'bg-amber-500', tone: 'text-amber-400', sr: t.stepToolError };
+    default:
+      return { dot: 'bg-emerald-500', tone: 'text-gray-300', sr: t.stepDone };
+  }
 }
 
 /** Adım süresi metni: çalışan adım = canlı elapsed (occurredAt→now);

@@ -136,12 +136,15 @@ def test_other_kinds_still_publish_progressed() -> None:
         run_id=run_id,
         kind=ProgressKind.GENERATION_STARTED,
         message="üretim başladı",
+        detail={"node": "generation"},
         occurred_at=datetime.now(timezone.utc),
     )))
 
     assert publisher.proposed == []
     assert len(publisher.progressed) == 1
     assert publisher.progressed[0]["kind"] == "generation_started"
+    # Sözleşme köprüsü detail'i da taşır: domain→transport kayıp yok.
+    assert publisher.progressed[0]["detail"] == {"node": "generation"}
 
 
 def test_worker_sink_module_exports_watch_types() -> None:

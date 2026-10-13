@@ -92,3 +92,4 @@ class ProgressKind(StrEnum):
     GENERATION_COMPLETED = "generation_completed"
     VALIDATION_COMPLETED = "validation_completed"
     ACTION_PROPOSED = "action_proposed"
+    TOOL_ERROR = "tool_error"

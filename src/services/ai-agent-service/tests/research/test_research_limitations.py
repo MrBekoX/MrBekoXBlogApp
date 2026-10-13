@@ -113,6 +113,45 @@ def test_insufficient_sources_yields_partial_report_without_sources() -> None:
     assert any("kaynak" in record.message for record in state["errors"])
 
 
+def test_read_failure_publishes_tool_error_progress() -> None:
+    """Okunamayan kaynak canlı adım yüzeyine kind=tool_error ile taşınır (additive).
+
+    Araç hatası akışı kesmez: kısmi rapor yolu korunur; ``tool_error``
+    olayının ``detail`` alanı küratörlü anahtarları (node/code/error_id) taşır.
+    """
+    from agent_core.adapters.test_doubles.fake_signals import RecordingProgressSink
+    from agent_core.models import ProgressKind
+
+    async def scenario() -> dict[str, Any]:
+        async with build_server(
+            {"/missing": "Bu sayfa yok"}, status_overrides={"/missing": 404}
+        ) as server:
+            provider = RoutingSearchProvider([("", [server.url("/missing")])])
+            policy = make_research_policy()
+            web_tools, store = build_web_bundle(server, provider, policy=policy)
+            sink = RecordingProgressSink()
+            result = await run_deep_research(
+                make_research_context(),
+                make_research_route(),
+                model=FixedModelProvider(),
+                web_tools=web_tools,
+                policy=policy,
+                store=store,
+                progress=sink,
+            )
+            return {"outcome": result.outcome, "events": list(sink.events)}
+
+    data = run(scenario())
+    assert data["outcome"].status is RunStatus.PARTIAL  # araç hatası akışı kesmez
+    tool_errors = [event for event in data["events"] if event.kind is ProgressKind.TOOL_ERROR]
+    assert tool_errors, "okuma arızası tool_error ilerlemesi üretmeli"
+    record = tool_errors[0]
+    assert "kaynak bulunamadı" in record.message  # kullanıcı-dostu TR ileti
+    assert record.detail["node"] == "research.gather"
+    assert record.detail["code"] == AgentErrorCode.NOT_FOUND.value
+    assert record.detail["error_id"].startswith("research:read:")
+
+
 def test_budget_exhaustion_stops_research_and_reports_partial() -> None:
     """Bütçe bitişi: arama rezervasyonu reddedilen worker kısmi yola bağlanır."""
 

@@ -104,6 +104,49 @@ public class AgentRunEventsSseSurfaceTests : IAsyncLifetime
         Assert.Equal(2, long.Parse(ValueOf(done, "lastEventSequence"), System.Globalization.CultureInfo.InvariantCulture));
     }
 
+    [Fact]
+    public async Task Events_SseStream_FailedReplayEmitsErrorEventAndCloses()
+    {
+        // "error" dalı (AgentEndpoints.StreamEventsAsync): replay sorgusu
+        // başarısızsa (sahiplik başka oturumda → Forbidden) akış tek "error"
+        // olayıyla KAPANIR; "done" üretilmez (terminal kapanış yalnız başarılı
+        // replay'dedir). Mini host sabit kimlik taşır; run başka sahibe seed'lenir.
+        var ownerId = Guid.NewGuid();
+        var streamUserId = Guid.NewGuid();
+        Guid runId;
+        await using (var context = _fixture.CreateContext())
+        {
+            var run = await AgentB10TestHost.SeedRunAsync(context, ownerKey: $"u:{ownerId:D}");
+            runId = run.Id;
+            await AgentB10TestHost.SeedAppliedEventAsync(context, run.Id, 1, "agent.run.progressed",
+                payloadJson: """{"event_sequence":1,"kind":"retrieval_started","message":"Makale bölümleri ayrıştırılıyor"}""",
+                progressMessage: "Makale içeriği taranıyor...");
+        }
+
+        var cancellationToken = NewTestToken();
+        await using var app = BuildSseHost(streamUserId);
+        await app.StartAsync(cancellationToken);
+        using var client = new HttpClient { BaseAddress = new Uri(app.Urls.First()) };
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/agent/runs/{runId:D}/events");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+
+        using var response = await client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Hata kapanışı: akış "error" olayıyla biter; done çıkarımı YOK
+        // (ReadSseEventsAsync'in done çıkarımı yalnız başarılı akış içindir).
+        var events = await ReadSseEventsAsync(response, cancellationToken, requireDone: false);
+
+        var error = Assert.Single(events);
+        Assert.Equal("error", error.Name);
+        Assert.Contains("başka bir oturuma ait", error.DataJson);
+    }
+
     /// <summary>B5 hub sözleşmesinin replay karşılığı: terminal run + boşalan sayfa
     /// sonrası akış "done" ile kapanır (endpoint SseMaxDuration beklemez).</summary>
     private WebApplication BuildSseHost(Guid userId)
@@ -137,7 +180,10 @@ public class AgentRunEventsSseSurfaceTests : IAsyncLifetime
 
     private sealed record SseEvent(string Name, string DataJson);
 
-    private static async Task<List<SseEvent>> ReadSseEventsAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<List<SseEvent>> ReadSseEventsAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken,
+        bool requireDone = true)
     {
         var events = new List<SseEvent>();
         var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -157,7 +203,10 @@ public class AgentRunEventsSseSurfaceTests : IAsyncLifetime
             }
         }
 
-        Assert.Contains(events, e => e.Name == "done"); // akış kapanmadan bitmemeli
+        if (requireDone)
+        {
+            Assert.Contains(events, e => e.Name == "done"); // akış kapanmadan bitmemeli
+        }
         return events;
     }
 

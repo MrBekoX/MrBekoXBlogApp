@@ -238,6 +238,15 @@ public sealed class AgentE2eFullPathTests : IAsyncLifetime
         Assert.DoesNotContain("iptalden SONRA gelen geç yanıt",
             JsonSerializer.Serialize(status.Value.Result ?? new AgentRunResultDto { Status = status.Value.Status }));
 
+        // Canlı adım olay yüzeyi: replay'de cancelled olayı kind='cancelled'
+        // ile akar (terminal kind messageType son ekinden türetilir); stale
+        // completed replay'in parçası değildir.
+        var replay = await ReplayEventsAsync(runId, user.Id);
+        Assert.True(replay.IsSuccess);
+        var cancelledReplay = Assert.Single(replay.Value!.Events);
+        Assert.Equal("agent.run.cancelled", cancelledReplay.MessageType);
+        Assert.Equal("cancelled", cancelledReplay.Kind);
+
         var run = await SingleRunAsync(runId);
         Assert.DoesNotContain("geç yanıt", run.ResultJson ?? string.Empty); // projection'a yazılmadı
     }

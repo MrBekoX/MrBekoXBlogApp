@@ -5,6 +5,7 @@ import {
   deriveEventKind,
   formatDuration,
   isTerminalKind,
+  isWaitingInputKind,
   settledStepDurationMs,
   summarizeDetail,
 } from './agent-steps-model';
@@ -41,6 +42,18 @@ describe('deriveEventKind', () => {
   it('kind taşımayan progressed olayını genel progress sayar; idari olayları atlar', () => {
     expect(deriveEventKind({ messageType: 'agent.run.progressed' })).toBe('progress');
     expect(deriveEventKind({ messageType: 'agent.run.accepted' })).toBeNull();
+  });
+
+  it('agent.run.needs_input B9 bekleme adımıdır; terminal DEĞİLDİR', () => {
+    expect(deriveEventKind({ messageType: 'agent.run.needs_input' })).toBe('needs_input');
+    expect(deriveEventKind({ messageType: 'AgentRunNeedsInputV1' })).toBe('needs_input');
+    expect(isWaitingInputKind('needs_input')).toBe(true);
+    expect(isTerminalKind('needs_input')).toBe(false);
+  });
+
+  it('progressed tool_error kindı bilinir: araç hatası ayrı adımdır; terminal değildir', () => {
+    expect(deriveEventKind({ kind: 'tool_error', messageType: 'agent.run.progressed' })).toBe('tool_error');
+    expect(isTerminalKind('tool_error')).toBe(false);
   });
 
   it('isTerminalKind yalnız terminal türlerini işaretler', () => {
@@ -86,6 +99,36 @@ describe('buildAgentSteps', () => {
     ]);
     expect(steps[1].startedAt).toBe('2026-10-13T10:00:00Z');
     expect(steps[2].startedAt).toBe('2026-10-13T10:00:05Z');
+  });
+
+  it('aynı event_sequence tekrar gelirse adım ÇOĞALTMAZ (model düzeyinde idempotent replay)', () => {
+    const events = [
+      event({ eventSequence: 1, kind: 'generation_started' }),
+      event({ eventSequence: 2, kind: 'needs_input' }),
+    ];
+    // Bileşen imleci olmasa da (doğrudan duplicate liste) sonuç değişmez.
+    const steps = buildAgentSteps([...events, ...events]);
+    expect(steps.map((step) => step.sequence)).toEqual([1, 2]);
+    expect(steps.map((step) => step.kind)).toEqual(['generation_started', 'needs_input']);
+  });
+
+  it('geç/stale olayı (son görülenden küçük event_sequence) yok sayar; terminali geri çeviremez', () => {
+    const steps = buildAgentSteps([
+      event({ eventSequence: 5, kind: 'generation_started' }),
+      event({ eventSequence: 3, kind: 'retrieval_started' }), // geç gelen replay
+      event({ eventSequence: 6, messageType: 'agent.run.completed' }),
+    ]);
+    expect(steps.map((step) => step.sequence)).toEqual([5, 6]);
+    expect(steps[1].kind).toBe('completed');
+  });
+
+  it('kind türetilemeyen duplicate idari olay da imleci ilerletir (çift Accepted tek geçer)', () => {
+    const steps = buildAgentSteps([
+      event({ eventSequence: 1, messageType: 'agent.run.accepted' }),
+      event({ eventSequence: 1, messageType: 'agent.run.accepted' }),
+      event({ eventSequence: 2, kind: 'run_started' }),
+    ]);
+    expect(steps.map((step) => step.sequence)).toEqual([2]);
   });
 });
 

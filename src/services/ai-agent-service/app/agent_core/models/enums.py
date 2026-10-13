@@ -77,7 +77,12 @@ class SourceScope(StrEnum):
 
 
 class ProgressKind(StrEnum):
-    """DomainProgress olay türleri; transport monoton event_sequence ekler (W0 Ç6)."""
+    """DomainProgress olay türleri; transport monoton event_sequence ekler (W0 Ç6).
+
+    ``TOOL_ERROR`` (additive): web arama/okuma gibi dış araç çağrılarının
+    node içinde yakalanan tekil hata izidir; akış kısmi yolda sürer ve
+    terminal durumu belirlemez.
+    """
 
     RUN_STARTED = "run_started"
     MODE_SELECTED = "mode_selected"
@@ -91,3 +96,4 @@ class ProgressKind(StrEnum):
     GENERATION_COMPLETED = "generation_completed"
     VALIDATION_COMPLETED = "validation_completed"
     ACTION_PROPOSED = "action_proposed"
+    TOOL_ERROR = "tool_error"

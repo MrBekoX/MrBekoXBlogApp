@@ -26,11 +26,14 @@
  *   button+aria-expanded, tam klavye kullanımı, prefers-reduced-motion,
  *   mobil tek kolon.
  * Sahiplik backend'dedir; run_id yalnız bu oturumun localStorage'ında tutulur
- * (başka oturumda GET 403 döner ve panel sessiz kalır). Sayfa yenileme sonrası
- * GET replay ile son çalışma geri yüklenir.
+ * (başka oturumda GET 403 döner; çalışma KİLİTLENMEZ — kayıt temizlenir ve
+ * kullanıcı bilgilendirilir). Sayfa yenileme sonrası GET replay ile son
+ * çalışma geri yüklenir; agent.run.needs_input olayında "Devam et" (B9
+ * resume) sunulur.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import axios from 'axios';
 import Link from 'next/link';
 import { HubConnection, HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
 import {
@@ -39,6 +42,7 @@ import {
   BookOpen,
   ExternalLink,
   Loader2,
+  Play,
   RotateCcw,
   Send,
   Square,
@@ -66,6 +70,7 @@ import {
   buildAgentSteps,
   deriveEventKind,
   isTerminalKind,
+  isWaitingInputKind,
   type AgentStepVM,
 } from './agent-steps-model';
 
@@ -101,6 +106,7 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
   const [modePreference, setModePreference] = useState<AgentModePreference>('auto');
   const [includeArticleContext, setIncludeArticleContext] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
 
   const [turns, setTurns] = useState<AgentTurn[]>([]);
@@ -132,6 +138,14 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
   const activeRunId = activeTurn?.runId ?? null;
   const activeIsTerminal = activeTurn ? TERMINAL_PHASES.includes(activeTurn.phase) : false;
   const isRunActive = submitting || (activeTurn ? ACTIVE_PHASES.includes(activeTurn.phase) : false);
+  // B9 needs_input yüzeyleme: son adım girdi bekliyor ve çalışma hâlâ aktifse
+  // (iptal talep edilmemişse) "Devam et" sunulur. Faz makinesi DEĞİŞMEZ; türetilmiş görünüm.
+  const activeWaitingInput =
+    activeTurn !== null &&
+    ACTIVE_PHASES.includes(activeTurn.phase) &&
+    activeTurn.phase !== 'cancelling' &&
+    steps.length > 0 &&
+    isWaitingInputKind(steps[steps.length - 1].kind);
 
   const announce = useCallback(
     (message: string) => {
@@ -163,9 +177,14 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
     setTurns((prev) => prev.map((turn) => (turn.runId === runId ? { ...turn, ...patch } : turn)));
   }, []);
 
-  /** GET /runs/{runId}: durum + guard'dan geçmiş terminal sonuç (yetkili kaynak). */
+  /** GET /runs/{runId}: durum + guard'dan geçmiş terminal sonuç (yetkili kaynak).
+   * Hata (403/404/ağ) sessizce null döner; ayırt etmek isteyen çağırıcı onError
+   * ile ham hatayı alır (ör. geri yüklemede kalıcı erişilemezlik ayrımı). */
   const refreshStatus = useCallback(
-    async (runId: string): Promise<AgentRunStatus | null> => {
+    async (
+      runId: string,
+      onError?: (error: unknown) => void,
+    ): Promise<AgentRunStatus | null> => {
       try {
         const status = await agentApi.getRun(runId);
         const nextPhase = phaseFromStatus(status);
@@ -176,7 +195,8 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
           announce(t.statusStarted);
         }
         return status;
-      } catch {
+      } catch (err) {
+        onError?.(err);
         return null; // 403/404: sessiz (başka oturum / kayıt yok)
       }
     },
@@ -238,9 +258,26 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
     if (!stored) return;
     setTurns([{ runId: stored, question: '', isResearch: false, phase: 'starting', status: null }]);
     void (async () => {
-      const status = await refreshStatus(stored);
+      const status = await refreshStatus(stored, (err) => {
+        // KALICI erişilemezlik (403: başka oturum / 404: kayıt yok): 'starting'
+        // fazında süresiz kilitlenmek yerine çalışma kaldırılır, kayıt temizlenir;
+        // besteci yeniden açılır ve kullanıcı bilgilendirilir. Geçici ağ hatası
+        // buraya düşmez — hub/polling kendini toparlar.
+        if (!(axios.isAxiosError(err) && (err.response?.status === 403 || err.response?.status === 404))) {
+          return;
+        }
+        const message = err.response?.status === 403 ? t.runForbidden : t.runNotFound;
+        setTurns([]);
+        setSteps([]);
+        eventsRef.current = [];
+        lastSequenceRef.current = 0;
+        window.localStorage.removeItem(RUN_STORAGE_PREFIX + articleId);
+        setError(message);
+        announce(message);
+      });
+      if (!status) return;
       // Çalışma sürerken adım alanı açık başlar; terminal kayıt kapalı gelir.
-      if (!status || !TERMINAL_PHASES.includes(phaseFromStatus(status))) {
+      if (!TERMINAL_PHASES.includes(phaseFromStatus(status))) {
         setStepsOpen(true);
       }
       await ingestEvents(stored);
@@ -470,6 +507,27 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
     void submit(text, activeTurn.isResearch);
   }, [activeTurn, submit]);
 
+  /** B9 needs_input: beklenen input sürümü (needs_input olayının event_sequence'i)
+   * doğrulanarak devam isteği. Çalışma terminal olmadığından abonelik sürer;
+   * resume sonrası gelen progressed olayları adımları yeniden akıtır. */
+  const resumeRun = useCallback(
+    async (runId: string, expectedInputVersion: number) => {
+      if (resuming) return;
+      setResuming(true);
+      setError(null);
+      announce(t.resumeHint);
+      try {
+        await agentApi.resumeRun(runId, { expectedInputVersion });
+      } catch (err) {
+        setError(agentErrorMessage(err, t.errorGeneric));
+        announce(t.errorGeneric);
+      } finally {
+        setResuming(false);
+      }
+    },
+    [announce, resuming, t],
+  );
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -575,6 +633,37 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
                       </p>
                     )}
 
+                    {/* B9: agent ek girdi bekliyor — çalışma terminal değil, devam ettirilebilir */}
+                    {isLatest && activeWaitingInput && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            void resumeRun(turn.runId, steps[steps.length - 1].sequence)
+                          }
+                          disabled={resuming}
+                          className="gap-2"
+                        >
+                          {resuming ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Play className="h-3 w-3" />
+                          )}
+                          {t.resumeAction}
+                        </Button>
+                        <p className="text-xs text-amber-400">{t.statusNeedsInput}</p>
+                      </div>
+                    )}
+
+                    {/* Resume reddi (ör. eski sürüm) çalışırken form gizli olduğundan burada gösterilir */}
+                    {isLatest && activeWaitingInput && error && (
+                      <p role="alert" className="text-xs text-red-400">
+                        {error}
+                      </p>
+                    )}
+
                     {/* Terminal sonuç: izin verilen sonuç (maskeleme gerekçesi dahil) */}
                     {turn.status?.result && TERMINAL_PHASES.includes(turn.phase) && (
                       <TurnResult turn={turn} articleSlug={articleSlug} lang={lang} />
@@ -630,12 +719,14 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
         <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
           {activeTurn && ACTIVE_PHASES.includes(activeTurn.phase) && (
             <Badge variant="outline" className="gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
+              {!activeWaitingInput && <Loader2 className="h-3 w-3 animate-spin" />}
               {activeTurn.phase === 'cancelling'
                 ? t.statusCancelling
-                : activeTurn.phase === 'started'
-                  ? t.statusStarted
-                  : t.statusStarting}
+                : activeWaitingInput
+                  ? t.statusNeedsInput
+                  : activeTurn.phase === 'started'
+                    ? t.statusStarted
+                    : t.statusStarting}
               {activeTurn.status?.selectedMode ? ` · ${activeTurn.status.selectedMode}` : ''}
             </Badge>
           )}

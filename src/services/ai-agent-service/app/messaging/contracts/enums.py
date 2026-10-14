@@ -78,7 +78,11 @@ class AgentErrorCode(StrEnum):
 
 
 class ProgressKind(StrEnum):
-    """DomainProgress olay türleri (A1 ile aynı kapalı küme)."""
+    """DomainProgress olay türleri (A1 ile aynı kapalı küme).
+
+    ``GENERATION_DELTA`` (additive): LLM parçalı metin chunk'ı; seyrekleştirilmez,
+    chunk 1500 karakteri aşmaz (bölünmüş chunk).
+    """
 
     RUN_STARTED = "run_started"
     MODE_SELECTED = "mode_selected"
@@ -92,3 +96,5 @@ class ProgressKind(StrEnum):
     GENERATION_COMPLETED = "generation_completed"
     VALIDATION_COMPLETED = "validation_completed"
     ACTION_PROPOSED = "action_proposed"
+    TOOL_ERROR = "tool_error"
+    GENERATION_DELTA = "generation_delta"

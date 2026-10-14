@@ -63,7 +63,9 @@
         "generation_started",
         "generation_completed",
         "validation_completed",
-        "action_proposed"
+        "action_proposed",
+        "tool_error",
+        "generation_delta"
       ]
     },
     "conversation_turn": {

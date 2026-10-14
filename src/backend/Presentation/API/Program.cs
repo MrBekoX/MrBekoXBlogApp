@@ -31,6 +31,11 @@ var serverLimits = builder.Configuration
 builder.Services.Configure<ServerLimitsSettings>(
     builder.Configuration.GetSection(ServerLimitsSettings.SectionName));
 
+// Agent servis kimliği: Python agent servisinin internal content ucuna erişim
+// anahtarı (AgentService:InternalApiKey; boşsa internal yüzey 404 ile kapalıdır).
+builder.Services.Configure<AgentServiceSettings>(
+    builder.Configuration.GetSection(AgentServiceSettings.SectionName));
+
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.MaxRequestBodySize = serverLimits.MaxRequestBodySizeBytes;
@@ -135,6 +140,7 @@ app.UseAntiforgery();
 
 app.RegisterAllEndpoints();
 app.RegisterAgentEndpoints();
+app.RegisterAgentInternalEndpoints();
 
 var internalHosts = builder.Configuration.GetSection("InternalHosts").Get<string[]>() ?? ["localhost", "127.0.0.1"];
 app.MapHealthChecks("/health").RequireHost(internalHosts);

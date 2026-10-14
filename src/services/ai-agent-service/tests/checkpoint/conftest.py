@@ -148,6 +148,11 @@ class SlowModelProvider:
             finished_at=datetime.now(timezone.utc),
         )
 
+    async def stream_complete(
+        self, request: ModelRequest, *, cancel: CancellationToken | None = None, on_delta: Any
+    ) -> ModelResponse:
+        return await self.complete(request, cancel=cancel)
+
 
 class Stopwatch:
     """Monotonik saatle kısa süre ölçümü."""

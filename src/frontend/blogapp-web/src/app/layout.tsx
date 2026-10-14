@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { Fira_Code, Playfair_Display, Source_Sans_3, JetBrains_Mono, Merriweather, Crimson_Text } from 'next/font/google';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
 import { CacheSyncProvider } from '@/components/cache-sync-provider';
@@ -21,50 +20,6 @@ import {
   OG_IMAGE_PATH,
 } from '@/lib/site-config';
 import './globals.css';
-
-// IDE fonts
-const firaCode = Fira_Code({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
-  variable: '--font-fira-code',
-  display: 'swap',
-});
-
-// Legacy serif/sans fonts kept for admin console pages
-const playfairDisplay = Playfair_Display({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-playfair-display',
-  display: 'swap',
-});
-
-const sourceSans3 = Source_Sans_3({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
-  variable: '--font-source-sans',
-  display: 'swap',
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-jetbrains-mono',
-  display: 'swap',
-});
-
-const merriweather = Merriweather({
-  subsets: ['latin'],
-  weight: ['300', '400', '700', '900'],
-  variable: '--font-merriweather',
-  display: 'swap',
-});
-
-const crimsonText = Crimson_Text({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  variable: '--font-crimson-text',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -133,9 +88,13 @@ export default function RootLayout({
       <head>
         {/* Enable View Transitions API for smooth page transitions (modern browsers) */}
         <meta name="view-transition" content="same-origin" />
-        {/* VT323 display font via CDN — next/font does not support this family */}
+        {/* Google Fonts via CDN at runtime — next/font/google downloads at build time and
+            breaks offline builds. Family names are declared as CSS vars in globals.css;
+            local fallback stacks apply when the CDN is unreachable. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=VT323&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600;700&family=Fira+Code:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Merriweather:wght@300;400;700;900&family=Playfair+Display:wght@400;500;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&family=VT323&display=swap"
           rel="stylesheet"
         />
         <link rel="describedby" href={`${SITE_URL}/llms.txt`} type="text/plain" />
@@ -143,9 +102,7 @@ export default function RootLayout({
         <WebsiteSchema />
         <PersonSchema />
       </head>
-      <body
-        className={`${firaCode.variable} ${playfairDisplay.variable} ${sourceSans3.variable} ${jetbrainsMono.variable} ${merriweather.variable} ${crimsonText.variable} antialiased min-h-screen`}
-      >
+      <body className="antialiased min-h-screen">
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"

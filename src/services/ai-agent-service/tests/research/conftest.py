@@ -165,6 +165,11 @@ class FixedModelProvider:
             finished_at=datetime.now(timezone.utc),
         )
 
+    async def stream_complete(
+        self, request: Any, *, cancel: Any = None, on_delta: Any
+    ) -> Any:
+        return await self.complete(request, cancel=cancel)
+
 
 # --- Arama sağlayıcı test double ---------------------------------------------
 

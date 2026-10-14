@@ -249,7 +249,7 @@ public static class AgentMessageTypeRegistry
                         "run_started", "mode_selected", "article_context_ready", "run_resumed",
                         "retrieval_started", "retrieval_completed", "research_started",
                         "research_round_completed", "generation_started", "generation_completed",
-                        "validation_completed", "action_proposed"),
+                        "validation_completed", "action_proposed", "tool_error", "generation_delta"),
                     AgentFieldRule.Text("message", required: true, maxLength: 2000),
                     AgentFieldRule.Map("detail", AgentFieldKind.String))
             },

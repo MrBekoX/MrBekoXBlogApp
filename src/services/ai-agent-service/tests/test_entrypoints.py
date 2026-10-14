@@ -178,10 +178,14 @@ def test_execute_completes_with_usage_and_budget_commit() -> None:
     assert outcome.usage.total_tokens == 15
     assert outcome.usage.run_id == prepared.context.run_id
     assert budget.committed[BudgetKind.MODEL_CALL] == 15
+    # Streaming sözleşmesi: üretim sırasında tek (birleştirilmiş) delta olayı
+    # started ile completed arasında akar.
     assert [event.kind for event in sink.events] == [
         ProgressKind.GENERATION_STARTED,
+        ProgressKind.GENERATION_DELTA,
         ProgressKind.GENERATION_COMPLETED,
     ]
+    assert sink.events[1].message == "Hesaplanan yanıt"
 
 
 def test_execute_uses_prepared_route_and_does_not_reroute() -> None:
@@ -327,3 +331,33 @@ def test_resume_with_foreign_run_payload_raises_validation_error() -> None:
         )
 
     assert excinfo.value.code is AgentErrorCode.VALIDATION_ERROR
+
+def test_execute_simple_streams_generation_deltas() -> None:
+    """_execute_simple: scripted parçalar GENERATION_DELTA olarak akar; terminal
+    yanıt stream_complete'in TAM ModelResponse'undan kurulur."""
+    prepared = make_prepared()
+    sink = RecordingProgressSink()
+    model = FakeModelProvider("basit yanıt", stream_delta_chunks=["basit", " yanıt"])
+
+    outcome = conftest.run(execute_plan(prepared, model=model, progress=sink))
+
+    deltas = [e.message for e in sink.events if e.kind is ProgressKind.GENERATION_DELTA]
+    assert deltas == ["basit", "yanıt"]  # parça sırasıyla akar (kenar boşluğu kırpılır)
+    assert model.stream_call_count == 1
+    assert outcome.status is RunStatus.COMPLETED
+    assert outcome.answer == "basit yanıt"  # tam yanıttan kurulum
+
+
+def test_execute_simple_splits_oversized_delta_chunks() -> None:
+    from agent_core.models import MAX_GENERATION_DELTA_CHARS
+
+    prepared = make_prepared()
+    sink = RecordingProgressSink()
+    big = "x" * (MAX_GENERATION_DELTA_CHARS + 250)
+    model = FakeModelProvider(big, stream_delta_chunks=[big])
+
+    conftest.run(execute_plan(prepared, model=model, progress=sink))
+
+    deltas = [e.message for e in sink.events if e.kind is ProgressKind.GENERATION_DELTA]
+    assert [len(m) for m in deltas] == [MAX_GENERATION_DELTA_CHARS, 250]
+    assert deltas[0] + deltas[1] == big

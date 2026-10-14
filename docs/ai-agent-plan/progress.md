@@ -85,3 +85,25 @@ Test eki: backend sayfalama (after/limit/HasMore + MaxPageSize=200 clamp), çok 
 Doğrulama (fix + eklemeler sonrası): dotnet **212/212**; pytest **825 passed, 1 skipped**; vitest **8 dosya/40 test**; next build yeşil.
 
 Kalan bilinen sınırlar: token-parça akış yok; adım paneli yalnız en son mesaja bağlı (tek aktif çalışma modeliyle tutarlı); replay OccurredAt backend tüketim anı (SignalR'da üretim anı — kozmetik); 2sn'lik progress throttle aynı kind'ın meşru ikinci örneğini düşürebilir (belgelenmiş tasarım kararı); WCAG kontrast hesapları ölçülmedi (statik).
+
+## Token streaming + gerçek ortam entegrasyonu (2026-10-15)
+
+Hedef: (1) LLM cevabının parçalı ekrana akması, (2) gerçek tarayıcıda canlı broker+agent service E2E'si + gerçek RabbitMQ redelivery/DLX + gerçek migration, (3) gerçek sağlayıcıya hazırlık; ardından PR #4 merge (kullanıcı onayıyla).
+
+Uygulama:
+- **generation_delta olay türü** (additive, 4 kopya lockstep: domain/transport enum, common.schema.json, C# registry): parçalı üretim metni `message` alanında (≤1500 karakter, aşarsa bölünür); `publish_generation_delta` throttle'sız (publish_action_proposed deseni).
+- **ModelProvider.stream_complete(request, cancel, on_delta) → ModelResponse**: bütçe/guard muhasebesi bozulmaz; FakeModelProvider scripted parça, _MeteredModel/_DeadlineBoundedModel sarmalayıcıları güncellendi; qa/analysis/research/entrypoints node'ları delta yayını yapıyor.
+- **OpenAI-uyumlu gerçek sağlayıcı adaptörü** (openai_provider.py): SSE stream + include_usage, ~0.4 sn zaman bazlı chunk birleştirme (clock injectable); AGENT_LLM_API_KEY/MODEL/BASE_URL env'iyle etkinleşir, anahtarsız davranış birebir korunur; offline MockTransport testleri.
+- **Canlı worker giriş noktası**: `python -m app.service_main` (intake + worker run_forever + outbox relay + control + reaper; graceful shutdown). D013: topoloji declare bayraklı (AGENT_TOPOLOGY_DECLARE; declarer backend'dir).
+- **İçerik deposu entegrasyonu (K7 köprüsü)**: backend `GET /api/v1/agent/internal/content/{id}` (X-Agent-Service-Key, ApiResponse zarfı) + Python `HttpContentRepository` (AGENT_CONTENT_BASE_URL/SERVICE_KEY); service_main içerik deposu bağlıyken `SnapshotRetriever` + yerel deterministik gömme (local_embedding.py — model çağrısı değildir, B8 pgvector'a kadar) kurar; yoksa A1 tek-çağrı yolu citation üretemez ve terminal guard koşuyu düşürür.
+- **Frontend**: delta olayı adım DEĞİL — `foldDeltaText` canlı cevabı kurar, `AgentTurn.liveAnswer` ile aktif koşuda akar, terminalde TurnResult devralır; getEvents HasMore sayfalama döngüsü; `agent-api.ts` base çift-ön-ek hatası düzeltildi (`/api/v1/api/v1/agent` → 404 üretiyordu).
+- **Transport null düzeltmeleri**: `_transport_citations` (events.py) + `_to_transport_citation` (worker.py) — TransportModel açık null reddettiği için citation alanları exclude_none ile taşınır.
+
+Gerçek ortam kanıtları:
+- Migration: Alembic head (0002, 0003) + EF `AddAgentEventInboxPayload` gerçek `blogdb_dev`'e uygulandı; şema doğrulandı.
+- Broker: `AgentRabbitMqBrokerTests` 8/8 (DLX'e düşme, confirm+mandatory, prefetch, topoloji idempotency, bağlantı kesilmesi recovery) — canlı tüketici aynı vhosttayken 4 test girişime takılıyor; temiz vhost'ta yeşil (L009 ilkesi canlı koşum için de geçerli).
+- Tarayıcı E2E (Chrome, gerçek stack: compose postgres/redis/rabbitmq + yerel backend 8080 + service_main + next dev + mock LLM SSE): koşu kabulü → canlı adımlar (durum+süre) → **canlı cevap metni örneklemeler arasında büyüdü (streaming)** → retrieval "4 bölüm getirildi" → terminal **Completed + SOURCES (3 makale atfı)**; görüntü kanıtlı.
+
+Doğrulama: pytest **870/1 skipped** → son ağaçta final kapı; dotnet **225/225**; vitest + next build yeşil (temiz .next; dev+build eşzamanlılığı validator'ı bozabiliyor).
+
+Sınırlar/dersler: gerçek LLM anahtarı gelince sadece env ile koşum; tarayıcı-içi iptal tıklaması mock'un kısa üretim penceresinde yakalanamadı (backend iptal yolu deterministik testlerle kanıtlı: CancelRun + E2E cancel replay kind='cancelled'); streaming sırasında her delta tam markdown re-parse — memoizasyon sonraki iyileştirme; canlı worker'ı arka planda uzun ömürlü tutarken süreç yönetimi (taskkill /T ağaçları) yan etkili — isim-doğrulamalı kill kullan.

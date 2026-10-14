@@ -16,7 +16,7 @@ from .base import BusinessModel, HashHex, Identifier, LanguageCode, NonEmptyText
 from .context import BudgetProfile, ConversationTurn, ExecutionContext
 from .enums import AgentMode, ModePreference, ProgressKind, RunIntent, RunStatus, SourceScope
 from .outcome import AgentOutcome
-from .progress import DomainProgress
+from .progress import DomainProgress, MAX_GENERATION_DELTA_CHARS, split_generation_delta
 from .research import ResearchFinding, ResearchPlan
 from .routing import ModeUpgradeRecord, RouteDecision
 from .sources import EvidenceItem, SourceReference
@@ -37,6 +37,7 @@ __all__ = [
     "HashHex",
     "Identifier",
     "LanguageCode",
+    "MAX_GENERATION_DELTA_CHARS",
     "ModePreference",
     "ModeUpgradeRecord",
     "NonEmptyText",
@@ -52,4 +53,5 @@ __all__ = [
     "UtcDatetime",
     "ValidatedActionResult",
     "compute_content_hash",
+    "split_generation_delta",
 ]

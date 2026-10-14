@@ -16,6 +16,7 @@
 
 import { apiClient } from '@/lib/api';
 import { getErrorMessage } from '@/lib/api';
+import { API_BASE_URL } from '@/lib/env.client';
 import type {
   AgentFeedbackResult,
   AgentMessageRequest,
@@ -33,7 +34,10 @@ interface ApiResponse<T> {
   errors?: string[];
 }
 
-const BASE = '/api/v1/agent';
+// apiClient.baseURL zaten "<origin>/api/v1" olduğu için göreli "/api/v1/agent"
+// kullanılırsa yol ikiye katlanır (…/api/v1/api/v1/agent → 404). Base'i
+// env.client'tan türet: "<origin>/api/v1/agent" (hub URL'leriyle aynı desen).
+const BASE = `${API_BASE_URL}/agent`;
 
 function extractError(error: unknown, fallback: string): string {
   return getErrorMessage(error, fallback);

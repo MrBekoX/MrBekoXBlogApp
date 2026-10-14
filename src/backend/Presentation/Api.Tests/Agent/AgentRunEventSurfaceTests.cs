@@ -91,6 +91,44 @@ public class AgentRunEventSurfaceTests : IAsyncLifetime
         Assert.Equal("ok", @event.Detail["short"]);
     }
 
+    [Fact]
+    public async Task Events_GenerationDeltaChunk_MessageCarriedFullyUpTo1500Chars()
+    {
+        // Akış sözleşmesi (generation_delta): parçalı LLM metni message'ta taşınır;
+        // replay'de 500 karakterlik DETAY kesmesi message'a UYGULANMAZ — chunk
+        // 1500 karaktere kadar bütünüyle korunur (payload sözleşmesi: message
+        // maxLength 2000; chunk üretimi 1500'ü aşmaz). Karşıt kontrol: aynı
+        // olaydaki 700 karakterlik detail değeri 500'e kesilir.
+        var userId = Guid.NewGuid();
+        var context = _fixture.CreateContext();
+        var run = await AgentB10TestHost.SeedRunAsync(context, ownerKey: $"u:{userId:D}");
+        var chunk = new string('a', 1500);
+        await AgentB10TestHost.SeedAppliedEventAsync(
+            context, run.Id, 1, "agent.run.progressed",
+            payloadJson: JsonSerializer.Serialize(new
+            {
+                event_sequence = 1,
+                kind = "generation_delta",
+                message = chunk,
+                detail = new Dictionary<string, string>
+                {
+                    ["oversized"] = new string('x', 700),
+                },
+            }),
+            progressMessage: chunk);
+
+        var result = await CreateHandler(userId).Handle(
+            new GetAgentRunEventsQueryRequest { RunId = run.Id }, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var @event = Assert.Single(result.Value!.Events);
+        Assert.Equal("generation_delta", @event.Kind);
+        Assert.Equal(chunk, @event.Message); // message'ta kesme yok: 1500 karakter bütün
+        Assert.Equal(1500, @event.Message!.Length);
+        Assert.NotNull(@event.Detail);
+        Assert.Equal(500, @event.Detail!["oversized"].Length); // kesme yalnız detail değerinde
+    }
+
     // ------------------------------------------------- terminal + action.proposed kind
 
     [Fact]

@@ -196,3 +196,6 @@ htmlcov/
 
 # AI agent servis test paketi - tests/ kuralinin istisnasi (L001)
 !src/services/ai-agent-service/tests/
+
+# AI agent canli worker checkpoint_store calisma zamani cikti (K7/B6)
+src/services/ai-agent-service/.agent_checkpoints/

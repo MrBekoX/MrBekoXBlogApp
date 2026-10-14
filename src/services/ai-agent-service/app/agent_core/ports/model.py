@@ -11,6 +11,7 @@ Hata türleri: ``config_error`` (sağlayıcı yapılandırılmamış/eksik anaht
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Protocol, runtime_checkable
 
 from pydantic import Field, NonNegativeInt, PositiveInt
@@ -64,5 +65,27 @@ class ModelProvider(Protocol):
             PortError: ``config_error`` — sağlayıcı yapılandırması eksik;
                 ``provider_error`` — dış arıza (``retryable=True`` tekrar
                 denenebilir); ``timeout``; ``cancelled`` — iptal sinyali.
+        """
+        ...
+
+    async def stream_complete(
+        self,
+        request: ModelRequest,
+        *,
+        cancel: CancellationToken | None = None,
+        on_delta: Callable[[str], Awaitable[None]],
+    ) -> ModelResponse:
+        """İsteği akışla tamamlar; parçaları ``on_delta`` ile bildirir.
+
+        ``on_delta`` çağrıları SADECE birleştirilmiş chunk taşır (token-başına
+        bildirim yok); chunk sınırlaması çağıran (node publish yardımcısı)
+        tarafındadır. Dönüş TAM ``ModelResponse``'dur: gerçek usage metrikleriyle
+        — ``complete`` ile aynı sözleşme. Bütçe/guard muhasebesi değişmez: node
+        ``guarded`` içinde bu metodu çağırıp ``CallResult(value=response)``
+        döndürür.
+
+        Raises:
+            PortError: ``complete`` ile aynı kodlar; akış ortasında kesilirse
+                ``provider_error``/``timeout``/``cancelled``.
         """
         ...

@@ -355,3 +355,104 @@ def test_action_proposed_publishes_contract_valid_envelope_and_is_not_throttled(
     assert parsed.envelope.payload["article_revision"] == 3
     assert parsed.envelope.payload["base_content_hash"] == "a" * 64
     assert parsed.envelope.payload["summary"].startswith("İş birliği")
+
+
+# ------------------------------------------------------------ generation_delta
+
+
+def test_generation_delta_is_never_throttled_and_contract_valid(db_pool, slow_publisher):
+    """Streaming sözleşmesi: parçalı üretim metni SEYREKLEŞTİRİLMEZ.
+
+    ``slow_publisher`` 60s seyrekleştirme penceresiyle kuruludur; art arda
+    hızlı ``generation_delta`` yayınlarında hiçbir olay ``ThrottledProgress``
+    olmaz (token akışı kalıcı olarak yutulamaz) ve sıra monoton kalır.
+    """
+    from messaging.events import MAX_GENERATION_DELTA_CHARS
+    from agent_core.models import MAX_GENERATION_DELTA_CHARS as DOMAIN_LIMIT
+
+    assert MAX_GENERATION_DELTA_CHARS == DOMAIN_LIMIT  # kopyalar kilit adımında
+
+    run_id, conversation_id, correlation_id = make_run_ids()
+    run(seed_accepted_job(db_pool, run_id, conversation_id, correlation_id))
+
+    first = run(
+        slow_publisher.publish_generation_delta(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            text="Merhaba ",
+        )
+    )
+    second = run(
+        slow_publisher.publish_generation_delta(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            text="dünya",
+        )
+    )
+
+    assert not isinstance(first, ThrottledProgress)
+    assert not isinstance(second, ThrottledProgress)
+    assert len(first) == 1 and len(second) == 1
+    assert second[0].payload["event_sequence"] == first[0].payload["event_sequence"] + 1
+
+    parsed = parse_envelope(first[0].model_dump_json(exclude_none=True).encode("utf-8"))
+    assert parsed.spec.message_type == "agent.run.progressed"
+    assert parsed.envelope.payload["kind"] == "generation_delta"
+    assert parsed.envelope.payload["message"] == "Merhaba "
+    assert parsed.envelope.payload["detail"] == {}  # detail bilgi TAŞIMAZ (mevcut progressed davranışı)
+    assert len(parsed.envelope.payload["message"]) <= MAX_GENERATION_DELTA_CHARS
+
+
+def test_generation_delta_splits_chunks_over_carrier_limit(db_pool, slow_publisher):
+    """1500 karakteri aşan chunk bölünür: her parça sınırı aşmaz, birleşim eşittir."""
+
+    run_id, conversation_id, correlation_id = make_run_ids()
+    run(seed_accepted_job(db_pool, run_id, conversation_id, correlation_id))
+
+    text = "x" * 4000  # → 1500 + 1500 + 1000
+    envelopes = run(
+        slow_publisher.publish_generation_delta(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            text=text,
+        )
+    )
+
+    assert [len(e.payload["message"]) for e in envelopes] == [1500, 1500, 1000]
+    assert "".join(e.payload["message"] for e in envelopes) == text
+    assert [e.payload["kind"] for e in envelopes] == ["generation_delta"] * 3
+    sequences = [e.payload["event_sequence"] for e in envelopes]
+    assert sequences == [1, 2, 3]  # her parça kendi sıra tahsisini alır
+    for envelope in envelopes:
+        parsed = parse_envelope(envelope.model_dump_json(exclude_none=True).encode("utf-8"))
+        assert parsed.spec.message_type == "agent.run.progressed"
+
+
+def test_generation_delta_empty_text_writes_no_event(db_pool, slow_publisher):
+    """Boş metin olay üretmez (``message`` min_length=1 sözleşmesi)."""
+
+    run_id, conversation_id, correlation_id = make_run_ids()
+    run(seed_accepted_job(db_pool, run_id, conversation_id, correlation_id))
+
+    envelopes = run(
+        slow_publisher.publish_generation_delta(
+            run_id=run_id,
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            text="",
+        )
+    )
+    assert envelopes == []
+
+    async def _count() -> int:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT last_sequence FROM agent.run_event_sequences WHERE run_id = $1",
+                uuid.UUID(run_id),
+            )
+            return int(row["last_sequence"]) if row is not None else 0
+
+    assert run(_count()) == 0  # sıra tüketilmedi

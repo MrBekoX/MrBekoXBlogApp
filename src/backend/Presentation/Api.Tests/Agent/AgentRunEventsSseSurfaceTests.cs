@@ -105,6 +105,63 @@ public class AgentRunEventsSseSurfaceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Events_SseStream_GenerationDeltaChunkFlowsInMessage()
+    {
+        // Akış sözleşmesi (generation_delta): SSE gövdesi, JSON replay ile AYNI
+        // handler türetmesini paylaşır; chunk metni message alanında aynen akar
+        // ve 500 karakterlik detail kesmesi message'a uygulanmaz (1500 karaktere
+        // kadar bütün korunur).
+        var userId = Guid.NewGuid();
+        var chunk = new string('a', 1500);
+        Guid runId;
+        await using (var context = _fixture.CreateContext())
+        {
+            var run = await AgentB10TestHost.SeedRunAsync(
+                context,
+                ownerKey: $"u:{userId:D}",
+                status: AgentRunStatus.Completed);
+            runId = run.Id;
+            await AgentB10TestHost.SeedAppliedEventAsync(
+                context, run.Id, 1, "agent.run.progressed",
+                payloadJson: JsonSerializer.Serialize(new
+                {
+                    event_sequence = 1,
+                    kind = "generation_delta",
+                    message = chunk,
+                    detail = new Dictionary<string, string>
+                    {
+                        ["oversized"] = new string('x', 700),
+                    },
+                }),
+                progressMessage: chunk);
+            run.LastEventSequence = 1;
+            await context.SaveChangesAsync();
+        }
+
+        var cancellationToken = NewTestToken();
+        await using var app = BuildSseHost(userId);
+        await app.StartAsync(cancellationToken);
+        using var client = new HttpClient { BaseAddress = new Uri(app.Urls.First()) };
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/agent/runs/{runId:D}/events");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+
+        using var response = await client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var events = await ReadSseEventsAsync(response, cancellationToken);
+
+        var progressed = events.Single(e => MessageTypeOf(e) == "agent.run.progressed");
+        Assert.Equal("generation_delta", ValueOf(progressed, "kind"));
+        Assert.Equal(chunk, ValueOf(progressed, "message")); // SSE'de de bütün chunk
+        Assert.Equal(500, ValueOf(progressed, "detail:oversized")!.Length); // kesme yalnız detail'de
+    }
+
+    [Fact]
     public async Task Events_SseStream_FailedReplayEmitsErrorEventAndCloses()
     {
         // "error" dalı (AgentEndpoints.StreamEventsAsync): replay sorgusu

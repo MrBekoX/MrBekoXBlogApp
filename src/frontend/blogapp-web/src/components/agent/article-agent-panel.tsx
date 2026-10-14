@@ -8,8 +8,8 @@
  *   remark-gfm + rehype-highlight zinciriyle (listeler/kod blokları/linkler).
  * - Canlı işlem adımları: yalnız GERÇEK progressed/terminal olaylarından
  *   (commit edilmiş projection replay'i); sahte adım/sahte ilerleme YOK.
- *   Token-parça akışı altyapısı olmadığından yanıt terminal olayda TAM gelir —
- *   arayüz bunu dürüst gösterir: adımlar canlı akar, cevap tamamlanınca gelir.
+ *   Canlı yanıt: generation_delta olayları adım ÜRETMEZ; foldDeltaText ile
+ *   birleştirilip cevap balonunda akar (terminalde TurnResult devralır).
  * - GERÇEK ZAMAN: SignalR AgentRunsHub ("RunUpdated" bildirimi; grup run:{runId},
  *   sahiplik backend'de). Bildirim TETİKLEYİCİDİR: adım verisi her zaman
  *   getEvents(after) commit edilmiş replay'inden okunur (B5 hub sözleşmesi).
@@ -69,6 +69,7 @@ import { AgentStepsPanel } from './agent-steps';
 import {
   buildAgentSteps,
   deriveEventKind,
+  foldDeltaText,
   isTerminalKind,
   isWaitingInputKind,
   type AgentStepVM,
@@ -77,6 +78,11 @@ import {
 const RUN_STORAGE_PREFIX = 'agent-run:';
 /** Yoklama fallback aralığı (yalnız SignalR hiç kurulamadığında). */
 const POLL_FALLBACK_MS = 4000;
+/** Replay sayfalama güvenlik üst sınırı: tek sayfa MaxPageSize=200; delta
+ * olayları olay sayısını büyüttüğünden hasMore sürdüğü sürece tüm sayfalar
+ * toplanır — 25 sayfa (≈5000 olay) yeterli korumadır, aşılırsa sonraki
+ * bildirim/yoklama imleçten sürer. */
+const MAX_EVENT_PAGES = 25;
 
 const TERMINAL_PHASES: AgentPhase[] = ['completed', 'partial', 'failed', 'cancelled'];
 const ACTIVE_PHASES: AgentPhase[] = ['accepted', 'starting', 'started', 'cancelling'];
@@ -96,6 +102,10 @@ interface AgentTurn {
   isResearch: boolean;
   phase: AgentPhase;
   status: AgentRunStatus | null;
+  /** Canlı yanıt: generation_delta parçalarının birleşimi (foldDeltaText).
+   * Yalnız çalışma ACTIVE_PHASES'teyken gösterilir; terminalde TurnResult
+   * devralır (aynı metin iki kez basılmaz). */
+  liveAnswer?: string;
 }
 
 export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelProps) {
@@ -128,6 +138,8 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
   const ingestRerunRef = useRef(false);
   const terminalHandledRef = useRef(false);
   const startedSeenRef = useRef(false);
+  /** İlk generation_delta görüldüğünde TEK kez "yazıyor" duyurusu (aria-live). */
+  const deltaAnnouncedRef = useRef(false);
   const autoCollapseDoneRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -216,32 +228,49 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
           const rerunPending = ingestRerunRef.current;
           ingestRerunRef.current = false;
 
-          const page = await agentApi.getEvents(runId, lastSequenceRef.current);
-          // Monoton filtre: <= son gelen (duplicate/geç olay) yok sayılır.
-          const fresh = page.events.filter((event) => event.eventSequence > lastSequenceRef.current);
-          if (fresh.length > 0) {
-            lastSequenceRef.current = fresh[fresh.length - 1].eventSequence;
-            eventsRef.current = [...eventsRef.current, ...fresh];
-            setSteps(buildAgentSteps(eventsRef.current));
+          // Sayfalama: tek sayfa MaxPageSize=200 döner; generation_delta olayları
+          // olay sayısını büyüttüğünden hasMore sürdüğü sürece tüm sayfalar
+          // toplanır (MAX_EVENT_PAGES üst sınırı — aşılırsa sonraki bildirim/
+          // yoklama lastSequence imlecinden kaldığı yerde sürer).
+          for (let pageIndex = 0; pageIndex < MAX_EVENT_PAGES; pageIndex += 1) {
+            const page = await agentApi.getEvents(runId, lastSequenceRef.current);
+            // Monoton filtre: <= son gelen (duplicate/geç olay) yok sayılır.
+            const fresh = page.events.filter((event) => event.eventSequence > lastSequenceRef.current);
+            if (fresh.length > 0) {
+              lastSequenceRef.current = fresh[fresh.length - 1].eventSequence;
+              eventsRef.current = [...eventsRef.current, ...fresh];
+              setSteps(buildAgentSteps(eventsRef.current));
+              // Canlı yanıt: delta parçalarının birleşimi her ingest'te tazelenir.
+              patchTurn(runId, { liveAnswer: foldDeltaText(eventsRef.current) });
 
-            if (!startedSeenRef.current) {
-              startedSeenRef.current = true;
-              patchTurn(runId, { phase: 'started' });
-              announce(t.statusStarted);
+              // İlk delta'da TEK erişilebilirlik duyurusu (announce dedupe'lu);
+              // sonraki parçalar için duyuru YOKTUR — chunk başına duyurma yok.
+              if (!deltaAnnouncedRef.current && fresh.some((event) => event.kind === 'generation_delta')) {
+                deltaAnnouncedRef.current = true;
+                announce(t.statusGenerating);
+              }
+
+              if (!startedSeenRef.current) {
+                startedSeenRef.current = true;
+                patchTurn(runId, { phase: 'started' });
+                announce(t.statusStarted);
+              }
+
+              const sawTerminal = fresh.some((event) => {
+                const kind = deriveEventKind(event);
+                return kind !== null && isTerminalKind(kind);
+              });
+              if (sawTerminal && !terminalHandledRef.current) {
+                terminalHandledRef.current = true;
+                // Terminal sonucu guard'lı GET'ten tazele (push maskeli olabilir).
+                await refreshStatus(runId);
+              }
             }
 
-            const sawTerminal = fresh.some((event) => {
-              const kind = deriveEventKind(event);
-              return kind !== null && isTerminalKind(kind);
-            });
-            if (sawTerminal && !terminalHandledRef.current) {
-              terminalHandledRef.current = true;
-              // Terminal sonucu guard'lı GET'ten tazele (push maskeli olabilir).
-              await refreshStatus(runId);
-            }
+            if (!page.hasMore) break;
           }
 
-          if (!page.hasMore && !rerunPending) break;
+          if (!rerunPending) break;
         }
       } catch {
         // Tek replay okuma hatası: sonraki bildirim/yoklama yeniden dener.
@@ -389,6 +418,8 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
 
   // Takip: kullanıcı en alttaysa yeni içeriğe otomatik kaydır; değilse pill göster.
   const lastResult = activeTurn?.status?.result ?? null;
+  // Canlı yanıt büyüdükçe de takip tetiklensin (yalnız uzunluk değişiminde).
+  const liveAnswerLength = activeTurn?.liveAnswer?.length ?? 0;
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -397,7 +428,7 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
     } else {
       setShowNewContent(true);
     }
-  }, [steps.length, turns.length, lastResult]);
+  }, [steps.length, turns.length, lastResult, liveAnswerLength]);
 
   const startRun = useCallback(
     (accepted: { runId: string; conversationId: string }, questionText: string, isResearch: boolean) => {
@@ -406,6 +437,7 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
       eventsRef.current = [];
       terminalHandledRef.current = false;
       startedSeenRef.current = false;
+      deltaAnnouncedRef.current = false;
       autoCollapseDoneRef.current = false;
       ingestRerunRef.current = false;
       setSteps([]);
@@ -616,6 +648,27 @@ export function ArticleAgentPanel({ articleId, articleSlug }: ArticleAgentPanelP
                         onToggle={() => setStepsOpen((prev) => !prev)}
                         now={nowTick}
                       />
+                    ) : null}
+
+                    {/* Canlı yanıt: generation_delta parçalarının birleşimi. Yalnız
+                        çalışma ACTIVE_PHASES'teyken; terminalde TurnResult devralır
+                        (bu blok kapanır, metin iki kez basılmaz). Duyuru yalnız İLK
+                        delta'da tek kez yapılır (announce; chunk başına duyuru yok),
+                        bu yüzden akış kapsayıcısı aria-live TAŞIMAZ. */}
+                    {runActive && turn.liveAnswer ? (
+                      <div data-testid="agent-live-answer" className="space-y-1 border-t border-ide-border pt-2">
+                        <p className="flex items-center gap-1.5 text-xs uppercase text-gray-500">
+                          {t.answerHeading}
+                          <span className="flex items-center gap-1.5 normal-case text-gray-400">
+                            <span
+                              aria-hidden="true"
+                              className="h-1.5 w-1.5 rounded-full bg-ide-primary motion-safe:animate-pulse"
+                            />
+                            {t.statusGenerating}
+                          </span>
+                        </p>
+                        <AgentChatMarkdown content={turn.liveAnswer} />
+                      </div>
                     ) : null}
 
                     {runActive && steps.length === 0 && (

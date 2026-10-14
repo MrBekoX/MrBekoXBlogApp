@@ -80,6 +80,7 @@ const tr = {
   stepNeedsInput: 'girdi bekleniyor',
   stepToolError: 'araç çağrısı başarısız',
   statusNeedsInput: 'Girdi bekleniyor', // B9: run terminal değil, ek girdi bekler
+  statusGenerating: 'Yanıt yazılıyor...', // generation_delta canlı akışı göstergesi
   resumeAction: 'Devam et',
   suggestionsLabel: 'Örneğin:',
   suggestionSummary: 'Bu yazıyı kısaca özetle',
@@ -162,6 +163,7 @@ const en: AgentTexts = {
   stepNeedsInput: 'waiting for input',
   stepToolError: 'tool call failed',
   statusNeedsInput: 'Waiting for input', // B9: run is not terminal, awaits extra input
+  statusGenerating: 'Writing the answer...', // live generation_delta indicator
   resumeAction: 'Resume',
   suggestionsLabel: 'For example:',
   suggestionSummary: 'Summarize this article briefly',

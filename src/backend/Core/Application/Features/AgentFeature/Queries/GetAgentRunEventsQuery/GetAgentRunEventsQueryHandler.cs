@@ -1,3 +1,4 @@
+using System.Text.Json;
 using BlogApp.Core.Application.Common.Errors;
 using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Interfaces.Services;
@@ -11,7 +12,14 @@ namespace BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunEven
 
 /// <summary>Tek replay olayı: commit edilmiş projection inbox kaydından (B5).
 /// Yalnız ``applied`` kayıtlar replay edilir; stale/quarantined projection'a
-/// uygulanmadığı için olay akışının parçası değildir.</summary>
+/// uygulanmadığı için olay akışının parçası değildir. Ortak olay yüzeyi alanları
+/// (agent live-steps sözleşmesi, ADDITIVE): ``Kind`` progressed'te payload.kind,
+/// terminal olaylarda messageType son ekinden türetilir (completed | partial |
+/// failed | cancelled; agent.action.proposed → action_proposed); sözleşme dışı
+/// türlerde null. ``Message`` progressed'te saklanan kullanıcı-dostu TR cümle;
+/// ``Detail`` progressed payload'ının küratörlü detail sözlüğü (değer başına
+/// 500 karakterle kesilir). Bozuk/eksik payload'da bu üç alan null döner — olay
+/// düşmez, mevcut alanlar değişmez.</summary>
 public sealed record AgentRunEventDto
 {
     public required long EventSequence { get; init; }
@@ -21,6 +29,12 @@ public sealed record AgentRunEventDto
     public required string MessageId { get; init; }
 
     public required DateTimeOffset OccurredAt { get; init; }
+
+    public string? Kind { get; init; }
+
+    public string? Message { get; init; }
+
+    public IReadOnlyDictionary<string, string>? Detail { get; init; }
 }
 
 /// <summary>
@@ -30,6 +44,9 @@ public sealed record AgentRunEventDto
 /// penceresini GET replay tamamlar (B5 hub sözleşmesinin eşdeğeri). ``after``
 /// imleciyle istemci yenileme sonrası kaldığı yerden devam eder; sıralama
 /// event_sequence'e göredir (projection yalnız monoton sırayla uygular).
+/// Agent live-steps olay yüzeyi (ADDITIVE): saklanan PayloadJson + ProgressMessage
+/// sütunlarından kind/message/detail türetilir; türetme OKUMA yönündedir ve
+/// mevcut replay davranışını değiştirmez.
 /// </summary>
 public sealed class GetAgentRunEventsQueryHandler(
     IApplicationDbContext dbContext,
@@ -37,6 +54,10 @@ public sealed class GetAgentRunEventsQueryHandler(
 {
     /// <summary>Tek replay sayfasının üst sınırı; sınırsız akış üretilmez.</summary>
     public const int MaxPageSize = 200;
+
+    /// <summary>Detail değerlerinin üst sınırı (güvenlik: ham log/istisna taşması
+    /// riskine karşı değer başına kesme; anahtarlar agent_core küratörlüğündedir).</summary>
+    public const int MaxDetailValueLength = 500;
 
     public async Task<Result<AgentRunEventsDto>> Handle(GetAgentRunEventsQueryRequest request, CancellationToken cancellationToken)
     {
@@ -64,7 +85,7 @@ public sealed class GetAgentRunEventsQueryHandler(
 
         var pageSize = request.Limit is > 0 and <= MaxPageSize ? request.Limit.Value : MaxPageSize;
 
-        var events = await dbContext.AgentEventInboxes
+        var rows = await dbContext.AgentEventInboxes
             .AsNoTracking()
             .Where(i => i.ConsumerName == AgentRunEventProjectionHandler.ConsumerName
                         && i.RunId == request.RunId
@@ -72,14 +93,18 @@ public sealed class GetAgentRunEventsQueryHandler(
                         && i.EventSequence > request.After)
             .OrderBy(i => i.EventSequence)
             .Take(pageSize)
-            .Select(i => new AgentRunEventDto
+            .Select(i => new ReplayRow
             {
                 EventSequence = i.EventSequence,
                 MessageType = i.MessageType,
                 MessageId = i.MessageId.ToString("D"),
                 OccurredAt = new DateTimeOffset(i.CreatedAt, TimeSpan.Zero),
+                PayloadJson = i.PayloadJson,
+                ProgressMessage = i.ProgressMessage,
             })
             .ToListAsync(cancellationToken);
+
+        var events = rows.Select(MapToEventDto).ToList();
 
         return Result<AgentRunEventsDto>.Success(new AgentRunEventsDto
         {
@@ -89,5 +114,96 @@ public sealed class GetAgentRunEventsQueryHandler(
             HasMore = events.Count == pageSize,
             Events = events,
         });
+    }
+
+    /// <summary>Sorgu projeksiyonu: inbox satırının replay'e giren alanları.
+    /// API yüzeyine çıkmaz; yalnız türetme girdisidir.</summary>
+    private sealed record ReplayRow
+    {
+        public long EventSequence { get; init; }
+
+        public string MessageType { get; init; } = string.Empty;
+
+        public string MessageId { get; init; } = string.Empty;
+
+        public DateTimeOffset OccurredAt { get; init; }
+
+        public string? PayloadJson { get; init; }
+
+        public string? ProgressMessage { get; init; }
+    }
+
+    /// <summary>Ortak olay yüzeyi eşlemesi: mevcut dört alan birebir korunur;
+    /// Kind/Message/Detail saklanan payload'dan türetilir.</summary>
+    private static AgentRunEventDto MapToEventDto(ReplayRow row)
+    {
+        // Progressed: kind/message/detail payload'tan; diğer türlerde null.
+        string? kind = null;
+        string? message = null;
+        IReadOnlyDictionary<string, string>? detail = null;
+
+        if (string.Equals(row.MessageType, AgentMessageTypes.RunProgressed, StringComparison.Ordinal))
+        {
+            var payload = ParseProgressedPayload(row.PayloadJson);
+            kind = payload?.Kind; // bozuk/eksik payload → null (olay düşmez)
+            message = payload is null ? null : (row.ProgressMessage ?? payload.Message);
+            detail = payload?.Detail is { } source
+                ? source.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value is { Length: > MaxDetailValueLength }
+                        ? pair.Value[..MaxDetailValueLength]
+                        : pair.Value ?? string.Empty)
+                : null;
+        }
+        else
+        {
+            // Terminal + action.proposed: messageType son ekinden türet (sözleşme).
+            kind = DeriveSuffixKind(row.MessageType);
+        }
+
+        return new AgentRunEventDto
+        {
+            EventSequence = row.EventSequence,
+            MessageType = row.MessageType,
+            MessageId = row.MessageId,
+            OccurredAt = row.OccurredAt,
+            Kind = kind,
+            Message = message,
+            Detail = detail,
+        };
+    }
+
+    /// <summary>messageType son ekinden kind (terminal + action.proposed sözleşmesi).</summary>
+    private static string? DeriveSuffixKind(string messageType)
+    {
+        var suffix = messageType[(messageType.LastIndexOf('.') + 1)..];
+        return suffix switch
+        {
+            "completed" => "completed",
+            "partially_completed" => "partial",
+            "failed" => "failed",
+            "cancelled" => "cancelled",
+            "proposed" => "action_proposed",
+            _ => null, // accepted / mode_selected / needs_input: sözleşmede kind yok
+        };
+    }
+
+    /// <summary>Progressed payload'ını çözümler; bozuk/eksik JSON'da null döner —
+    /// olay düşmez (replay sözleşmesi: alanlar null, istek 200).</summary>
+    private static AgentRunProgressedV1? ParseProgressedPayload(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<AgentRunProgressedV1>(payloadJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

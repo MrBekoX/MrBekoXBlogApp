@@ -67,7 +67,13 @@ __all__ = [
     "AlreadyTerminal",
     "ThrottledProgress",
     "TERMINAL_JOB_STATUSES",
+    "MAX_GENERATION_DELTA_CHARS",
 ]
+
+#: Tek ``generation_delta`` chunk'ının taşıyıcı üst sınırı: ``AgentRunProgressedV1.message``
+#: max 2000'dir; 1500'ün üzerine çıkan metin bölünmüş chunk olarak ayrı olaylarla akar
+#: (streaming sözleşmesi: "Chunk üretimi 1500 karakteri ASLA aşmasın").
+MAX_GENERATION_DELTA_CHARS = 1500
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +141,21 @@ def _clean(**kwargs: Any) -> dict[str, Any]:
     return {key: value for key, value in kwargs.items() if value is not None}
 
 
+def _transport_citations(citations: Any) -> list[AgentSourceReference]:
+    """Domain ``SourceReference`` örneklerini transport modeline açar.
+
+    Pydantic örnekten örneğe doğrulamada kaynak modelin ``__dict__'i`` birebir
+    alınır: opsiyonel alanların AÇIK None'ları taşınır ve ``TransportModel``
+    "null taşınamaz; alan çıkarılmalıdır" validator'ı reddeder. Bu yüzden
+    dönüştürme ``exclude_none`` dump üzerinden yapılır.
+    """
+
+    return [
+        AgentSourceReference.model_validate(citation.model_dump(exclude_none=True))
+        for citation in citations
+    ]
+
+
 def _non_terminal_statuses() -> list[str]:
     """Terminal yazımının izin verildiği kaynak durumlar.
 
@@ -143,6 +164,22 @@ def _non_terminal_statuses() -> list[str]:
     """
 
     return ["accepted"]
+
+
+def _split_chunk(text: str) -> list[str]:
+    """``generation_delta`` metnini taşıyıcı üst sınırına göre böler.
+
+    Boş metin olay ÜRETMEZ (``message`` min_length=1'dir); üst sınırı aşan metin
+    soldan sağa eşit parçalara bölünür — hiçbir parça
+    ``MAX_GENERATION_DELTA_CHARS``'ı aşmaz.
+    """
+
+    if not text:
+        return []
+    limit = MAX_GENERATION_DELTA_CHARS
+    if len(text) <= limit:
+        return [text]
+    return [text[start : start + limit] for start in range(0, len(text), limit)]
 
 
 class AgentEventPublisher:
@@ -316,6 +353,49 @@ class AgentEventPublisher:
             payload_model=payload_model,
         )
 
+    async def publish_generation_delta(
+        self,
+        *,
+        run_id: str,
+        conversation_id: str,
+        correlation_id: str,
+        text: str,
+        execution_attempt: int | None = None,
+        causation_id: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> list[AgentEnvelope]:
+        """``agent.run.progressed`` (kind=generation_delta): parçalı üretim metni.
+
+        ``publish_action_proposed`` gibi ÖNEMLİ geçiş sayılır: SEYREKLEŞTİRİLMEZ
+        (``_throttle`` çağrılmaz) — seyrekleştirme token akışını kalıcı olarak
+        yutardı. Yine de token-başına broker mesajı YASAKTır: çağıran birleştirilmiş
+        chunk gönderir; bu metot 1500 karakteri aşarsa BÖLER ve her parçayı sıra
+        tahsisli ayrı olay olarak yazar (detail kullanılmaz, payload alanı eklenmez).
+        """
+        envelopes: list[AgentEnvelope] = []
+        for chunk in _split_chunk(text):
+            payload_model = AgentRunProgressedV1(
+                **_clean(
+                    event_sequence=0,  # gerçek değer DB'de tahsis edilir; gövdeye orada yazılır
+                    execution_attempt=execution_attempt,
+                    kind="generation_delta",
+                    message=chunk,
+                    detail={},
+                )
+            )
+            envelopes.append(
+                await self._publish_run_event(
+                    message_type="agent.run.progressed",
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    correlation_id=correlation_id,
+                    causation_id=causation_id,
+                    occurred_at=occurred_at,
+                    payload_model=payload_model,
+                )
+            )
+        return envelopes
+
     # ------------------------------------------------------------------ terminal
 
     async def publish_outcome(
@@ -416,7 +496,7 @@ class AgentEventPublisher:
                     selected_mode=outcome.selected_mode,
                     answer=outcome.answer,
                     report=outcome.report,
-                    citations=list(outcome.citations),
+                    citations=_transport_citations(outcome.citations),
                     source_scope=outcome.source_scope,
                     unresolved_questions=list(outcome.unresolved_questions),
                     usage=outcome.usage,
@@ -432,16 +512,16 @@ class AgentEventPublisher:
                 raise EventPublishError(
                     "partially_completed sonucu source_scope, usage ve selected_mode taşımak zorundadır"
                 )
-            return AgentRunPartiallyCompletedV1(
-                **_clean(
-                    **common,
-                    selected_mode=outcome.selected_mode,
-                    answer=outcome.answer,
-                    report=outcome.report,
-                    citations=list(outcome.citations),
-                    source_scope=outcome.source_scope,
-                    unresolved_questions=list(outcome.unresolved_questions),
-                    usage=outcome.usage,
+                return AgentRunPartiallyCompletedV1(
+                    **_clean(
+                        **common,
+                        selected_mode=outcome.selected_mode,
+                        answer=outcome.answer,
+                        report=outcome.report,
+                        citations=_transport_citations(outcome.citations),
+                        source_scope=outcome.source_scope,
+                        unresolved_questions=list(outcome.unresolved_questions),
+                        usage=outcome.usage,
                 )
             )
         if outcome.kind == "failed":

@@ -56,6 +56,7 @@ from ..models import (
     RunStatus,
     SourceScope,
     compute_content_hash,
+    split_generation_delta,
 )
 from ..ports import BudgetKind, ModelRequest, ProgressSink
 from ..state.events import NodeErrorRecord, usage_record_from_events
@@ -116,21 +117,71 @@ def _localized(language: str, *, tr: str, en: str) -> str:
 
 
 async def _publish(
-    progress: ProgressSink | None, run_id: str, kind: ProgressKind, message: str
+    progress: ProgressSink | None,
+    run_id: str,
+    kind: ProgressKind,
+    message: str,
+    detail: dict[str, str] | None = None,
 ) -> None:
     """İlerleme yayınlar; sink arızası akışı kesmez (port sözleşmesi).
 
     Yalnız kullanıcıya yararlı aşamalar yayılır: araştırma başlangıcı, tur
-    tamamlanması, kanıt sayısı ve rapor üretimi (plan A7).
+    tamamlanması, kanıt sayısı ve rapor üretimi (plan A7); araç hatasında
+    ``tool_error`` (canlı adım yüzeyi, additive).
     """
     if progress is None:
         return
     try:
         await progress.publish(
-            DomainProgress(run_id=run_id, kind=kind, message=message, occurred_at=datetime.now(timezone.utc))
+            DomainProgress(
+                run_id=run_id,
+                kind=kind,
+                message=message,
+                detail=detail or {},
+                occurred_at=datetime.now(timezone.utc),
+            )
         )
     except PortError:
         return
+
+
+async def _publish_tool_error(
+    progress: ProgressSink | None, run_id: str, record: NodeErrorRecord
+) -> None:
+    """Node içinde yakalanan araç hatasını canlı adım yüzeyine taşır.
+
+    İleti kaydın (kullanıcı-dostu TR) iletisidir; ``detail`` küratörlü
+    anahtarlarla taşınır. Yayın akışı kesmez; akış kısmi yolda sürer ve
+    terminal durumu belirlemez.
+    """
+    await _publish(
+        progress,
+        run_id,
+        ProgressKind.TOOL_ERROR,
+        record.message,
+        detail={"node": record.node, "code": record.code, "error_id": record.error_id},
+    )
+
+
+async def _publish_delta(progress: ProgressSink | None, run_id: str, chunk: str) -> None:
+    """Parçalı rapor metnini ``GENERATION_DELTA`` olarak yayınlar; sink arızası akışı kesmez.
+
+    Taşıyıcı üst sınırını aşan chunk bölünür (token-başına broker mesajı yok).
+    """
+    if progress is None:
+        return
+    for piece in split_generation_delta(chunk):
+        try:
+            await progress.publish(
+                DomainProgress(
+                    run_id=run_id,
+                    kind=ProgressKind.GENERATION_DELTA,
+                    message=piece,
+                    occurred_at=datetime.now(timezone.utc),
+                )
+            )
+        except PortError:
+            return
 
 
 def _now() -> datetime:
@@ -369,13 +420,13 @@ def make_gather_worker(deps: ResearchDeps) -> Callable[[GatherTask], Any]:
         except PortError as error:
             if error.code is AgentErrorCode.BUDGET_EXHAUSTED:
                 # Arama bütçesi yok: çağrı başlamadı; tur kısmi sonuçla biter.
+                search_budget = _error_record(
+                    f"research:search:{task['round']}:{task['ref_id']}:budget",
+                    "research.gather", error, occurred_at=occurred,
+                )
+                await _publish_tool_error(deps.progress, run_id, search_budget)
                 return {
-                    "errors": [
-                        _error_record(
-                            f"research:search:{task['round']}:{task['ref_id']}:budget",
-                            "research.gather", error, occurred_at=occurred,
-                        )
-                    ],
+                    "errors": [search_budget],
                     "usage_events": events,
                 }
             raise  # cancelled/timeout/provider: terminal yola taşınır
@@ -399,35 +450,35 @@ def make_gather_worker(deps: ResearchDeps) -> Callable[[GatherTask], Any]:
             except PortError as error:
                 events.extend(read_events)
                 if error.code is AgentErrorCode.BUDGET_EXHAUSTED:
-                    errors.append(
-                        _error_record(
-                            f"research:read:{task['round']}:{task['ref_id']}:{index}:budget",
-                            "research.gather", error, occurred_at=occurred,
-                        )
-                    )
-                    break  # sayfa bütçesi doldu; kalan adaylar denenmez
-                errors.append(
-                    _error_record(
-                        f"research:read:{task['round']}:{task['ref_id']}:{index}",
+                    read_budget = _error_record(
+                        f"research:read:{task['round']}:{task['ref_id']}:{index}:budget",
                         "research.gather", error, occurred_at=occurred,
                     )
+                    errors.append(read_budget)
+                    await _publish_tool_error(deps.progress, run_id, read_budget)
+                    break  # sayfa bütçesi doldu; kalan adaylar denenmez
+                read_failure = _error_record(
+                    f"research:read:{task['round']}:{task['ref_id']}:{index}",
+                    "research.gather", error, occurred_at=occurred,
                 )
+                errors.append(read_failure)
+                await _publish_tool_error(deps.progress, run_id, read_failure)
                 continue
             events.extend(read_events)
             if record.extraction_status is not ExtractionStatus.OK or not record.text:
                 # Erişim engeli/CAPTCHA/çıkarılamayan içerik: plan A6 gereği raporlanır.
-                errors.append(
-                    NodeErrorRecord(
-                        error_id=f"research:extract:{task['round']}:{task['ref_id']}:{index}",
-                        node="research.gather",
-                        code="not_found",
-                        message=(
-                            f"kaynak içeriği çıkarılamadı ({record.extraction_status.value}): "
-                            f"{record.final_url}"
-                        ),
-                        occurred_at=occurred,
-                    )
+                extract_failure = NodeErrorRecord(
+                    error_id=f"research:extract:{task['round']}:{task['ref_id']}:{index}",
+                    node="research.gather",
+                    code="not_found",
+                    message=(
+                        f"kaynak içeriği çıkarılamadı ({record.extraction_status.value}): "
+                        f"{record.final_url}"
+                    ),
+                    occurred_at=occurred,
                 )
+                errors.append(extract_failure)
+                await _publish_tool_error(deps.progress, run_id, extract_failure)
                 continue
             records.append(record)
 
@@ -676,7 +727,14 @@ def make_report(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
         )
 
         async def generate_call(_attempt: int) -> CallResult:
-            response = await deps.model.complete(request, cancel=deps.tasks.cancel)
+            async def on_delta(chunk: str) -> None:
+                # Canlı parça: GENERATION_DELTA olarak akar; sink arızası
+                # üretimi kesmez (port sözleşmesi).
+                await _publish_delta(deps.progress, context.run_id, chunk)
+
+            response = await deps.model.stream_complete(
+                request, cancel=deps.tasks.cancel, on_delta=on_delta
+            )
             return CallResult(value=response)
 
         try:

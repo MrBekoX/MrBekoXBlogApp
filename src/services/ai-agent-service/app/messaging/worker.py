@@ -57,6 +57,7 @@ import asyncio
 import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -317,6 +318,19 @@ class _MeteredModel:
         self.total_tokens += response.usage.total_tokens
         return response
 
+    async def stream_complete(
+        self,
+        request: ModelRequest,
+        *,
+        cancel: CancellationToken | None = None,
+        on_delta: Callable[[str], Awaitable[None]],
+    ) -> ModelResponse:
+        """``complete`` ile aynı sayım disiplini: akış çağrısı da bir model çağrısıdır."""
+        response = await self._inner.stream_complete(request, cancel=cancel, on_delta=on_delta)
+        self.calls += 1
+        self.total_tokens += response.usage.total_tokens
+        return response
+
 
 class _WorkerProgressSink(ProgressSink):
     """DomainProgress → B5 olay yayıncısı + lease heartbeat."""
@@ -368,12 +382,27 @@ class _WorkerProgressSink(ProgressSink):
                 occurred_at=event.occurred_at,
             )
             return
+        # Streaming sözleşmesi: parçalı üretim metni ÖZEL yoldan akar —
+        # seyrekleştirilmez (token akışının yutulması yanlış olur) ve
+        # publish_generation_delta 1500 üst sınırını kendisi böler.
+        if kind == ProgressKind.GENERATION_DELTA.value:
+            await self._publisher.publish_generation_delta(
+                run_id=run_id,
+                conversation_id=conversation_id,
+                correlation_id=correlation_id,
+                text=event.message,
+                execution_attempt=self._attempt,
+                causation_id=causation_id,
+                occurred_at=event.occurred_at,
+            )
+            return
         result = await self._publisher.publish_progress(
             run_id=run_id,
             conversation_id=conversation_id,
             correlation_id=correlation_id,
             kind=kind,
             message=event.message,
+            detail=event.detail,
             execution_attempt=self._attempt,
             causation_id=causation_id,
         )
@@ -382,22 +411,25 @@ class _WorkerProgressSink(ProgressSink):
 
 
 def _to_transport_citation(citation: SourceReference) -> AgentSourceReference:
-    """Domain ``SourceReference`` → B1 ``AgentSourceReference`` (alan kümeleri birebir)."""
+    """Domain ``SourceReference`` → B1 ``AgentSourceReference`` (alan kümeleri birebir).
 
-    accessed = citation.accessed_at
-    return AgentSourceReference(
-        kind=citation.kind,
-        article_id=citation.article_id,
-        article_revision=citation.article_revision,
-        chunk_index=citation.chunk_index,
-        url=citation.url,
-        title=citation.title,
-        accessed_at=(
-            accessed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            if accessed is not None
-            else None
-        ),
-    )
+    ``TransportModel`` açık null taşınmasını reddeder (``model_fields_set``
+    taranır); opsiyonel alanlar None ise KONSTRUCTÖRE HİÇ geçilmez.
+    """
+
+    fields: dict[str, Any] = {
+        "kind": citation.kind,
+        "article_id": citation.article_id,
+        "article_revision": citation.article_revision,
+        "chunk_index": citation.chunk_index,
+        "url": citation.url,
+        "title": citation.title,
+    }
+    if citation.accessed_at is not None:
+        fields["accessed_at"] = citation.accessed_at.astimezone(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+    return AgentSourceReference(**{key: value for key, value in fields.items() if value is not None})
 
 
 def _to_transport_usage(run_id: str, usage: Any) -> AgentUsageRecord:

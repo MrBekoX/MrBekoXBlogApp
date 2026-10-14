@@ -193,6 +193,12 @@ class GroundedTestModel:
         )
 
 
+    async def stream_complete(
+        self, request: Any, *, cancel: CancellationToken | None = None, on_delta: Any
+    ) -> Any:
+        return await self.complete(request, cancel=cancel)
+
+
 class SlowTestModel:
     """Model çağrısını yapay gecikmeyle yavaşlatan double (deadline ölçümü).
 
@@ -217,6 +223,12 @@ class SlowTestModel:
         self.call_count += 1
         await self._asyncio.sleep(self._delay)
         return await self._inner.complete(request, cancel=cancel)
+
+
+    async def stream_complete(
+        self, request: Any, *, cancel: CancellationToken | None = None, on_delta: Any
+    ) -> Any:
+        return await self.complete(request, cancel=cancel)
 
 
 class ScriptedRouterModel:

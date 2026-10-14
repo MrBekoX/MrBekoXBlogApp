@@ -61,6 +61,36 @@ const tr = {
   contentUnavailable: 'İçerik kullanılamıyor',
   language: 'Dil',
   a11yStatusPrefix: 'Durum bildirimi',
+  // Sohbet arayüzü (canlı işlem adımları)
+  chatLabel: 'Sohbet',
+  youLabel: 'Sen',
+  agentLabel: 'Agent',
+  inputLabel: 'Mesajınız',
+  inputPlaceholder: 'Sorunuzu yazın... (Enter gönderir)',
+  sendHint: 'Enter gönderir · Shift+Enter yeni satır',
+  stepsTitle: 'İşlem adımları',
+  stepsHide: 'Adımları gizle',
+  stepsShow: 'Adımları göster',
+  stepRunning: 'çalışıyor',
+  stepDone: 'tamamlandı',
+  // Yerleşmiş adım durumları (ekran okuyucu eki): başarıdan AYRI dürüst durumlar
+  stepFailed: 'başarısız',
+  stepCancelled: 'iptal edildi',
+  stepPartial: 'kısmen tamamlandı',
+  stepNeedsInput: 'girdi bekleniyor',
+  stepToolError: 'araç çağrısı başarısız',
+  statusNeedsInput: 'Girdi bekleniyor', // B9: run terminal değil, ek girdi bekler
+  statusGenerating: 'Yanıt yazılıyor...', // generation_delta canlı akışı göstergesi
+  resumeAction: 'Devam et',
+  suggestionsLabel: 'Örneğin:',
+  suggestionSummary: 'Bu yazıyı kısaca özetle',
+  suggestionMainIdea: 'Bu yazının ana fikri nedir?',
+  suggestionCode: 'Kod örneğini açıkla',
+  newContent: 'Yeni içerik',
+  cancelRequestedNote: 'İptal talebiniz iletildi; çalışma sonlanınca bildirilecek.',
+  retryFailed: 'Son soruyu tekrar gönder',
+  a11yStepStarted: 'Adım başladı',
+  a11yNewSteps: 'Yeni işlem adımları var',
 } as const;
 
 /** Genişletilmiş metin tipi: alan adları tr sözlüğünden, değer tipleri string. */
@@ -114,6 +144,88 @@ const en: AgentTexts = {
   contentUnavailable: 'Content unavailable',
   language: 'Language',
   a11yStatusPrefix: 'Status announcement',
+  // Chat interface (live processing steps)
+  chatLabel: 'Conversation',
+  youLabel: 'You',
+  agentLabel: 'Agent',
+  inputLabel: 'Your message',
+  inputPlaceholder: 'Type your question... (Enter to send)',
+  sendHint: 'Enter to send · Shift+Enter for a new line',
+  stepsTitle: 'Processing steps',
+  stepsHide: 'Hide steps',
+  stepsShow: 'Show steps',
+  stepRunning: 'running',
+  stepDone: 'done',
+  // Settled step states (screen reader suffix): honest states distinct from success
+  stepFailed: 'failed',
+  stepCancelled: 'cancelled',
+  stepPartial: 'partially completed',
+  stepNeedsInput: 'waiting for input',
+  stepToolError: 'tool call failed',
+  statusNeedsInput: 'Waiting for input', // B9: run is not terminal, awaits extra input
+  statusGenerating: 'Writing the answer...', // live generation_delta indicator
+  resumeAction: 'Resume',
+  suggestionsLabel: 'For example:',
+  suggestionSummary: 'Summarize this article briefly',
+  suggestionMainIdea: 'What is the main idea of this article?',
+  suggestionCode: 'Explain the code example',
+  newContent: 'New content',
+  cancelRequestedNote: 'Your cancellation request was sent; you will be notified when the run ends.',
+  retryFailed: 'Resend the last question',
+  a11yStepStarted: 'Step started',
+  a11yNewSteps: 'New processing steps available',
 };
 
 export const agentTexts: Record<AgentLang, AgentTexts> = { tr, en };
+
+/**
+ * Ortak olay sözleşmesi kind → kullanıcı-dostu adım etiketi (TR/EN).
+ * kind değerleri: progressed payload'ından (progress_kind enum) veya terminal
+ * messageType son ekinden türetilir (bkz. agent-steps-model.ts deriveEventKind).
+ * 'progress': kind taşımayan progressed olayı için genel etiket (sözleşme
+ * zenginleştirmesi gelmemiş kayıtlar; olay gerçektir, alt türü bilinmiyor).
+ */
+export const agentStepKindLabels: Record<AgentLang, Record<string, string>> = {
+  tr: {
+    run_started: 'Çalışma başlatıldı',
+    mode_selected: 'Çalışma modu seçildi',
+    article_context_ready: 'Makale bağlamı hazır',
+    run_resumed: 'Kaldığı yerden devam ediyor',
+    retrieval_started: 'İlgili belgeler inceleniyor',
+    retrieval_completed: 'İlgili bölümler bulundu',
+    research_started: 'Kaynaklar aranıyor',
+    research_round_completed: 'Araştırma turu tamamlandı',
+    generation_started: 'Cevap hazırlanıyor',
+    generation_completed: 'Cevap üretildi',
+    validation_completed: 'Kaynak ve kapsam kontrolü tamamlandı',
+    action_proposed: 'İş birliği önerisi hazır',
+    needs_input: 'Girdi bekleniyor',
+    tool_error: 'Araç hatası',
+    completed: 'Tamamlandı',
+    failed: 'Başarısız',
+    cancelled: 'İptal edildi',
+    partial: 'Kısmi sonuç',
+    progress: 'İlerleme güncellemesi',
+  },
+  en: {
+    run_started: 'Run started',
+    mode_selected: 'Execution mode selected',
+    article_context_ready: 'Article context ready',
+    run_resumed: 'Resuming from where it left off',
+    retrieval_started: 'Reviewing relevant documents',
+    retrieval_completed: 'Relevant sections found',
+    research_started: 'Searching sources',
+    research_round_completed: 'Research round completed',
+    generation_started: 'Preparing the answer',
+    generation_completed: 'Answer produced',
+    validation_completed: 'Source and scope validation completed',
+    action_proposed: 'Collaboration proposal ready',
+    needs_input: 'Waiting for input',
+    tool_error: 'Tool error',
+    completed: 'Completed',
+    failed: 'Failed',
+    cancelled: 'Cancelled',
+    partial: 'Partial result',
+    progress: 'Progress update',
+  },
+};

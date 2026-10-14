@@ -1,6 +1,6 @@
 # AI agent uygulama aşamaları ilerleme kaydı
 
-Aktif uygulama aşaması: TÜM DALGALAR TAMAMLANDI (W0–W7) — nihai rapor + PR hazırlığı
+Aktif uygulama aşaması: Canlı işlem adımları — sohbet arayüzü (feature/agent-live-steps, PR incelemesinde)
 
 Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar ürün kodu geliştirmesini gösterir. Durumlar yalnız gerçek implementasyon ve çalıştırılmış kontrollerle güncellenir.
 
@@ -53,6 +53,57 @@ Plan ve kaynak araçlarının hazırlanması tamamlandı; aşağıdaki durumlar 
 - Gerçek LLM/embedding sağlayıcısı hâlâ devrede değil; fixture/test-double başarısı gerçek sağlayıcı başarısı sayılmaz.
 - B2 gerçek broker doğrulaması yerel Docker broker'la yapıldı; üretim quorum/TLS kurulumu B11'de.
 
+## Canlı işlem adımları çalışması (2026-10-13)
+
+İnceleme: Frontend → Backend → AI Agent Service akışı dosya/fonksiyon referanslarıyla doğrulandı (agent-api.ts → AgentEndpoints.cs:51 → AcceptAgentRunCommand+outbox → intake.py → worker.py → events.py:168 publish_progress → AgentRunEventProjectionHandler → AgentRunsHub + GET events JSON/SSE). Eksik: progress kind/message/detail replay'e taşmıyordu (agent_event_inbox'ta sütun yoktu) ve panelde canlı adım UI yoktu.
+
+Uygulama (feature/agent-live-steps, commit 4a1934b backend + 871eb16 frontend):
+- Backend: AgentRunEventDto'ya Kind/Message/Detail (additive); agent_event_inbox'a PayloadJson+ProgressMessage sütunları (migration AddAgentEventInboxPayload); projection applied kayda yazıyor; handler kalıcı sütunlardan türetiyor (değer başına 500 karakter kesim; bozuk JSON → null, olay düşmez); terminal/action_proposed kind'ları MessageType'tan; SSE gövdesi dahil. Escalation kararı: (A) kalıcı şema — orchestrator onaylı.
+- Frontend: SignalR RunUpdated tetikleyici + getEvents(after) replay toparlama (4sn polling kaldırıldı); monoton eventSequence filtresi; agent-steps-model.ts (kind türetme, tek sıralı adım listesi, eşli süre) + vitest testleri; agent-steps.tsx daraltılabilir accordion (16 kind TR/EN etiket, durum/süre/güvenli özet, çalışan adım vurgusu, reduced-motion); agent-chat-markdown.tsx (react-markdown+gfm+highlight); gerçek cancel/tekrar/boş durum; akıllı scroll + "Yeni içerik" pill; aria-live/klavye/mobil.
+
+Doğrulama (orchestrator, seri): dotnet test **212/212**; npm build yeşil; **vitest 8 dosya/35 test** yeşil.
+
+Sınırlar: token-parça cevap akışı yok (altyapı seyrekleştirilmiş progress — adımlar canlı, cevap terminalde tam); gerçek LLM sağlayıcısı yok (test_executor işaretli); tarayıcı otomasyonlu görsel E2E koşulmadı.
+
 ## Aşama sonu kayıt formatı
 
 Aşama kimliği, yapılan işler, değişen dosyalar, kullanılan [KAYNAK#C1] kimlikleri, gerçek test çıktıları, belirsizlikler ve sonraki adım kaydedilir.
+
+## Canlı işlem adımları — tamamlanma denetimi (2026-10-13 akşam)
+
+Yöntem: workflow orkestrasyonu — 2 salt-okunur denetçi (backend/frontend kontrol listesi, dosya+fonksiyon kanıtlı), 8 bağımsız bulgu doğrulayıcı, backend/frontend düzeltici, world.run kapıları. 18 bulgu (8'i bağımsız doğrulandı); 8'i kod değişikliği gerektirdi, giderildi ve kapılar yeniden koşuldu.
+
+Düzeltmeler:
+- `tool_error` progress kind'ı uçtan uca (additive): contracts/enums.py + agent_core/models/enums.py + common.schema.json + AgentMessageTypeRegistry.cs; research/nodes.py'de dört araç hata noktasında küratörlü `{node, code, error_id}` detail ile yayın — akış kısmi yolda sürer, terminal durumu belirlemez; worker.py `detail=event.detail` köprüsü.
+- Frontend dürüst adım durumları: failed kırmızı / cancelled gri / partial+needs_input+tool_error amber; yeşil+`tamamlandı` yalnız gerçek başarıda (sr-only ekleriyle).
+- `agent.run.needs_input` yüzeylendi: `isWaitingInputKind` + "Devam et" → `agentApi.resumeRun(expectedInputVersion=needs_input event_sequence)`; durum rozeti nabızsız "Girdi bekleniyor".
+- localStorage restore'da 403/404 kalıcı erişilemezlikte `starting` kilitlenmesi giderildi: çalışma kaldırılır, kayıt temizlenir, `runForbidden`/`runNotFound` ile bildirilir; geçici ağ hatasında eski self-heal korunur.
+- Monoton filtre model sözleşmesine taşındı: `buildAgentSteps` `event_sequence <= son görülen` olayı kendisi eler (duplicate listeyle idempotent); bileşen imleci ek güvence.
+
+Test eki: backend sayfalama (after/limit/HasMore + MaxPageSize=200 clamp), çok adımlı progressed+tool_error yüzeyi, SSE `error` dalı, E2E replay `kind='cancelled'`; frontend duplicate/stale/needs_input/tool_error model testleri; Python tool_error yayın + detail köprü testleri.
+
+Doğrulama (fix + eklemeler sonrası): dotnet **212/212**; pytest **825 passed, 1 skipped**; vitest **8 dosya/40 test**; next build yeşil.
+
+Kalan bilinen sınırlar: token-parça akış yok; adım paneli yalnız en son mesaja bağlı (tek aktif çalışma modeliyle tutarlı); replay OccurredAt backend tüketim anı (SignalR'da üretim anı — kozmetik); 2sn'lik progress throttle aynı kind'ın meşru ikinci örneğini düşürebilir (belgelenmiş tasarım kararı); WCAG kontrast hesapları ölçülmedi (statik).
+
+## Token streaming + gerçek ortam entegrasyonu (2026-10-15)
+
+Hedef: (1) LLM cevabının parçalı ekrana akması, (2) gerçek tarayıcıda canlı broker+agent service E2E'si + gerçek RabbitMQ redelivery/DLX + gerçek migration, (3) gerçek sağlayıcıya hazırlık; ardından PR #4 merge (kullanıcı onayıyla).
+
+Uygulama:
+- **generation_delta olay türü** (additive, 4 kopya lockstep: domain/transport enum, common.schema.json, C# registry): parçalı üretim metni `message` alanında (≤1500 karakter, aşarsa bölünür); `publish_generation_delta` throttle'sız (publish_action_proposed deseni).
+- **ModelProvider.stream_complete(request, cancel, on_delta) → ModelResponse**: bütçe/guard muhasebesi bozulmaz; FakeModelProvider scripted parça, _MeteredModel/_DeadlineBoundedModel sarmalayıcıları güncellendi; qa/analysis/research/entrypoints node'ları delta yayını yapıyor.
+- **OpenAI-uyumlu gerçek sağlayıcı adaptörü** (openai_provider.py): SSE stream + include_usage, ~0.4 sn zaman bazlı chunk birleştirme (clock injectable); AGENT_LLM_API_KEY/MODEL/BASE_URL env'iyle etkinleşir, anahtarsız davranış birebir korunur; offline MockTransport testleri.
+- **Canlı worker giriş noktası**: `python -m app.service_main` (intake + worker run_forever + outbox relay + control + reaper; graceful shutdown). D013: topoloji declare bayraklı (AGENT_TOPOLOGY_DECLARE; declarer backend'dir).
+- **İçerik deposu entegrasyonu (K7 köprüsü)**: backend `GET /api/v1/agent/internal/content/{id}` (X-Agent-Service-Key, ApiResponse zarfı) + Python `HttpContentRepository` (AGENT_CONTENT_BASE_URL/SERVICE_KEY); service_main içerik deposu bağlıyken `SnapshotRetriever` + yerel deterministik gömme (local_embedding.py — model çağrısı değildir, B8 pgvector'a kadar) kurar; yoksa A1 tek-çağrı yolu citation üretemez ve terminal guard koşuyu düşürür.
+- **Frontend**: delta olayı adım DEĞİL — `foldDeltaText` canlı cevabı kurar, `AgentTurn.liveAnswer` ile aktif koşuda akar, terminalde TurnResult devralır; getEvents HasMore sayfalama döngüsü; `agent-api.ts` base çift-ön-ek hatası düzeltildi (`/api/v1/api/v1/agent` → 404 üretiyordu).
+- **Transport null düzeltmeleri**: `_transport_citations` (events.py) + `_to_transport_citation` (worker.py) — TransportModel açık null reddettiği için citation alanları exclude_none ile taşınır.
+
+Gerçek ortam kanıtları:
+- Migration: Alembic head (0002, 0003) + EF `AddAgentEventInboxPayload` gerçek `blogdb_dev`'e uygulandı; şema doğrulandı.
+- Broker: `AgentRabbitMqBrokerTests` 8/8 (DLX'e düşme, confirm+mandatory, prefetch, topoloji idempotency, bağlantı kesilmesi recovery) — canlı tüketici aynı vhosttayken 4 test girişime takılıyor; temiz vhost'ta yeşil (L009 ilkesi canlı koşum için de geçerli).
+- Tarayıcı E2E (Chrome, gerçek stack: compose postgres/redis/rabbitmq + yerel backend 8080 + service_main + next dev + mock LLM SSE): koşu kabulü → canlı adımlar (durum+süre) → **canlı cevap metni örneklemeler arasında büyüdü (streaming)** → retrieval "4 bölüm getirildi" → terminal **Completed + SOURCES (3 makale atfı)**; görüntü kanıtlı.
+
+Doğrulama: pytest **870/1 skipped** → son ağaçta final kapı; dotnet **225/225**; vitest + next build yeşil (temiz .next; dev+build eşzamanlılığı validator'ı bozabiliyor).
+
+Sınırlar/dersler: gerçek LLM anahtarı gelince sadece env ile koşum; tarayıcı-içi iptal tıklaması mock'un kısa üretim penceresinde yakalanamadı (backend iptal yolu deterministik testlerle kanıtlı: CancelRun + E2E cancel replay kind='cancelled'); streaming sırasında her delta tam markdown re-parse — memoizasyon sonraki iyileştirme; canlı worker'ı arka planda uzun ömürlü tutarken süreç yönetimi (taskkill /T ağaçları) yan etkili — isim-doğrulamalı kill kullan.

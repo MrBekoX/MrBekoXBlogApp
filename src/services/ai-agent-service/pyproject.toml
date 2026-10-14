@@ -15,6 +15,8 @@ dependencies = [
     # belge: SQLAlchemy 2.0+ gerekir; SQLAlchemy migration zamanı aracıdır,
     # çalışma zamanı yolu asyncpg kullanır).
     "asyncpg>=0.32,<0.33",
+    # Streaming LLM sağlayıcısı (OpenAiModelProvider): SSE akışı + MockTransport ile offline testler.
+    "httpx>=0.27,<1",
     "alembic>=1.20,<1.21",
     "sqlalchemy>=2.0,<2.1",
 ]

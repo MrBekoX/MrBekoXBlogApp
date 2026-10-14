@@ -40,6 +40,7 @@ portlardan gelir ve ``agent_core.adapters.test_doubles`` ile koşulur.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
 from .analysis.models import AnalysisConfig
@@ -74,6 +75,7 @@ from .models import (
     UtcDatetime,
     ValidatedActionResult,
     compute_content_hash,
+    split_generation_delta,
 )
 from .ports import (
     BudgetStore,
@@ -163,6 +165,27 @@ async def _publish(
         await progress.publish(event)
     except PortError:
         return
+
+
+async def _publish_delta(progress: ProgressSink | None, run_id: str, chunk: str) -> None:
+    """Parçalı üretim metnini ``GENERATION_DELTA`` olarak yayınlar; sink arızası akışı kesmez.
+
+    Taşıyıcı üst sınırını aşan chunk bölünür (token-başına broker mesajı yok).
+    """
+    if progress is None:
+        return
+    for piece in split_generation_delta(chunk):
+        try:
+            await progress.publish(
+                DomainProgress(
+                    run_id=run_id,
+                    kind=ProgressKind.GENERATION_DELTA,
+                    message=piece,
+                    occurred_at=_utcnow(),
+                )
+            )
+        except PortError:
+            return
 
 
 def _check_cancel(cancel: CancellationToken | None) -> None:
@@ -612,7 +635,14 @@ async def execute_plan(
     try:
         if budget is not None:
             reservation = await budget.reserve(run_id, BudgetKind.MODEL_CALL, 1)
-        response = await model.complete(_compose_prompt(prepared), cancel=cancel)
+
+        async def on_delta(chunk: str) -> None:
+            # Canlı parça: GENERATION_DELTA olarak akar; sink arızası üretimi kesmez.
+            await _publish_delta(progress, run_id, chunk)
+
+        response = await model.stream_complete(
+            _compose_prompt(prepared), cancel=cancel, on_delta=on_delta
+        )
         if budget is not None and reservation is not None:
             await budget.commit(reservation, max(response.usage.total_tokens, 1))
     except PortError as error:
@@ -664,6 +694,28 @@ class _DeadlineBoundedModel:
         try:
             return await asyncio.wait_for(
                 self._inner.complete(request, cancel=cancel),
+                timeout=self._deadline.remaining(),
+            )
+        except asyncio.TimeoutError:
+            raise PortError(
+                AgentErrorCode.TIMEOUT,
+                f"devam ettirilen çalışmanın süre sınırı doldu "
+                f"({self._deadline.elapsed():.3f}s geçti, kalan yok)",
+                port="resume",
+            ) from None
+
+    async def stream_complete(
+        self,
+        request: ModelRequest,
+        *,
+        cancel: CancellationToken | None = None,
+        on_delta: Callable[[str], Awaitable[None]],
+    ) -> ModelResponse:
+        """``complete`` ile aynı deadline disiplini: kalan süreyle yarıştırılır."""
+        self._deadline.raise_if_exceeded()
+        try:
+            return await asyncio.wait_for(
+                self._inner.stream_complete(request, cancel=cancel, on_delta=on_delta),
                 timeout=self._deadline.remaining(),
             )
         except asyncio.TimeoutError:

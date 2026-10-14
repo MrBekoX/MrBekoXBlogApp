@@ -32,6 +32,15 @@ public class AgentEventInboxConfiguration : IEntityTypeConfiguration<AgentEventI
         builder.Property(i => i.Detail)
             .HasMaxLength(512);
 
+        // Agent live-steps replay türetme kaynağı (ADDITIVE): payload JSON'u text
+        // olarak saklanır (bilinçli seçim: bozuk/eski satırlar da kalıcıdır ve replay
+        // "alanlar null, olay düşmez" sözleşmesiyle karşılanır); boyut zarf üst
+        // sınırıyla (256 KiB) sınırlıdır.
+        builder.Property(i => i.PayloadJson);
+
+        builder.Property(i => i.ProgressMessage)
+            .HasMaxLength(2000); // payload sözleşmesi: message maxLength 2000
+
         builder.Property(i => i.CreatedAt).IsRequired();
 
         // Run bazlı denetim sorguları (operasyon/karantina incelemesi).

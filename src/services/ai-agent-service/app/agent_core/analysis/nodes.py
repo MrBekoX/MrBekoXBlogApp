@@ -41,6 +41,7 @@ from ..models import (
     RouteDecision,
     RunStatus,
     SourceScope,
+    split_generation_delta,
 )
 from ..ports import BudgetKind, ContentRepository, ModelRequest, ProgressSink
 from ..qa.nodes import insufficient_answer
@@ -114,6 +115,27 @@ async def _publish(
         )
     except PortError:
         return
+
+
+async def _publish_delta(progress: ProgressSink | None, run_id: str, chunk: str) -> None:
+    """Parçalı üretim metnini ``GENERATION_DELTA`` olarak yayınlar; sink arızası akışı kesmez.
+
+    Taşıyıcı üst sınırını aşan chunk bölünür (token-başına broker mesajı yok).
+    """
+    if progress is None:
+        return
+    for piece in split_generation_delta(chunk):
+        try:
+            await progress.publish(
+                DomainProgress(
+                    run_id=run_id,
+                    kind=ProgressKind.GENERATION_DELTA,
+                    message=piece,
+                    occurred_at=datetime.now(timezone.utc),
+                )
+            )
+        except PortError:
+            return
 
 
 @dataclass
@@ -382,7 +404,14 @@ def make_generate(deps: AnalysisDeps) -> Callable[[AnalysisState], Any]:
         request = build_generation_request(deps, state)
 
         async def generate_call(_attempt: int) -> CallResult:
-            response = await deps.model.complete(request, cancel=deps.tasks.cancel)
+            async def on_delta(chunk: str) -> None:
+                # Canlı parça: GENERATION_DELTA olarak akar; sink arızası
+                # üretimi kesmez (port sözleşmesi).
+                await _publish_delta(deps.progress, context.run_id, chunk)
+
+            response = await deps.model.stream_complete(
+                request, cancel=deps.tasks.cancel, on_delta=on_delta
+            )
             return CallResult(value=response)
 
         outcome = await deps.tasks.guarded(

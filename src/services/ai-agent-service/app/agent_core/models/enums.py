@@ -82,6 +82,10 @@ class ProgressKind(StrEnum):
     ``TOOL_ERROR`` (additive): web arama/okuma gibi dış araç çağrılarının
     node içinde yakalanan tekil hata izidir; akış kısmi yolda sürer ve
     terminal durumu belirlemez.
+
+    ``GENERATION_DELTA`` (additive): LLM cevabı üretilirken parçalı metin
+    taşıyan birleştirilmiş chunk. Token-başına broker mesajı YASAKTIR (events.py
+    sözleşmesi); chunk'lar birleştirilmiş olarak akar ve seyrekleştirilmez.
     """
 
     RUN_STARTED = "run_started"
@@ -97,3 +101,4 @@ class ProgressKind(StrEnum):
     VALIDATION_COMPLETED = "validation_completed"
     ACTION_PROPOSED = "action_proposed"
     TOOL_ERROR = "tool_error"
+    GENERATION_DELTA = "generation_delta"

@@ -40,6 +40,8 @@ export const AGENT_STEP_KINDS = [
   'failed',
   'cancelled',
   'partial',
+  // NOT: 'generation_delta' bu listede BİLİNÇLİ OLARAK YOKTUR — akış parçası
+  // adım değildir; foldDeltaText ile canlı metne katılır (aşağıda).
 ] as const;
 
 export type AgentStepKind = (typeof AGENT_STEP_KINDS)[number] | 'progress';
@@ -73,6 +75,10 @@ export function isWaitingInputKind(kind: string): boolean {
  * sınıf adı — ikisi de son ek kuralıyla çözülür). Çözülemezse null.
  */
 export function deriveEventKind(event: Pick<AgentRunEvent, 'kind' | 'messageType'>): AgentStepKind | null {
+  // Akış parçası (generation_delta) ADIM DEĞİLDİR: null döner — buildAgentSteps
+  // imleci ilerletir ama adım üretmez; parça foldDeltaText ile metne katılır.
+  if (event.kind === 'generation_delta') return null;
+
   if (event.kind && KNOWN_KINDS.has(event.kind)) return event.kind as AgentStepKind;
 
   const direct = KIND_BY_MESSAGE_TYPE[event.messageType];
@@ -170,6 +176,34 @@ export function buildAgentSteps(events: AgentRunEvent[]): AgentStepVM[] {
   }
 
   return steps;
+}
+
+/**
+ * Canlı yanıt metni: kind'ı 'generation_delta' olan olayların message
+ * parçalarını liste sırasına göre birleştirir (araya başka olay girmiş olsa da
+ * parça sırası korunur — broker parçaları AgentRunProgressedV1.message ile
+ * sıralı akıtır; token-başına mesaj yoktur, birleştirilmiş chunk'tır).
+ *
+ * Monoton filtre buildAgentSteps ile AYNI sözleşmedir: event_sequence'i
+ * kendisinden önce görülenden BÜYÜK olmayan olay (duplicate ya da geç/stale
+ * replay) YOK SAYILIR — duplicate listeyle çağrı foldDeltaText idempotenttir
+ * ve metni değiştirmez. Delta olayı yoksa boş string döner; normal adım
+ * olaylarının message'ları metne KARIŞMAZ.
+ */
+export function foldDeltaText(events: AgentRunEvent[]): string {
+  let text = '';
+  // B5 sözleşmesi: event_sequence 1'den monoton artar; <= son görülen = duplicate/geç.
+  let lastSequence = 0;
+
+  for (const event of events) {
+    if (event.eventSequence <= lastSequence) continue; // duplicate/geç olay: metni değiştiremez
+    lastSequence = event.eventSequence;
+
+    if (event.kind !== 'generation_delta') continue;
+    if (event.message) text += event.message;
+  }
+
+  return text;
 }
 
 /** ms → "42 sn" / "1dk 05 sn" (saniye hassasiyeti yeterli). */

@@ -10,6 +10,7 @@ using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Models;
 using BlogApp.Core.Application.Common.Options;
+using BlogApp.Core.Application.Features.AgentFeature.Services;
 using BlogApp.Core.Domain.Entities;
 using BlogApp.Core.Domain.Enums;
 using MediatR;
@@ -283,7 +284,7 @@ public sealed class AcceptAgentRunCommandHandler(
         long? articleRevision = null;
         if (article is not null)
         {
-            contentHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(article.Content))).ToLowerInvariant();
+            contentHash = AgentArticleContentHash.Compute(article.Content);
             publishedAt = article.PublishedAt is { } published
                 ? AgentCommandEnvelopeComposer.FormatUtc(new DateTimeOffset(published, TimeSpan.Zero))
                 : null;

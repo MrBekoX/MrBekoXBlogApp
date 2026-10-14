@@ -209,6 +209,11 @@ class KillModel:
         self.call_count += 1
         raise RuntimeError("worker süreci model çağrısı sırasında çöktü (senaryo)")
 
+    async def stream_complete(
+        self, request: ModelRequest, *, cancel: CancellationToken | None = None, on_delta: Any
+    ) -> ModelResponse:
+        return await self.complete(request, cancel=cancel)
+
 
 class GateModel:
     """Çağrıya girip ``release`` bekleyen model: eşzamanlılık/lease senaryoları.
@@ -241,6 +246,11 @@ class GateModel:
             usage=ModelUsage(prompt_tokens=7, completion_tokens=3),
             finished_at=datetime.now(timezone.utc),
         )
+
+    async def stream_complete(
+        self, request: ModelRequest, *, cancel: CancellationToken | None = None, on_delta: Any
+    ) -> ModelResponse:
+        return await self.complete(request, cancel=cancel)
 
 
 # --------------------------------------------------------------------------

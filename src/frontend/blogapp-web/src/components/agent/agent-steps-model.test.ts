@@ -3,6 +3,7 @@ import type { AgentRunEvent } from '@/types/agent';
 import {
   buildAgentSteps,
   deriveEventKind,
+  foldDeltaText,
   formatDuration,
   isTerminalKind,
   isWaitingInputKind,
@@ -54,6 +55,10 @@ describe('deriveEventKind', () => {
   it('progressed tool_error kindı bilinir: araç hatası ayrı adımdır; terminal değildir', () => {
     expect(deriveEventKind({ kind: 'tool_error', messageType: 'agent.run.progressed' })).toBe('tool_error');
     expect(isTerminalKind('tool_error')).toBe(false);
+  });
+
+  it('generation_delta adım DEĞİLDİR: null döner (akış parçası adım listesine girmez)', () => {
+    expect(deriveEventKind({ kind: 'generation_delta', messageType: 'agent.run.progressed' })).toBeNull();
   });
 
   it('isTerminalKind yalnız terminal türlerini işaretler', () => {
@@ -129,6 +134,55 @@ describe('buildAgentSteps', () => {
       event({ eventSequence: 2, kind: 'run_started' }),
     ]);
     expect(steps.map((step) => step.sequence)).toEqual([2]);
+  });
+
+  it('generation_delta olayları adım ÜRETMEZ; sonraki gerçek adımlar yerinde kalır', () => {
+    const steps = buildAgentSteps([
+      event({ eventSequence: 1, kind: 'generation_started' }),
+      event({ eventSequence: 2, kind: 'generation_delta', message: 'parça-' }),
+      event({ eventSequence: 3, kind: 'generation_delta', message: 'metin' }),
+      event({ eventSequence: 4, kind: 'generation_completed' }),
+    ]);
+    expect(steps.map((step) => step.kind)).toEqual(['generation_started', 'generation_completed']);
+    expect(steps.map((step) => step.sequence)).toEqual([1, 4]);
+  });
+});
+
+describe('foldDeltaText', () => {
+  it('generation_delta mesajlarını liste sırasına göre birleştirir; adım olaylarının mesajı karışmaz', () => {
+    const text = foldDeltaText([
+      event({ eventSequence: 1, kind: 'generation_started', message: 'Cevap hazırlanıyor' }),
+      event({ eventSequence: 2, kind: 'generation_delta', message: 'Merhaba ' }),
+      event({ eventSequence: 3, kind: 'generation_delta', message: 'dünya' }),
+      event({ eventSequence: 4, kind: 'generation_completed', message: 'Cevap üretildi' }),
+    ]);
+    expect(text).toBe('Merhaba dünya');
+  });
+
+  it('duplicate/stale delta olayında sonuç DEĞİŞMEZ (event_sequence monotonluk filtresi)', () => {
+    const deltas = [
+      event({ eventSequence: 5, kind: 'generation_delta', message: 'a' }),
+      event({ eventSequence: 6, kind: 'generation_delta', message: 'b' }),
+    ];
+    // Duplicate replay: aynı liste tekrar gelirse metin aynı kalır.
+    expect(foldDeltaText([...deltas, ...deltas])).toBe('ab');
+    // Geç/stale: büyük sequence'tan SONRA gelen küçük sequence yok sayılır.
+    expect(foldDeltaText([deltas[1], deltas[0]])).toBe('b');
+  });
+
+  it('delta yoksa boş string döner', () => {
+    expect(foldDeltaText([])).toBe('');
+    expect(foldDeltaText([event({ eventSequence: 1, kind: 'run_started', message: 'başladı' })])).toBe('');
+  });
+
+  it('normal adım olaylarının mesajları (progressed/tool_error/terminal) metne karışmaz', () => {
+    const text = foldDeltaText([
+      event({ eventSequence: 1, kind: 'retrieval_started', message: 'Belgeler inceleniyor' }),
+      event({ eventSequence: 2, kind: 'tool_error', message: 'araç çağrısı başarısız' }),
+      event({ eventSequence: 3, kind: 'generation_delta', message: 'yanıt' }),
+      event({ eventSequence: 4, messageType: 'agent.run.completed', message: null }),
+    ]);
+    expect(text).toBe('yanıt');
   });
 });
 

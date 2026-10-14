@@ -12,10 +12,18 @@ ile reddeder; ayrıca döndürdüğü her nesnenin ``is_test_double`` işareti
 A1'de yalnız ``test`` sağlayıcısının somut adaptörü vardır; ollama/openai/
 anthropic bilinen adlardır ve eksik-alan doğrulaması yapılır, somut
 adaptörleri sonraki fazlarda ``agent_core.adapters`` altına eklenir.
+
+Streaming sözleşmesi (additive): ``AGENT_LLM_API_KEY`` ortam değişkeni DOLU
+iken ``build_model_provider_from_env`` gerçek OpenAI-uyumlu sağlayıcıyı
+(``openai_provider.OpenAiModelProvider``) kurar; boşsa ``None`` döner —
+çağıran MEVCUT davranışıyla sürer (anahtarsız default birebir korunur).
 """
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -23,7 +31,14 @@ from pydantic import BaseModel, ConfigDict
 from ..errors import AgentErrorCode, PortError
 from ..ports import EmbeddingProvider, ModelProvider, WebSearchProvider
 
-__all__ = ["ProviderSettings", "resolve_embedding_provider", "resolve_model_provider", "resolve_web_search_provider"]
+__all__ = [
+    "LlmProviderSettings",
+    "ProviderSettings",
+    "build_model_provider_from_env",
+    "resolve_embedding_provider",
+    "resolve_model_provider",
+    "resolve_web_search_provider",
+]
 
 
 class ProviderSettings(BaseModel):
@@ -36,6 +51,81 @@ class ProviderSettings(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
     model_name: str | None = None
+
+
+#: ``AGENT_LLM_BASE_URL`` verilmediğinde kullanılan OpenAI-uyumlu uç nokta.
+DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
+
+
+@dataclass(frozen=True)
+class LlmProviderSettings:
+    """Gerçek LLM sağlayıcısının (OpenAI-uyumlu) bağlantı ayarları.
+
+    ``from_env`` anahtar boşken ``None`` döner: yapılandırılmamış, hata DEĞİL —
+    çağıran mevcut (anahtarsız) davranışıyla sürer. Anahtar dolu ama model
+    eksikse ``config_error`` yükselir (anlaşılır yapılandırma redde kuralı).
+    """
+
+    api_key: str
+    model: str
+    base_url: str = DEFAULT_LLM_BASE_URL
+    connect_timeout_seconds: float = 10.0
+    request_timeout_seconds: float = 120.0
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> "LlmProviderSettings | None":
+        """Ortam değişkenlerinden ayarları okur; anahtar yoksa ``None`` döner.
+
+        Değişkenler: ``AGENT_LLM_API_KEY`` (boş → yapılandırılmamış),
+        ``AGENT_LLM_MODEL`` (anahtar doluysa zorunlu), ``AGENT_LLM_BASE_URL``
+        (default ``https://api.openai.com/v1``), ``AGENT_LLM_CONNECT_TIMEOUT``
+        ve ``AGENT_LLM_REQUEST_TIMEOUT`` (saniye).
+        """
+
+        env = os.environ if environ is None else environ
+        api_key = env.get("AGENT_LLM_API_KEY", "")
+        if not api_key.strip():
+            return None
+        model = env.get("AGENT_LLM_MODEL", "")
+        if not model.strip():
+            raise PortError(
+                AgentErrorCode.CONFIG_ERROR,
+                "'AGENT_LLM_API_KEY' dolu ama 'AGENT_LLM_MODEL' tanımlı değil: "
+                "OpenAI-uyumlu sağlayıcı çağrılacak model adını gerektirir. "
+                "AGENT_LLM_MODEL ortam değişkenini ayarlayın.",
+                port="LlmProviderSettings",
+            )
+
+        def _float(name: str, default: float) -> float:
+            raw = env.get(name)
+            return float(raw) if raw else default
+
+        return cls(
+            api_key=api_key,
+            model=model,
+            base_url=env.get("AGENT_LLM_BASE_URL") or DEFAULT_LLM_BASE_URL,
+            connect_timeout_seconds=_float("AGENT_LLM_CONNECT_TIMEOUT", 10.0),
+            request_timeout_seconds=_float("AGENT_LLM_REQUEST_TIMEOUT", 120.0),
+        )
+
+
+def build_model_provider_from_env(
+    environ: Mapping[str, str] | None = None,
+) -> ModelProvider | None:
+    """``AGENT_LLM_API_KEY`` doluysa gerçek OpenAI-uyumlu sağlayıcıyı kurar.
+
+    Anahtar boşsa ``None`` döner: çağıran MEVCUT model bağlama davranışını
+    (``resolve_model_provider`` / test double enjeksiyonu) aynen kullanır —
+    anahtarsız default birebir korunur. Yerel import döngüyü kırar
+    (``openai_provider`` bu modülden beslenir).
+    """
+
+    settings = LlmProviderSettings.from_env(environ)
+    if settings is None:
+        return None
+    from .openai_provider import OpenAiModelProvider
+
+    return OpenAiModelProvider(settings)
 
 
 #: Bilinen sağlayıcı adları ve zorunlu ayar alanları (değerler sonraki fazlarda dolan altyapıdır).

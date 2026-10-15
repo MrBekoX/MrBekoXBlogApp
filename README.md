@@ -353,6 +353,12 @@ python -m app.main
 
 ### AI Agent Service (Python)
 
+> **Config note:** the Python agent service reads its `AGENT_*` variables from a `.env`
+> file at `src/services/ai-agent-service` (priority: real environment > `.env` > code
+> defaults). Setup: `cp .env.example .env` → fill `AGENT_DB_PASSWORD` and `AGENT_LLM_*`
+> → start with `python -m app.service_main`. See
+> `src/services/ai-agent-service/README.md` (“Ortam değişkenleri ve .env dosyası”).
+
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `OLLAMA_BASE_URL` | Ollama API URL | `http://localhost:11434` | No |

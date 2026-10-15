@@ -20,13 +20,27 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 from urllib.parse import quote
 
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+# .env yükleme: app/env_file.py üst seviye modülüdür; alembic repo kökünden
+# çalışır (CWD bağımsızlığı dosya konumundan türetilir). Yükleme config
+# okumalarından ÖNCE yapılır: AGENT_DB_* değerleri (.env'dekiler dâhil) hem
+# AGENT_SCHEMA okumasına hem _resolve_url'a düşer. Gerçek ortam > .env.
+_MIGRATIONS_APP_DIR = str(Path(__file__).resolve().parents[1] / "app")
+if _MIGRATIONS_APP_DIR not in sys.path:
+    sys.path.insert(0, _MIGRATIONS_APP_DIR)
+
+from env_file import load_env_file  # noqa: E402
+
+load_env_file()
 
 config = context.config
 

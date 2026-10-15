@@ -45,6 +45,36 @@ python -m pytest src/services/ai-agent-service/tests -q \
   --ignore=src/services/ai-agent-service/tests/collab
 ```
 
+## Ortam değişkenleri ve .env dosyası
+
+Tüm `AGENT_*` değişkenleri ortamdan okunur; kolay kurulum için `.env` dosyası
+desteklenir (`app/env_file.py`, sıfır bağımlılık):
+
+```bash
+cd src/services/ai-agent-service
+cp .env.example .env
+# .env'i doldur: AGENT_DB_PASSWORD (servis açılışı için zorunlu) ve
+# AGENT_LLM_API_KEY + AGENT_LLM_MODEL (gerçek sağlayıcı için).
+python -m app.service_main
+```
+
+**Yükleme kuralı** (`load_env_file`): yol önce `AGENT_ENV_FILE` ortam
+değişkeninden alınır (verilmişse dosyanın varlığı zorunludur); verilmediyse
+`app/env_file.py`'nin dizininden hizmet köküne kadar ilk `.env` aranır
+(CWD'den bağımsız; arama repo/sürücü kökündeki ilgisiz `.env`'lere inmez).
+Dosya bulunamazsa sessizce atlanır — `.env` zorunlu değildir;
+üretimde değerleri deployment ortamından verebilirsiniz.
+
+**Öncelik:** GERÇEK ORTAM değişkeni > `.env` > kod varsayılanı. `.env` yalnız
+ortamda olmayan anahtarları doldurur; tür hataları anlaşılır `EnvConfigError`
+üretir (mesaj ham değeri yazmaz; `.env` içeriği asla loglanmaz).
+
+**Alembic** (`migrations/env.py`) da aynı `.env` dosyasını okur: `AGENT_DB_URL`
+verilirse doğrudan kullanılır, aksi hâlde `AGENT_DB_*` değişkenlerinden DSN
+kurulur (`AGENT_DB_PASSWORD` zorunlu).
+
+Tam değişken listesi ve yerleşik kod default'ları: `.env.example`.
+
 ## Paketi kullanma: üç giriş noktası
 
 Haberleşme adaptörü (ve kendi denemeleriniz) yalnız üç fonksiyon çağırır —

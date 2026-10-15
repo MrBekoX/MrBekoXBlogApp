@@ -17,6 +17,8 @@ from urllib.parse import quote
 
 import asyncpg
 
+from env_file import env_float, env_int
+
 __all__ = ["AgentDbSettings", "connect_pool", "AgentDbError"]
 
 
@@ -53,6 +55,8 @@ def from_env(environ: dict[str, str] | None = None) -> AgentDbSettings:
 
     Parola varsayılanı bilinçli olarak yoktur: sır kod/fixture'a girmez
     (genel kural); eksik değerli sessiz devamları önlemek için fail-fast edilir.
+    Sayısal alanlar ``env_file`` yardımcılarıyla okunur: tür hatası anlaşılır
+    ``EnvConfigError`` üretir (mesaj ham değeri yazmaz).
     """
 
     env = os.environ if environ is None else environ
@@ -62,24 +66,16 @@ def from_env(environ: dict[str, str] | None = None) -> AgentDbSettings:
             "AGENT_DB_PASSWORD tanımlı değil; agent DB parolası yalnız ortam değişkeninden alınır"
         )
 
-    def _int(name: str, default: int) -> int:
-        raw = env.get(name)
-        return int(raw) if raw else default
-
-    def _float(name: str, default: float) -> float:
-        raw = env.get(name)
-        return float(raw) if raw else default
-
     return AgentDbSettings(
         host=env.get("AGENT_DB_HOST", "127.0.0.1"),
-        port=_int("AGENT_DB_PORT", 5432),
+        port=env_int("AGENT_DB_PORT", 5432, env),
         user=env.get("AGENT_DB_USER", "blogapp_user"),
         password=password,
         database=env.get("AGENT_DB_NAME", "blogdb_dev"),
         schema=env.get("AGENT_DB_SCHEMA", "agent"),
-        min_size=_int("AGENT_DB_POOL_MIN", 1),
-        max_size=_int("AGENT_DB_POOL_MAX", 4),
-        command_timeout_seconds=_float("AGENT_DB_COMMAND_TIMEOUT", 10.0),
+        min_size=env_int("AGENT_DB_POOL_MIN", 1, env),
+        max_size=env_int("AGENT_DB_POOL_MAX", 4, env),
+        command_timeout_seconds=env_float("AGENT_DB_COMMAND_TIMEOUT", 10.0, env),
     )
 
 

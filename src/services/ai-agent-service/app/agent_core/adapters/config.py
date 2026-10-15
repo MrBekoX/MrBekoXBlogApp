@@ -28,6 +28,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from env_file import env_float
+
 from ..errors import AgentErrorCode, PortError
 from ..ports import EmbeddingProvider, ModelProvider, WebSearchProvider
 
@@ -96,16 +98,14 @@ class LlmProviderSettings:
                 port="LlmProviderSettings",
             )
 
-        def _float(name: str, default: float) -> float:
-            raw = env.get(name)
-            return float(raw) if raw else default
-
         return cls(
             api_key=api_key,
             model=model,
             base_url=env.get("AGENT_LLM_BASE_URL") or DEFAULT_LLM_BASE_URL,
-            connect_timeout_seconds=_float("AGENT_LLM_CONNECT_TIMEOUT", 10.0),
-            request_timeout_seconds=_float("AGENT_LLM_REQUEST_TIMEOUT", 120.0),
+            # env_file yardımcıları: boş değer → kod varsayılanı; tür hatası →
+            # anlaşılır EnvConfigError (mesaj ham değeri yazmaz).
+            connect_timeout_seconds=env_float("AGENT_LLM_CONNECT_TIMEOUT", 10.0, env),
+            request_timeout_seconds=env_float("AGENT_LLM_REQUEST_TIMEOUT", 120.0, env),
         )
 
 

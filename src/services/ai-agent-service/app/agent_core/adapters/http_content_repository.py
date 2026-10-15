@@ -41,6 +41,8 @@ from urllib.parse import quote
 
 import httpx
 
+from env_file import env_float
+
 from ..errors import AgentErrorCode, PortError
 from ..models import ArticleSnapshot
 from ..ports import ContentRepository
@@ -106,11 +108,12 @@ class ContentRepositorySettings:
                 port="ContentRepositorySettings",
             )
 
-        raw_timeout = env.get("AGENT_CONTENT_TIMEOUT_SECONDS")
         return cls(
             base_url=base_url,
             service_key=service_key,
-            timeout_seconds=float(raw_timeout) if raw_timeout else DEFAULT_TIMEOUT_SECONDS,
+            # env_file yardımcısı: boş değer → kod varsayılanı; tür hatası →
+            # anlaşılır EnvConfigError (mesaj ham değeri yazmaz).
+            timeout_seconds=env_float("AGENT_CONTENT_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS, env),
         )
 
 

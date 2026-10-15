@@ -4,6 +4,17 @@ Bu paket yapılandırmayı kod içinde taşımaz: tüm sınırlar çağıranın 
 modellerle gelir. Aşağıdaki tablo adaptörün (B6 worker) doldurması
 beklenen yapılandırma yüzeyidir.
 
+## Ortam değişkenleri ve `.env` dosyası
+
+Canlı worker (`app.service_main`) ve Alembic (`migrations/env.py`) tüm `AGENT_*`
+değişkenlerini ortamdan okur; `app/env_file.py` hizmet kökü `.env` dosyasını da
+yükler. Kurulum: `cp .env.example .env` → `AGENT_DB_PASSWORD` ve `AGENT_LLM_*`
+doldur → `python -m app.service_main`. Öncelik: GERÇEK ORTAM > `.env` > kod
+varsayılanı; `.env` zorunlu değildir (üretimde değerler ortamdan verilir),
+tür hataları anlaşılır `EnvConfigError` üretir. Tam değişken listesi ve
+default değerler: `.env.example`; ayrıntılar: `README.md`
+("Ortam değişkenleri ve .env dosyası").
+
 ## 1. Model/embedding sağlayıcısı
 
 - `ModelProvider` / `EmbeddingProvider` portlarını gerçekleştiren adaptör

@@ -16,6 +16,9 @@ B4-B9 bileşenlerinin üretim kompozisyonu (referans: ``tests/e2e/harness.py``
   (``HttpContentRepository``) ``ExecutionDependencies.content``'e bağlar;
   boşsa MEVCUT davranış (depo bağlı değil) birebir korunur. Canlı worker'da
   retrieval citation üretimi ancak depo bağlıyken mümkündür.
+- **Ortam yükleme:** ``_async_main`` başında ``load_env_file()`` (``env_file``
+  modülü) hizmet kökü ``.env``'ini okur; öncelik GERÇEK ORTAM > ``.env`` >
+  kod varsayılanıdır (``AGENT_ENV_FILE`` ile açık yol verilebilir).
 - **Paralel yaşam:** intake tüketimi + worker ``run_forever`` + outbox relay
   döngüsü + control tüketimi + deadline reaper ``asyncio`` görevleriyle
   birlikte çalışır; SIGINT/SIGTERM'de düzgün kapanır (görevler iptal edilip
@@ -40,6 +43,8 @@ from typing import Any
 _APP_DIR = str(Path(__file__).resolve().parent)
 if _APP_DIR not in sys.path:
     sys.path.insert(0, _APP_DIR)
+
+from env_file import env_bool, env_float, env_int, load_env_file  # noqa: E402
 
 from agent_core.adapters import (  # noqa: E402
     ProviderSettings,
@@ -72,16 +77,6 @@ from .messaging.worker import ExecutionDependencies, ExecutionWorker, WorkerSett
 __all__ = ["ServiceComponents", "build_components_async", "main", "resolve_model", "run_service"]
 
 logger = logging.getLogger("service_main")
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    return int(raw) if raw else default
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    return float(raw) if raw else default
 
 
 def resolve_model() -> Any:
@@ -177,9 +172,9 @@ async def build_components_async(
         queue_classes=tuple(
             raw.strip() for raw in env.get("AGENT_WORKER_QUEUE_CLASSES", "fast,research").split(",") if raw.strip()
         ),
-        lease_seconds=_env_float("AGENT_WORKER_LEASE_SECONDS", 60.0),
-        poll_interval_seconds=_env_float("AGENT_WORKER_POLL_INTERVAL", 0.5),
-        max_execution_attempts=_env_int("AGENT_WORKER_MAX_ATTEMPTS", 3),
+        lease_seconds=env_float("AGENT_WORKER_LEASE_SECONDS", 60.0),
+        poll_interval_seconds=env_float("AGENT_WORKER_POLL_INTERVAL", 0.5),
+        max_execution_attempts=env_int("AGENT_WORKER_MAX_ATTEMPTS", 3),
     )
     worker = ExecutionWorker(
         store,
@@ -196,7 +191,7 @@ async def build_components_async(
         lease_seconds=worker_settings.lease_seconds,
     )
     control_service = ControlConsumerService(control_store, resume_driver=driver)
-    reaper = DeadlineReaper(control_store, interval_seconds=_env_float("AGENT_REAPER_INTERVAL", 30.0))
+    reaper = DeadlineReaper(control_store, interval_seconds=env_float("AGENT_REAPER_INTERVAL", 30.0))
 
     return ServiceComponents(
         pool=pool,
@@ -245,7 +240,7 @@ async def run_service(
     # events write + kuyruk read yetkilidir. Declare bu yüzden BAYRAKLA çalışır
     # (AGENT_TOPOLOGY_DECLARE=1): yalıtık geliştirme/test vhost'ları içindir;
     # üretim vhost'unda backend zaten declare etmiştir ve bayrak kapalı kalır.
-    declare = os.environ.get("AGENT_TOPOLOGY_DECLARE", "").strip().lower() in ("1", "true", "yes")
+    declare = env_bool("AGENT_TOPOLOGY_DECLARE", False)
     execute_conn = await connect_broker(components.broker)
     control_conn = await connect_broker(components.broker)
     relay_conn = await connect_broker(components.broker)
@@ -268,7 +263,7 @@ async def run_service(
     components.execute_consumer = execute_consumer
     components.control_consumer = control_consumer
 
-    relay_interval = _env_float("AGENT_RELAY_INTERVAL", 0.2)
+    relay_interval = env_float("AGENT_RELAY_INTERVAL", 0.2)
 
     async def _relay_loop() -> None:
         while not stop.is_set():
@@ -331,14 +326,22 @@ async def run_service(
 
 
 async def _async_main() -> int:
+    # .env en önce yüklenir: AGENT_LOG_LEVEL dahil tüm değişkenler basicConfig
+    # öncesi ortama düşer (gerçek ortam .env'i ezer — setdefault semantiği).
+    loaded = load_env_file()
     logging.basicConfig(
         level=os.environ.get("AGENT_LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    if loaded:
+        # basicConfig sonrası: aksi hâlde handler yokken INFO görünmez.
+        logger.info(".env yüklendi: %d değişken", len(loaded))
+    else:
+        logger.debug(".env bulunamadı")
     try:
         db_settings = AgentDbSettings(
             host=os.environ.get("AGENT_DB_HOST", "127.0.0.1"),
-            port=_env_int("AGENT_DB_PORT", 5432),
+            port=env_int("AGENT_DB_PORT", 5432),
             user=os.environ.get("AGENT_DB_USER", "blogapp_user"),
             password=os.environ.get("AGENT_DB_PASSWORD", ""),
             database=os.environ.get("AGENT_DB_NAME", "blogdb_dev"),

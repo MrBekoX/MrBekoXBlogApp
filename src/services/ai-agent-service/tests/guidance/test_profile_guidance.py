@@ -62,7 +62,7 @@ def test_profile_intro_answered_from_approved_record_without_model() -> None:
     # (src/content/author-profile; elle yazılmış ikinci biyografi yok).
     assert "Sample Author" in outcome.answer
     assert "yazılım eğitmeni" in outcome.answer  # FAQ üçüncü şahıs tanıtımı
-    assert "https://mrbekox.dev" in outcome.answer
+    assert "https://example.invalid/author" in outcome.answer
     assert "https://example.invalid/author" in outcome.answer
     # SEO tabanlı eski statik unvan artık kullanılmaz.
     assert "Software Developer" not in outcome.answer
@@ -114,7 +114,7 @@ def test_teaching_experience_question_is_not_marked_missing_a03() -> None:
 
     assert outcome.status is RunStatus.COMPLETED
     assert "deneyim süresi" not in (outcome.answer or "")
-    assert "2024'ten beri" in outcome.answer  # FAQ: eğitmenlik 2024'ten beri
+    assert "2005'ten beri" in outcome.answer  # FAQ: eğitmenlik 2005'ten beri
 
 
 def test_experience_is_missing_only_for_duration_questions() -> None:

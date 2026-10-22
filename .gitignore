@@ -202,3 +202,19 @@ src/services/ai-agent-service/.agent_checkpoints/
 
 # Who am I ozellik calisma dosyalari (prompt/analiz/rapor; kisisel veri icerir, repoya girmez)
 feature-prompts/who-am-i/
+
+# Private local data and generated review work
+/backups/
+/feature-prompts/
+/codebase_docs/
+/CLAUDE-SECURITY-*/
+/MEMORY.md
+/.opencode/
+/out/
+/private/
+**/.env.*
+!**/.env.example
+!**/.env.template
+**/TestResults/
+**/.agent_checkpoints/
+**/author-profile.local/

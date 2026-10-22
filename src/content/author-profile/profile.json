@@ -1,0 +1,1357 @@
+{
+  "schema": "author-profile/1",
+  "profile_id": "sample-author",
+  "language": "tr",
+  "owner": {
+    "name": "Sample Author",
+    "aliases": [
+      "Sample Author",
+      "Sample"
+    ]
+  },
+  "privacy": {
+    "undisclosed_topics": [
+      "current_employer",
+      "client_projects",
+      "job_applications",
+      "personal_contact_details"
+    ],
+    "unknown_fields": [
+      "age",
+      "birth_date",
+      "salary",
+      "marital_status",
+      "total_years_experience",
+      "rates",
+      "availability"
+    ],
+    "contact_channels": [
+      {
+        "kind": "website",
+        "label": "Sample website",
+        "url": "https://example.invalid/author"
+      },
+      {
+        "kind": "github",
+        "label": "Sample source",
+        "url": "https://example.invalid/github"
+      },
+      {
+        "kind": "x",
+        "label": "Sample social",
+        "url": "https://example.invalid/social"
+      },
+      {
+        "kind": "linkedin",
+        "label": "Sample professional profile",
+        "url": "https://www.example.invalid/linkedin"
+      }
+    ]
+  },
+  "sections": [
+    {
+      "section_id": "overview",
+      "anchor": "overview",
+      "kind": "bio",
+      "heading_path": [
+        "Kısaca"
+      ],
+      "title": {
+        "tr": "Kısaca",
+        "en": "Overview"
+      },
+      "aliases": {
+        "tr": [
+          "kimdir",
+          "kim",
+          "tanıt",
+          "tanıtım",
+          "hakkında",
+          "özet",
+          "nerede yaşıyor",
+          "orneksehir",
+          "ne iş yapıyor",
+          "meslek",
+          "odak"
+        ],
+        "en": [
+          "who is",
+          "who",
+          "about",
+          "introduce",
+          "introduction",
+          "summary",
+          "bio",
+          "biography",
+          "where does he live",
+          "lives",
+          "orneksehir",
+          "what does he do",
+          "profession",
+          "focus",
+          "background"
+        ]
+      },
+      "body": "Sample Author, Örnekşehir'da yaşayan backend odaklı kurgusal bir yazılım geliştiricisidir. .NET ve Python bu örnek profilin genel teknik konularıdır. Bu veri gerçek bir kişiyi temsil etmez.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "section_id": "education",
+      "anchor": "education",
+      "kind": "bio",
+      "heading_path": [
+        "Eğitim ve kariyer yolum",
+        "Eğitim"
+      ],
+      "title": {
+        "tr": "Eğitim",
+        "en": "Education"
+      },
+      "aliases": {
+        "tr": [
+          "eğitim",
+          "üniversite",
+          "okul",
+          "okudu",
+          "mezun",
+          "mezuniyet",
+          "lisans",
+          "bölüm",
+          "bilgisayar mühendisliği",
+          "Demo",
+          "turgut özal"
+        ],
+        "en": [
+          "education",
+          "university",
+          "college",
+          "school",
+          "studied",
+          "study",
+          "degree",
+          "graduate",
+          "graduated",
+          "bachelor",
+          "major",
+          "computer engineering"
+        ]
+      },
+      "body": "Demo University, Bilgisayar Mühendisliği (2000–2004). Bu kurgusal eğitim örneği gerçek okul, diploma veya tarih bilgisi içermez.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "historical"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          8,
+          9
+        ]
+      }
+    },
+    {
+      "section_id": "internships",
+      "anchor": "internships",
+      "kind": "bio",
+      "heading_path": [
+        "Eğitim ve kariyer yolum",
+        "Staj"
+      ],
+      "title": {
+        "tr": "Staj",
+        "en": "Internships"
+      },
+      "aliases": {
+        "tr": [
+          "staj",
+          "stajyer",
+          "stajlar",
+          "Sample Organization",
+          "Sample Center",
+          "akıllı kent",
+          "django",
+          "iot",
+          "arduino",
+          "deneyim",
+          "kariyer"
+        ],
+        "en": [
+          "internship",
+          "internships",
+          "intern",
+          "work experience",
+          "experience",
+          "career",
+          "django",
+          "iot",
+          "arduino"
+        ]
+      },
+      "body": "Kurgusal Sample Organization için bir yazılım stajı örneği kullanılır. Gerçek işveren, görev veya çalışma tarihi belirtilmez.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          11,
+          12
+        ]
+      }
+    },
+    {
+      "section_id": "teaching",
+      "anchor": "teaching",
+      "kind": "bio",
+      "heading_path": [
+        "Eğitim ve kariyer yolum",
+        "Yazılım eğitmenliği"
+      ],
+      "title": {
+        "tr": "Yazılım eğitmenliği",
+        "en": "Teaching and mentoring"
+      },
+      "aliases": {
+        "tr": [
+          "eğitmen",
+          "eğitmenlik",
+          "öğretmen",
+          "öğretmenlik",
+          "ders",
+          "dersler",
+          "eğitim veriyor",
+          "mentor",
+          "mentorluk",
+          "sample academy",
+          "sample center",
+          "sample training",
+          "deneyim",
+          "kariyer"
+        ],
+        "en": [
+          "teaching",
+          "teacher",
+          "teach",
+          "teaches",
+          "instructor",
+          "trainer",
+          "training",
+          "lecturer",
+          "courses",
+          "classes",
+          "mentor",
+          "mentoring",
+          "experience",
+          "career"
+        ]
+      },
+      "body": "Kurgusal Sample Academy için 2005'ten beri yazılım eğitmeni ve mentor rolü örneklenir. C#, .NET ve Python eğitim konuları kullanılır; gerçek kurum veya kişinin çalışma geçmişi değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          14,
+          15
+        ]
+      }
+    },
+    {
+      "section_id": "skills",
+      "anchor": "skills",
+      "kind": "bio",
+      "heading_path": [
+        "Teknik yetkinliklerim"
+      ],
+      "title": {
+        "tr": "Teknik yetkinliklerim",
+        "en": "Technical skills"
+      },
+      "aliases": {
+        "tr": [
+          "yetkinlik",
+          "teknoloji",
+          "teknolojiler",
+          "diller",
+          "programlama dili",
+          "backend",
+          "frontend",
+          "mobil",
+          "veritabanı",
+          "önbellek",
+          "bulut",
+          "devops",
+          "güvenlik",
+          "gözlemlenebilirlik",
+          "yapay zeka",
+          "stack",
+          "biliyor",
+          "kullanıyor"
+        ],
+        "en": [
+          "skills",
+          "skill",
+          "technologies",
+          "tech stack",
+          "stack",
+          "languages",
+          "programming languages",
+          "backend",
+          "frontend",
+          "mobile",
+          "database",
+          "cache",
+          "cloud",
+          "devops",
+          "security",
+          "observability",
+          "ai",
+          "knows",
+          "uses",
+          "expertise"
+        ]
+      },
+      "body": "- Diller: C#, Python, TypeScript.\n- Framework: .NET, ASP.NET Core, Next.js.\n- Veri: PostgreSQL, Redis, RabbitMQ.\n- Araçlar: Docker ve test otomasyonu.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          17,
+          18
+        ]
+      }
+    },
+    {
+      "section_id": "project-mrbekox-dev",
+      "anchor": "project-mrbekox-dev",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "mrbekox.dev (bu blog)"
+      ],
+      "title": {
+        "tr": "mrbekox.dev (bu blog)",
+        "en": "mrbekox.dev (this blog)"
+      },
+      "aliases": {
+        "tr": [
+          "bu blog",
+          "blog",
+          "mrbekox.dev",
+          "site",
+          "proje",
+          "projeler",
+          "dağıtım",
+          "aws",
+          "yayında"
+        ],
+        "en": [
+          "this blog",
+          "blog",
+          "website",
+          "site",
+          "project",
+          "projects",
+          "deployment",
+          "deployed",
+          "aws"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          20,
+          21
+        ]
+      }
+    },
+    {
+      "section_id": "project-auth-token-server",
+      "anchor": "project-auth-token-server",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Auth Token Server"
+      ],
+      "title": {
+        "tr": "Auth Token Server",
+        "en": "Auth Token Server"
+      },
+      "aliases": {
+        "tr": [
+          "auth token server",
+          "kimlik doğrulama",
+          "yetkilendirme",
+          "identity",
+          "jwt",
+          "proje",
+          "projeler"
+        ],
+        "en": [
+          "auth token server",
+          "authentication",
+          "authorization",
+          "identity server",
+          "jwt",
+          "project",
+          "projects"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          23,
+          24
+        ]
+      }
+    },
+    {
+      "section_id": "project-vibeo",
+      "anchor": "project-vibeo",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Vibeo"
+      ],
+      "title": {
+        "tr": "Vibeo",
+        "en": "Vibeo"
+      },
+      "aliases": {
+        "tr": [
+          "vibeo",
+          "ruh hali",
+          "duygu durumu",
+          "mood",
+          "proje",
+          "projeler",
+          "mobil uygulama",
+          "gdpr",
+          "gizlilik"
+        ],
+        "en": [
+          "vibeo",
+          "mood tracking",
+          "mood tracker",
+          "mood",
+          "project",
+          "projects",
+          "mobile app",
+          "gdpr",
+          "privacy"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          26,
+          27
+        ]
+      }
+    },
+    {
+      "section_id": "project-emojify",
+      "anchor": "project-emojify",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Emojify"
+      ],
+      "title": {
+        "tr": "Emojify",
+        "en": "Emojify"
+      },
+      "aliases": {
+        "tr": [
+          "emojify",
+          "emoji",
+          "gif",
+          "proje",
+          "projeler",
+          "mobil uygulama"
+        ],
+        "en": [
+          "emojify",
+          "emoji",
+          "gif",
+          "project",
+          "projects",
+          "mobile app"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          29,
+          30
+        ]
+      }
+    },
+    {
+      "section_id": "project-adhan-time",
+      "anchor": "project-adhan-time",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Adhan Time"
+      ],
+      "title": {
+        "tr": "Adhan Time",
+        "en": "Adhan Time"
+      },
+      "aliases": {
+        "tr": [
+          "adhan time",
+          "ezan",
+          "namaz vakti",
+          "namaz",
+          "kıble",
+          "pusula",
+          "bildirim",
+          "proje",
+          "projeler",
+          "mobil uygulama"
+        ],
+        "en": [
+          "adhan time",
+          "adhan",
+          "prayer times",
+          "prayer",
+          "qibla",
+          "compass",
+          "notifications",
+          "project",
+          "projects",
+          "mobile app"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          32,
+          33
+        ]
+      }
+    },
+    {
+      "section_id": "project-urban-sound",
+      "anchor": "project-urban-sound",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Kentsel Ses Sınıflandırma"
+      ],
+      "title": {
+        "tr": "Kentsel Ses Sınıflandırma",
+        "en": "Urban sound classification"
+      },
+      "aliases": {
+        "tr": [
+          "kentsel ses",
+          "ses sınıflandırma",
+          "urbansound8k",
+          "derin öğrenme",
+          "cnn",
+          "lstm",
+          "proje",
+          "projeler"
+        ],
+        "en": [
+          "urban sound",
+          "sound classification",
+          "audio classification",
+          "urbansound8k",
+          "deep learning",
+          "cnn",
+          "lstm",
+          "project",
+          "projects"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          35,
+          36
+        ]
+      }
+    },
+    {
+      "section_id": "projects-in-development",
+      "anchor": "projects-in-development",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Geliştirme aşamasındakiler"
+      ],
+      "title": {
+        "tr": "Geliştirme aşamasındakiler",
+        "en": "Projects in development"
+      },
+      "aliases": {
+        "tr": [
+          "geliştirme aşamasında",
+          "sınav arkadaşım",
+          "yks",
+          "futbol",
+          "bilgi yarışması",
+          "now-coffe",
+          "now coffe",
+          "kafe",
+          "planlıyor",
+          "proje",
+          "projeler"
+        ],
+        "en": [
+          "in development",
+          "upcoming",
+          "planned",
+          "sinav arkadasim",
+          "exam",
+          "football",
+          "quiz",
+          "trivia",
+          "now-coffe",
+          "now coffee",
+          "cafe",
+          "project",
+          "projects"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          38,
+          39
+        ]
+      }
+    },
+    {
+      "section_id": "ai-blog-agent",
+      "anchor": "ai-blog-agent",
+      "kind": "ai_work",
+      "heading_path": [
+        "Yapay zekâ ve ajan çalışmalarım",
+        "Blogdaki ajan"
+      ],
+      "title": {
+        "tr": "Blogdaki ajan",
+        "en": "The blog's AI agent"
+      },
+      "aliases": {
+        "tr": [
+          "blog ajanı",
+          "ajan",
+          "yapay zeka ajanı",
+          "rag",
+          "makale",
+          "modelprovider",
+          "rabbitmq",
+          "mimari",
+          "nasıl çalışıyor"
+        ],
+        "en": [
+          "blog agent",
+          "agent",
+          "ai agent",
+          "rag",
+          "articles",
+          "model provider",
+          "rabbitmq",
+          "architecture",
+          "how does it work"
+        ]
+      },
+      "body": "Bu kurgusal örnek taslak ajanı FastAPI ile açıklıyor ve vektör arama için ChromaDB kullanıyor ifadesini içeriyor. Aşağıdaki editör notu uygulama kodunun gerçek davranışını açıklar.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [
+        "Örnek uygulama kodunda FastAPI/ChromaDB bağlı değildir. ChromaDB bağlı değildir; kaynaklar yerel içerik dizininden okunur."
+      ],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          41,
+          42
+        ]
+      }
+    },
+    {
+      "section_id": "ai-agentic-sdlc",
+      "anchor": "ai-agentic-sdlc",
+      "kind": "ai_work",
+      "heading_path": [
+        "Yapay zekâ ve ajan çalışmalarım",
+        "agentic-sdlc"
+      ],
+      "title": {
+        "tr": "agentic-sdlc",
+        "en": "agentic-sdlc"
+      },
+      "aliases": {
+        "tr": [
+          "agentic-sdlc",
+          "agentic sdlc",
+          "skill kütüphanesi",
+          "skill",
+          "claude code",
+          "codex",
+          "sürüm",
+          "release",
+          "lisans",
+          "açık kaynak"
+        ],
+        "en": [
+          "agentic-sdlc",
+          "agentic sdlc",
+          "skill library",
+          "skills",
+          "claude code",
+          "codex",
+          "version",
+          "release",
+          "license",
+          "open source"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          44,
+          45
+        ]
+      }
+    },
+    {
+      "section_id": "ai-root-agent",
+      "anchor": "ai-root-agent",
+      "kind": "ai_work",
+      "heading_path": [
+        "Yapay zekâ ve ajan çalışmalarım",
+        "Root Agent"
+      ],
+      "title": {
+        "tr": "Root Agent",
+        "en": "Root Agent"
+      },
+      "aliases": {
+        "tr": [
+          "root agent",
+          "grok",
+          "grok bot",
+          "koordinatör ajan",
+          "lead bot",
+          "skill",
+          "test",
+          "canlı test",
+          "sürüm"
+        ],
+        "en": [
+          "root agent",
+          "grok",
+          "grok bot",
+          "coordinator agent",
+          "lead bot",
+          "skills",
+          "tests",
+          "live tests",
+          "version"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          47,
+          48
+        ]
+      }
+    },
+    {
+      "section_id": "ai-daily-usage",
+      "anchor": "ai-daily-usage",
+      "kind": "ai_work",
+      "heading_path": [
+        "Yapay zekâ ve ajan çalışmalarım",
+        "Günlük kullanım"
+      ],
+      "title": {
+        "tr": "Günlük kullanım",
+        "en": "Daily AI tooling"
+      },
+      "aliases": {
+        "tr": [
+          "claude code",
+          "codex",
+          "claude.md",
+          "günlük kullanım",
+          "context7",
+          "playwright",
+          "mcp",
+          "nasıl kullanıyor",
+          "kişisel ajan"
+        ],
+        "en": [
+          "claude code",
+          "codex",
+          "claude.md",
+          "daily usage",
+          "workflow",
+          "context7",
+          "playwright",
+          "mcp",
+          "how does he use",
+          "personal agent"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          50,
+          51
+        ]
+      }
+    },
+    {
+      "section_id": "oss-xerj",
+      "anchor": "oss-xerj",
+      "kind": "oss",
+      "heading_path": [
+        "Açık kaynak katkım: XERJ Corpus Hub"
+      ],
+      "title": {
+        "tr": "Açık kaynak katkım: XERJ Corpus Hub",
+        "en": "Open source contribution: XERJ Corpus Hub"
+      },
+      "aliases": {
+        "tr": [
+          "xerj",
+          "corpus hub",
+          "açık kaynak",
+          "katkı",
+          "katkıcı",
+          "kurulum",
+          "kurabilir miyim",
+          "lisans incelemesi"
+        ],
+        "en": [
+          "xerj",
+          "corpus hub",
+          "open source",
+          "contribution",
+          "contributor",
+          "install",
+          "can i install",
+          "license review"
+        ]
+      },
+      "body": "Bu kurgusal örnek çalışma, yazılım geliştirme, API tasarımı, yapay zeka ve test kavramlarını gösterir. Gerçek bir kişiye ait proje veya çalışma geçmişi beyanı değildir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          53,
+          54
+        ]
+      }
+    },
+    {
+      "section_id": "architecture",
+      "anchor": "architecture",
+      "kind": "bio",
+      "heading_path": [
+        "Mimari konusundaki yaklaşımım"
+      ],
+      "title": {
+        "tr": "Mimari konusundaki yaklaşımım",
+        "en": "Architectural approach"
+      },
+      "aliases": {
+        "tr": [
+          "mimari",
+          "yaklaşım",
+          "onion",
+          "clean architecture",
+          "cqrs",
+          "mediatr",
+          "repository",
+          "persistence",
+          "infrastructure",
+          "result pattern",
+          "modüler monolit",
+          "mikroservis"
+        ],
+        "en": [
+          "architecture",
+          "architectural approach",
+          "approach",
+          "onion",
+          "clean architecture",
+          "cqrs",
+          "mediatr",
+          "repository",
+          "persistence",
+          "infrastructure",
+          "result pattern",
+          "modular monolith",
+          "microservices"
+        ]
+      },
+      "body": "Örnek mimari N-Tier, Clean Architecture, CQRS ve SOLID kavramlarını API, uygulama, alan ve altyapı katmanları üzerinden açıklar.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          56,
+          57
+        ]
+      }
+    },
+    {
+      "section_id": "blog-topics",
+      "anchor": "blog-topics",
+      "kind": "bio",
+      "heading_path": [
+        "Blogda ne yazıyorum"
+      ],
+      "title": {
+        "tr": "Blogda ne yazıyorum",
+        "en": "What he writes about"
+      },
+      "aliases": {
+        "tr": [
+          "blog",
+          "yazılar",
+          "yazıyor",
+          "konular",
+          "makaleler",
+          "ne yazıyor",
+          "context engineering",
+          "bağlam mühendisliği"
+        ],
+        "en": [
+          "blog",
+          "posts",
+          "writes",
+          "writing",
+          "topics",
+          "articles",
+          "what does he write",
+          "context engineering"
+        ]
+      },
+      "body": "Örnek blog konuları .NET, Python, yapay zeka, RAG, güvenlik, veritabanı ve yazılım mimarisidir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          59,
+          60
+        ]
+      }
+    },
+    {
+      "section_id": "certificates",
+      "anchor": "certificates",
+      "kind": "bio",
+      "heading_path": [
+        "Sertifikalarım"
+      ],
+      "title": {
+        "tr": "Sertifikalarım",
+        "en": "Certificates"
+      },
+      "aliases": {
+        "tr": [
+          "sertifika",
+          "sertifikalar",
+          "belge",
+          "anthropic",
+          "claude code in action",
+          "claude code 101",
+          "subagents"
+        ],
+        "en": [
+          "certificate",
+          "certificates",
+          "certifications",
+          "certified",
+          "anthropic",
+          "claude code in action",
+          "claude code 101",
+          "subagents"
+        ]
+      },
+      "body": "Bu örnek profil gerçek bir sertifika veya kişisel eğitim belgesi içermez. Sertifika bilgisi belirtilmemiştir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          62,
+          63
+        ]
+      }
+    },
+    {
+      "section_id": "working-style",
+      "anchor": "working-style",
+      "kind": "bio",
+      "heading_path": [
+        "Çalışma tarzım"
+      ],
+      "title": {
+        "tr": "Çalışma tarzım",
+        "en": "Working style"
+      },
+      "aliases": {
+        "tr": [
+          "çalışma tarzı",
+          "iletişim tarzı",
+          "geri bildirim",
+          "prototip",
+          "nasıl çalışır",
+          "feature creep"
+        ],
+        "en": [
+          "working style",
+          "work style",
+          "communication style",
+          "feedback",
+          "prototype",
+          "how does he work",
+          "feature creep"
+        ]
+      },
+      "body": "Örnek çalışma biçimi okunabilir kod, kaynak kontrolü, testler ve açık doğrulama adımlarını gösterir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          65,
+          66
+        ]
+      }
+    },
+    {
+      "section_id": "interests",
+      "anchor": "interests",
+      "kind": "bio",
+      "heading_path": [
+        "Kişisel ilgi alanlarım"
+      ],
+      "title": {
+        "tr": "Kişisel ilgi alanlarım",
+        "en": "Personal interests"
+      },
+      "aliases": {
+        "tr": [
+          "ilgi alanları",
+          "hobi",
+          "hobiler",
+          "müzik",
+          "suno",
+          "metal",
+          "sample sports club",
+          "takım",
+          "matematik",
+          "algoritma"
+        ],
+        "en": [
+          "interests",
+          "hobbies",
+          "hobby",
+          "music",
+          "suno",
+          "metal",
+          "sample sports club",
+          "team",
+          "football club",
+          "math",
+          "algorithms"
+        ]
+      },
+      "body": "Bu kurgusal örnek yalnızca genel teknik konular içerir. Gerçek kişinin hobileri veya özel tercihleri belirtilmez.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          68,
+          69
+        ]
+      }
+    },
+    {
+      "section_id": "privacy-scope",
+      "anchor": "privacy-scope",
+      "kind": "policy",
+      "heading_path": [
+        "Neleri paylaşmıyorum"
+      ],
+      "title": {
+        "tr": "Neleri paylaşmıyorum",
+        "en": "What is not shared"
+      },
+      "aliases": {
+        "tr": [
+          "paylaşmıyor",
+          "gizli",
+          "özel",
+          "işveren",
+          "müşteri",
+          "iş başvurusu",
+          "telefon",
+          "e-posta"
+        ],
+        "en": [
+          "not shared",
+          "private",
+          "employer",
+          "client",
+          "job application",
+          "phone",
+          "email"
+        ]
+      },
+      "body": "Bu profil sentetik örnek veridir. Yaş, maaş, toplam deneyim yılı, telefon, özel e-posta, adres ve özel hesap bilgileri bilinmiyor; bunlar tahmin edilmez.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          71,
+          72
+        ]
+      }
+    },
+    {
+      "section_id": "contact",
+      "anchor": "contact",
+      "kind": "contact",
+      "heading_path": [
+        "İletişim"
+      ],
+      "title": {
+        "tr": "İletişim",
+        "en": "Contact"
+      },
+      "aliases": {
+        "tr": [
+          "iletişim",
+          "ulaşmak",
+          "nasıl ulaşırım",
+          "github",
+          "linkedin",
+          "twitter",
+          "x",
+          "web sitesi",
+          "sosyal medya"
+        ],
+        "en": [
+          "contact",
+          "reach",
+          "how to reach",
+          "get in touch",
+          "github",
+          "linkedin",
+          "twitter",
+          "x",
+          "website",
+          "social media"
+        ]
+      },
+      "body": "İletişim bağlantısı https://example.invalid/author bir yer tutucudur ve gerçek bir kişiye ulaşmaz.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          74,
+          75
+        ]
+      }
+    },
+    {
+      "section_id": "faq",
+      "anchor": "faq",
+      "kind": "faq",
+      "heading_path": [
+        "Sık sorulan sorular"
+      ],
+      "title": {
+        "tr": "Sık sorulan sorular",
+        "en": "Frequently asked questions"
+      },
+      "aliases": {
+        "tr": [
+          "sık sorulan sorular",
+          "sss"
+        ],
+        "en": [
+          "faq",
+          "frequently asked questions"
+        ]
+      },
+      "body": "**Sample Author kimdir?**\nÖrnekşehir'da yaşayan, .NET/C# ağırlıklı kurgusal yazılım geliştirici ve yazılım eğitmeni Sample Author bir örnek profil kimliğidir.\n\n**Sample hangi teknolojilerle çalışıyor?**\nC#, .NET, Python ve TypeScript bu kurgusal örneğin teknik konularıdır.\n\n**Şu an neler üzerinde çalışıyor?**\nKurgusal proje örnekleri bir blog, kimlik sunucusu ve ses uygulamasını kapsar; gerçek kişisel çalışma geçmişi değildir.\n\n**Örnek açık kaynak çalışması nedir?**\nBu örnek yeniden kullanılabilir bileşenleri gösterir; gerçek bir kişinin katkı geçmişini temsil etmez.\n\n**Bu blog hangi teknolojilerle yapıldı?**\nÖrnek blog ASP.NET Core API ve Next.js arayüzü ile kaynaklara dayalı soru yanıtlama özelliklerini gösterir.\n\n**Mimari konusunda örnek yaklaşım nedir?**\nÖrnek N-Tier, Clean Architecture, CQRS ve SOLID kavramlarını katmanlı yazılım tasarımı üzerinden açıklar.\n\n**Kodlama araçları nasıl örneklenir?**\nKurgusal geliştirme görevleri kod açıklama, test üretimi ve belge aramasını gösterir.\n\n**Eğitmenlik deneyimi var mı?**\nSample Academy için 2005'ten beri eğitmenlik ve mentorluk örneği kullanılır. Bu ifade gerçek bir kişinin deneyimi değildir.\n\n**Hangi sertifikalara sahip?**\nBu sentetik profil gerçek sertifika bilgisi içermez; sertifika iddiası yapılmaz.\n\n**Nasıl iletişime geçilir?**\nÖrnek iletişim bağlantıları example.invalid alan adındadır ve gerçek bir kişiye ulaşmaz.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-01-01",
+        "temporal": "as_of"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          77,
+          78
+        ]
+      }
+    }
+  ],
+  "provenance": {
+    "raw_source": "source/author-profile.source.md",
+    "raw_sha256": "b1f2cf2023484f84f71ae7698571a3179863feea5c72306c47a2505f77c7e893",
+    "transformations": [
+      {
+        "id": "T01",
+        "kind": "synthetic_example",
+        "detail": "Entire corpus is fictional sample data without personal source material."
+      }
+    ]
+  }
+}

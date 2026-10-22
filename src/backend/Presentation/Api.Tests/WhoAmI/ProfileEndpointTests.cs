@@ -101,12 +101,12 @@ public sealed class ProfileEndpointTests
         Assert.Equal("education", section.GetProperty("anchor").GetString());
         Assert.Equal("Eğitim", section.GetProperty("title").GetProperty("tr").GetString());
         Assert.Equal("historical", section.GetProperty("claim").GetProperty("temporal").GetString());
-        Assert.Equal("2026-10-21", section.GetProperty("claim").GetProperty("asOf").GetString());
+        Assert.Equal("2026-01-01", section.GetProperty("claim").GetProperty("asOf").GetString());
         Assert.Equal(JsonValueKind.Array, section.GetProperty("headingPath").ValueKind);
 
         var channels = data.GetProperty("contactChannels").EnumerateArray().ToList();
         Assert.Contains(channels, c => c.GetProperty("kind").GetString() == "github"
-                                       && c.GetProperty("url").GetString() == "https://example.invalid/author");
+                                       && c.GetProperty("url").GetString() == "https://example.invalid/github");
     }
 
     [Fact]

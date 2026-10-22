@@ -115,7 +115,7 @@ def test_model_prompt_contains_only_bounded_selected_chunks_a20() -> None:
 
 
 def test_english_question_on_turkish_corpus_answers_in_english_a15() -> None:
-    model = grounded_model(answer="Sample has been teaching software since 2024.")
+    model = grounded_model(answer="Sample has been teaching software since 2005.")
     result, _context, _route = execute("What is Sample's teaching background?", model, language="tr")
 
     assert result.state["answer_language"] == "en"
@@ -283,7 +283,7 @@ def test_policy_only_questions_need_no_model_call_a12(question: str) -> None:
 
 
 def test_mixed_question_answers_known_experience_and_appends_policy_note_a13() -> None:
-    model = grounded_model(answer="Sample 2024'ten beri Sample Academy'de ders veriyor.")
+    model = grounded_model(answer="Sample 2005'ten beri Sample Academy'de ders veriyor.")
     result, _context, _route = execute("Toplam kaç yıl deneyimi var, maaşı ne, kaç yaşında?", model)
     outcome = result.outcome
 
@@ -503,7 +503,7 @@ def test_blog_stack_question_carries_editor_note_and_accepts_note_quotes_a35() -
         return json.dumps(
             {
                 "answer": (
-                    "Sample'ın 21 Ekim 2026 tarihli beyanına göre ajan FastAPI ve ChromaDB ile anlatılıyor; "
+                    "Örnek taslakta ajan FastAPI ve ChromaDB ile anlatılıyor; "
                     "ancak profil notuna göre bu deponun incelenen sürümünde ChromaDB bağlı değil."
                 ),
                 "claims": [

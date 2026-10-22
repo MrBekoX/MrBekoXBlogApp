@@ -237,7 +237,7 @@ def test_repository_legacy_summary_comes_from_canonical_source() -> None:
     assert summary.name == "Sample Author"
     assert summary.description is not None and len(summary.description) <= 4000
     assert "Sample Academy" in summary.description
-    assert summary.links["linkedin"].startswith("https://www.linkedin.com/")
+    assert summary.links["linkedin"].startswith("https://www.example.invalid/")
 
 
 def test_manifest_and_profile_are_valid_json_files() -> None:

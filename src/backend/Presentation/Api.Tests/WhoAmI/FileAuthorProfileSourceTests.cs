@@ -129,7 +129,7 @@ public sealed class FileAuthorProfileSourceTests : IDisposable
 
         var profilePath = Path.Combine(directory, "profile.json");
         var updated = Encoding.UTF8.GetBytes(File.ReadAllText(profilePath, Encoding.UTF8)
-            .Replace("Örnekşehir'da yaşıyorum.", "Örnekşehir'da yaşıyorum ve çalışıyorum.", StringComparison.Ordinal));
+            .Replace("kurgusal bir yazılım", "güncellenmiş kurgusal bir yazılım", StringComparison.Ordinal));
         WriteAndTouch(profilePath, updated);
         EditManifest(directory, m =>
         {

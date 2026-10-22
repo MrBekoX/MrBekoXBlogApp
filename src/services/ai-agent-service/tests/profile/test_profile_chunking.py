@@ -61,7 +61,7 @@ def test_turkish_characters_and_notes_are_preserved() -> None:
     assert "Demo University" in chunks["education"].text
     agent = chunks["ai-blog-agent"]
     assert agent.notes and "ChromaDB bağlı değildir" in agent.evidence_text  # A35 notu kanıtla birlikte
-    assert agent.as_of == "2026-10-21"
+    assert agent.as_of == "2026-01-01"
 
 
 def test_long_paragraph_is_split_on_sentence_boundaries(tmp_path) -> None:

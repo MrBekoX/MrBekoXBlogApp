@@ -54,14 +54,14 @@ def test_profile_record_is_derived_from_canonical_profile_source() -> None:
     assert "Demo University" in APPROVED_PROFILE.description
     assert "Ben Sample Author" not in APPROVED_PROFILE.description
     links = APPROVED_PROFILE.links
-    assert links["site"] == "https://mrbekox.dev"
-    assert links["github"] == "https://example.invalid/author"
+    assert links["site"] == "https://example.invalid/author"
+    assert links["github"] == "https://example.invalid/github"
     assert links["x"] == "https://example.invalid/social"
-    assert links["linkedin"] == "https://example.invalid/author"
+    assert links["linkedin"] == "https://www.example.invalid/linkedin"
     assert set(links.values()) == {channel.url for channel in document.privacy.contact_channels}
     # Yetkinlikler skills bölümünün maddeleridir; niteleyici ("inceledim") korunur.
     assert any(skill.startswith("Diller: C#") for skill in APPROVED_PROFILE.skills)
-    assert any("NestJS'i de inceledim" in skill for skill in APPROVED_PROFILE.skills)
+    assert any(".NET" in skill for skill in APPROVED_PROFILE.skills)
     # Eski SEO anahtar kelimeleri yetkinliğe dönüştürülmez.
     for seo_keyword in ("machine learning", "domain driven design", "mikroservis", "AI agent"):
         assert seo_keyword not in APPROVED_PROFILE.skills

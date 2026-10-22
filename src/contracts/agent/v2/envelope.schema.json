@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v2:envelope",
+  "title": "AgentEnvelopeV2",
+  "description": "v2 zarf (B1 zarfinin surum 2'si) sözleşmesi (02-rabbitmq-haberlesme-plani.md:183-196). delivery_attempt transport tekrar yayını sayacıdır; agent yürütme denemesi (execution_attempt) payload tarafındadır — iki alan birbirinin yerine kullanılmaz (plan satır 237). payload'ın tür bazlı şeması contract.json message_types.payload_schema ile eşlenir. Opsiyonel alanlarda null taşınmaz; alan çıkarılır.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "message_id",
+    "message_type",
+    "schema_version",
+    "correlation_id",
+    "occurred_at",
+    "producer",
+    "payload"
+  ],
+  "properties": {
+    "message_id": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/uuid"
+    },
+    "message_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "schema_version": {
+      "const": 2
+    },
+    "run_id": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/uuid"
+    },
+    "conversation_id": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/uuid"
+    },
+    "correlation_id": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/uuid"
+    },
+    "causation_id": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/uuid"
+    },
+    "occurred_at": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/utc_iso"
+    },
+    "deadline_at": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/utc_iso"
+    },
+    "producer": {
+      "enum": [
+        "backend-net",
+        "agent-py",
+        "test-executor"
+      ]
+    },
+    "trace_context": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/traceparent"
+    },
+    "delivery_attempt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

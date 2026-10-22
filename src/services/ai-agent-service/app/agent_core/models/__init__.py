@@ -14,8 +14,9 @@ from .action import ActionProposal, ValidatedActionResult
 from .article import ArticleChunk, ArticleSnapshot, compute_content_hash
 from .base import BusinessModel, HashHex, Identifier, LanguageCode, NonEmptyText, UtcDatetime
 from .context import BudgetProfile, ConversationTurn, ExecutionContext
-from .enums import AgentMode, ModePreference, ProgressKind, RunIntent, RunStatus, SourceScope
+from .enums import AgentMode, ConversationTopic, ModePreference, ProgressKind, RunIntent, RunStatus, SourceScope
 from .outcome import AgentOutcome
+from .profile import ProfileSnapshotRef, profile_about_url, profile_source_id
 from .progress import DomainProgress, MAX_GENERATION_DELTA_CHARS, split_generation_delta
 from .research import ResearchFinding, ResearchPlan
 from .routing import ModeUpgradeRecord, RouteDecision
@@ -30,6 +31,7 @@ __all__ = [
     "ArticleSnapshot",
     "BudgetProfile",
     "BusinessModel",
+    "ConversationTopic",
     "ConversationTurn",
     "DomainProgress",
     "EvidenceItem",
@@ -41,6 +43,7 @@ __all__ = [
     "ModePreference",
     "ModeUpgradeRecord",
     "NonEmptyText",
+    "ProfileSnapshotRef",
     "ProgressKind",
     "ResearchFinding",
     "ResearchPlan",
@@ -53,5 +56,7 @@ __all__ = [
     "UtcDatetime",
     "ValidatedActionResult",
     "compute_content_hash",
+    "profile_about_url",
+    "profile_source_id",
     "split_generation_delta",
 ]

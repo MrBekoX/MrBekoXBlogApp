@@ -1,0 +1,22 @@
+{
+  "message_id": "33333333-3333-4333-8333-333333333333",
+  "message_type": "agent.run.progressed",
+  "schema_version": 2,
+  "occurred_at": "2026-10-11T09:00:00Z",
+  "producer": "agent-py",
+  "payload": {
+    "event_sequence": 3,
+    "execution_attempt": 1,
+    "fencing_token": "lease-0003",
+    "kind": "retrieval_started",
+    "message": "Makale baglami hazirlaniyor",
+    "detail": {
+      "chunk_count": "12"
+    }
+  },
+  "correlation_id": "ccccccc1-0000-4000-8000-000000000003",
+  "run_id": "aaaaaaa1-0000-4000-8000-000000000001",
+  "conversation_id": "bbbbbbb1-0000-4000-8000-000000000002",
+  "trace_context": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  "delivery_attempt": 2
+}

@@ -68,6 +68,7 @@ builder.Services.AddAgentOutbox(builder.Configuration);          // B3: outbox y
 builder.Services.AddAgentEventProjection(builder.Configuration); // B5: olay inbox + projection + hub bildirimi
 builder.Services.AddAgentContentEvents(builder.Configuration);   // B8: içerik olayları + sunum denetimi (F2 notu)
 builder.Services.AddAgentCollaboration(builder.Configuration);   // B9: proposal store + iş birliği servisi (projection handler'ın store bağımlılığı)
+builder.Services.AddAgentWireV2(builder.Configuration);          // K4: AgentWireV2 anahtarı + broker hazırlık bariyeri + v2 geçmiş derleyicisi
 builder.Services.AddHostedService<AgentTopologyInitializerHost>();
 
 // B10 endpoint destek servisleri: misafir oturumu, B9-resume durumu, geri bildirim kaydı,

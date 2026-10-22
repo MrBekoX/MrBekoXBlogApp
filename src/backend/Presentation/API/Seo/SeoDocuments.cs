@@ -62,7 +62,9 @@ public static class SeoDocuments
         XNamespace ns = "http://www.sitemaps.org/schemas/sitemap/0.9";
         var urlset = new XElement(ns + "urlset",
             SitemapUrl(ns, origin, "daily", "1.0", null),
-            SitemapUrl(ns, $"{origin}/posts", "daily", "0.9", null));
+            SitemapUrl(ns, $"{origin}/posts", "daily", "0.9", null),
+            // Who am I: canonical profil sayfası (/about; K6).
+            SitemapUrl(ns, $"{origin}/about", "monthly", "0.7", null));
 
         foreach (var post in posts)
         {
@@ -109,6 +111,7 @@ public static class SeoDocuments
         sb.AppendLine("## Links");
         sb.AppendLine();
         sb.AppendLine($"- [Blog]({origin}): Ana sayfa");
+        sb.AppendLine($"- [Hakkımda]({origin}/about): {AuthorName} hakkında onaylı profil");
         sb.AppendLine($"- [RSS Feed]({origin}/rss): RSS 2.0 feed");
         sb.AppendLine($"- [Sitemap]({origin}/sitemap.xml): XML sitemap");
         return sb.ToString();

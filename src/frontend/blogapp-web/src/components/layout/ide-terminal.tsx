@@ -46,6 +46,8 @@ const WHOAMI_LINES: OutLine[] = [
   line('out', '  location  →  Türkiye'),
   line('out', '  focus     →  .NET · Python · AI Agents · Microservices'),
   line('blank', ''),
+  line('out', '  profil    →  /about (Who am I · Sample Author)', 'text-blue-400', '/about'),
+  line('blank', ''),
 ];
 
 const SKILLS_LINES: OutLine[] = [

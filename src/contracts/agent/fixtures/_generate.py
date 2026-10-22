@@ -224,9 +224,10 @@ invalid_cases["missing_deadline_for_execute.json"] = env(
     {"user_ref": "user-42", "question": "Soru", "language": "tr",
      "mode_preference": "fast", "budget_profile": "fast-default"})
 
+# v2 (Who am I) geçerli sürüm oldu; bilinmeyen sürüm örneği 99'a taşındı.
 invalid_cases["unknown_schema_version.json"] = env(
     "55555555-5555-4555-8555-555555555555", "agent.cancel.requested", {},
-    schema_version=2)
+    schema_version=99)
 
 invalid_cases["unknown_message_type.json"] = env(
     "55555555-5555-4555-8555-555555555556", "agent.summarize.requested", {},

@@ -16,6 +16,12 @@ RUN dotnet restore "src/backend/Presentation/API/API.csproj"
 # Copy only backend source (not frontend)
 COPY ["src/backend/", "src/backend/"]
 
+# Canonical author profile (Who am I, K2/A33): API.csproj links ../../../content/author-profile/**
+# into the publish output as content/author-profile/ (manifest.json, profile.json, source/**).
+# Copied byte-for-byte; the runtime verifies sha256(profile.json) against manifest.content_hash.
+COPY ["src/content/author-profile/manifest.json", "src/content/author-profile/profile.json", "src/content/author-profile/"]
+COPY ["src/content/author-profile/source/", "src/content/author-profile/source/"]
+
 # Publish directly (includes build - no need for separate dotnet build)
 WORKDIR "/src/src/backend/Presentation/API"
 RUN dotnet publish "API.csproj" -c Release -o /app/publish /p:UseAppHost=false

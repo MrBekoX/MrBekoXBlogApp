@@ -104,7 +104,8 @@ public sealed class AgentContentEventService(
             MessageId = messageId,
             MessageType = AgentMessageTypes.ArticleContentChanged,
             Exchange = AgentMessageTypeRegistry.ContentExchange,
-            RoutingKey = "content.article.changed.v1",
+            RoutingKey = AgentMessageTypeRegistry.RoutingKeyFor(
+                AgentMessageTypeRegistry.ContentSchemaVersion, AgentMessageTypes.ArticleContentChanged),
             CorrelationId = messageId,
             EnvelopeJson = envelopeJson,
             Status = AgentOutboxStatus.Pending,

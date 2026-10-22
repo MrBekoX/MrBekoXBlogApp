@@ -98,11 +98,12 @@ def make_envelope_for(
     payload: dict[str, Any],
     *,
     deadline_at: datetime,
+    schema_version: int = SCHEMA_VERSION,
 ) -> AgentEnvelope:
     return AgentEnvelope(
         message_id=str(uuid.uuid4()),
         message_type="agent.execute.requested",
-        schema_version=SCHEMA_VERSION,
+        schema_version=schema_version,
         run_id=run_id,
         conversation_id=conversation_id,
         correlation_id=correlation_id,
@@ -119,8 +120,13 @@ async def seed_execute_job(
     payload: dict[str, Any] | None = None,
     queue_class: str = "fast",
     deadline_seconds: float = 600.0,
+    wire_version: int = 1,
 ) -> tuple[str, str, str, datetime]:
-    """Kabul edilmiş işi B4'ün yazdığı kolonlarla yazar; (run, conv, corr, deadline) döner."""
+    """Kabul edilmiş işi B4'ün yazdığı kolonlarla yazar; (run, conv, corr, deadline) döner.
+
+    ``wire_version`` (K4, migration 0005): kabul zarfının sürümü ve iş satırının
+    ``wire_version`` kolonu birlikte yazılır (intake kabulünün DB sonucu).
+    """
 
     run_id = str(uuid.uuid4())
     conversation_id = str(uuid.uuid4())
@@ -132,12 +138,13 @@ async def seed_execute_job(
         correlation_id,
         payload or make_execution_payload(),
         deadline_at=deadline_at,
+        schema_version=wire_version,
     )
     async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO agent.jobs (job_id, run_id, conversation_id, origin_message_id, "
-            "payload_hash, payload, envelope, status, queue_class, deadline_at, accepted_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11)",
+            "payload_hash, payload, envelope, status, queue_class, deadline_at, accepted_at, wire_version) "
+            "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12)",
             uuid.uuid4(),
             uuid.UUID(run_id),
             uuid.UUID(conversation_id),
@@ -149,8 +156,28 @@ async def seed_execute_job(
             queue_class,
             deadline_at,
             datetime.now(timezone.utc),
+            wire_version,
         )
     return run_id, conversation_id, correlation_id, deadline_at
+
+
+def make_v2_execution_payload(
+    question: str = "Sample Author hangi üniversitede okudu?",
+    *,
+    topic: str = "who_am_i",
+    mode_preference: str = "fast",
+    profile_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """v2 execute payload'ı (K3): konu + pinlenmiş profil sürümü."""
+
+    payload = make_execution_payload(question, mode_preference=mode_preference)
+    payload["conversation_topic"] = topic
+    payload["profile_snapshot"] = profile_snapshot or {
+        "profile_id": "sample-author",
+        "revision": 1,
+        "content_hash": "4f3b02e187c2b8c04134aa2c80df4b2d8c817377780aca74d2a11e9bf0c1406d",
+    }
+    return payload
 
 
 async def job_row(pool: Any, run_id: str) -> Any:

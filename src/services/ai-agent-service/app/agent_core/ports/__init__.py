@@ -13,7 +13,7 @@ from .checkpoint import CheckpointStore
 from .content import ContentRepository
 from .embedding import EmbeddingProvider
 from .model import ModelProvider, ModelRequest, ModelResponse, ModelUsage
-from .profile import ProfileRepository, ProfileSummary
+from .profile import ProfileKnowledgeRepository, ProfileRepository, ProfileSummary
 from .progress import ProgressSink
 from .project import ProjectRecord, ProjectRepository
 from .source_reader import ReadSource, SourceReader
@@ -32,6 +32,7 @@ __all__ = [
     "ModelRequest",
     "ModelResponse",
     "ModelUsage",
+    "ProfileKnowledgeRepository",
     "ProfileRepository",
     "ProfileSummary",
     "ProgressSink",

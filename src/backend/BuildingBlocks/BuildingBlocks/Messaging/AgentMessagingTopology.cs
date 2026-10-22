@@ -27,6 +27,12 @@ public static class AgentMessagingTopology
 
     public const string ExecuteQueue = "agent.execute.q";
     public const string ControlQueue = "agent.control.q";
+
+    /// <summary>Wire v2 komut kuyrukları (K4 broker izolasyonu): v2 execute/kontrol yalnız bunlara
+    /// bağlanır; eski (v1) worker v2 kuyruklarını bilmez. Backend'in v2 üretici bariyeri bu iki
+    /// kuyruğun var olmasını ve en az bir tüketicisi olmasını şart koşar.</summary>
+    public const string ExecuteQueueV2 = "agent.execute.v2.q";
+    public const string ControlQueueV2 = "agent.control.v2.q";
     public const string ContentQueue = "agent.content.q";
     public const string BackendEventsQueue = "backend.agent.events.q";
 
@@ -37,9 +43,19 @@ public static class AgentMessagingTopology
     [
         (ExecuteQueue, ["agent.execute.requested.v1"], CommandsExchange),
         (ControlQueue, ["agent.cancel.requested.v1", "agent.resume.requested.v1", "agent.action.result.v1"], CommandsExchange),
+        // Wire v2 (K4): ayrı kuyruklar, aynı DLX/DLQ/retry argüman modeli. Routing key'ler Core
+        // registry'sinin v2 kayıtlarıyla ayna testinde eşlenir (BuildingBlocks Core'a bağlı değildir).
+        (ExecuteQueueV2, ["agent.execute.requested.v2"], CommandsExchange),
+        (ControlQueueV2, ["agent.cancel.requested.v2", "agent.resume.requested.v2", "agent.action.result.v2"], CommandsExchange),
         (ContentQueue, ["content.article.changed.v1", "content.sync.#", "content.profile.changed.v1", "content.project.changed.v1"], ContentExchange),
+        // Olay kuyruğu joker bağlarla iki sürümü de alır; tüketici sürüme göre DTO seçer.
         (BackendEventsQueue, ["agent.run.#", "agent.action.#"], EventsExchange),
     ];
+
+    /// <summary>Ana kuyruk → bağlı routing key'ler (DLQ/retry hariç); ayna testleri ve hazırlık
+    /// denetimi kullanır.</summary>
+    public static IReadOnlyDictionary<string, IReadOnlyList<string>> MainQueueRoutingKeys { get; } =
+        Targets.ToDictionary(t => t.Queue, t => (IReadOnlyList<string>)t.RoutingKeys);
 
     public static string DeadLetterQueueFor(string queue) => $"{queue}.dlq";
 

@@ -1,13 +1,40 @@
 """B1 mesaj sözleşmeleri: zarf + tür bazlı payload modelleri ve kategorize doğrulayıcı.
 
-Tek sözleşme kaynağı: ``src/contracts/agent/v1/`` (JSON Schema dosyaları +
-contract.json). Bu modül aynı sözleşmenin Pydantic karşılığıdır; ortak fixture
-seti (``src/contracts/agent/fixtures/``) iki dilin denkliğini testlerle sabitler.
+Tek sözleşme kaynağı: ``src/contracts/agent/v1/`` ve ``src/contracts/agent/v2/``
+(JSON Schema dosyaları + contract.json). Bu modül aynı sözleşmelerin Pydantic
+karşılığıdır; ortak fixture setleri (``src/contracts/agent/fixtures/`` ve
+``fixtures/v2/``) iki dilin denkliğini testlerle sabitler. Kayıt ve doğrulayıcı
+``(schema_version, message_type)`` anahtarlıdır (``SUPPORTED_SCHEMA_VERSIONS``).
 """
 
-from .enums import AgentErrorCode, AgentMode, Direction, ModePreference, Producer, ProgressKind, SourceScope
+from .enums import (
+    AgentErrorCode,
+    AgentMode,
+    ConversationTopic,
+    Direction,
+    ModePreference,
+    Producer,
+    ProgressKind,
+    RunIntent,
+    SourceScope,
+)
 from .errors import AgentContractError, ContractErrorCategory
-from .registry import MAX_PAYLOAD_BYTES, SCHEMA_VERSION, MESSAGE_TYPE_REGISTRY, MessageTypeSpec
+from .registry import (
+    MAX_PAYLOAD_BYTES,
+    MESSAGE_TYPE_REGISTRIES,
+    MESSAGE_TYPE_REGISTRY,
+    MESSAGE_TYPE_REGISTRY_V1,
+    MESSAGE_TYPE_REGISTRY_V2,
+    SCHEMA_VERSION,
+    SUPPORTED_SCHEMA_VERSIONS,
+    WIRE_VERSION_V1,
+    WIRE_VERSION_V2,
+    MessageTypeSpec,
+    UnknownMessageSpec,
+    lookup_spec,
+    registry_for,
+    spec_for,
+)
 from .envelope import AgentEnvelope
 from .payloads import (
     AgentActionProposedV1,
@@ -29,6 +56,23 @@ from .payloads import (
     ProfileContentChangedV1,
     ProjectContentChangedV1,
 )
+from .payloads_v2 import (
+    AgentActionProposedV2,
+    AgentActionResultV2,
+    AgentCancellationRequestedV2,
+    AgentExecutionRequestedV2,
+    AgentProfileSnapshotRef,
+    AgentResumeRequestedV2,
+    AgentRunAcceptedV2,
+    AgentRunCancelledV2,
+    AgentRunCompletedV2,
+    AgentRunFailedV2,
+    AgentRunModeSelectedV2,
+    AgentRunNeedsInputV2,
+    AgentRunPartiallyCompletedV2,
+    AgentRunProgressedV2,
+    AgentSourceReferenceV2,
+)
 from .validator import ParsedEnvelope, parse_envelope
 from .amqp import to_amqp_properties
 from .sequence import EventSequenceTracker, SequenceRegression
@@ -36,8 +80,18 @@ from .sequence import EventSequenceTracker, SequenceRegression
 __all__ = [
     "MAX_PAYLOAD_BYTES",
     "SCHEMA_VERSION",
+    "WIRE_VERSION_V1",
+    "WIRE_VERSION_V2",
+    "SUPPORTED_SCHEMA_VERSIONS",
     "MESSAGE_TYPE_REGISTRY",
+    "MESSAGE_TYPE_REGISTRY_V1",
+    "MESSAGE_TYPE_REGISTRY_V2",
+    "MESSAGE_TYPE_REGISTRIES",
     "MessageTypeSpec",
+    "UnknownMessageSpec",
+    "lookup_spec",
+    "registry_for",
+    "spec_for",
     "AgentEnvelope",
     "ParsedEnvelope",
     "parse_envelope",
@@ -53,6 +107,8 @@ __all__ = [
     "SourceScope",
     "AgentErrorCode",
     "ProgressKind",
+    "ConversationTopic",
+    "RunIntent",
     "AgentExecutionRequestedV1",
     "AgentCancellationRequestedV1",
     "AgentResumeRequestedV1",
@@ -71,4 +127,19 @@ __all__ = [
     "ContentSnapshotCompletedV1",
     "ProfileContentChangedV1",
     "ProjectContentChangedV1",
+    "AgentProfileSnapshotRef",
+    "AgentSourceReferenceV2",
+    "AgentExecutionRequestedV2",
+    "AgentCancellationRequestedV2",
+    "AgentResumeRequestedV2",
+    "AgentActionResultV2",
+    "AgentRunAcceptedV2",
+    "AgentRunModeSelectedV2",
+    "AgentRunProgressedV2",
+    "AgentRunNeedsInputV2",
+    "AgentRunCompletedV2",
+    "AgentRunPartiallyCompletedV2",
+    "AgentRunFailedV2",
+    "AgentRunCancelledV2",
+    "AgentActionProposedV2",
 ]

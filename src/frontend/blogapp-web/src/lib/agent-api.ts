@@ -20,6 +20,7 @@ import { API_BASE_URL } from '@/lib/env.client';
 import type {
   AgentFeedbackResult,
   AgentMessageRequest,
+  AgentResearchRequest,
   AgentRunAccepted,
   AgentRunCancel,
   AgentRunEvents,
@@ -43,6 +44,19 @@ function extractError(error: unknown, fallback: string): string {
   return getErrorMessage(error, fallback);
 }
 
+/** Yol segmenti (run kimliği) kodlanır: kayıtlı/dış değer yol ayracı taşıyamaz. */
+function runPath(runId: string): string {
+  return `${BASE}/runs/${encodeURIComponent(runId)}`;
+}
+
+/** Who am I sınırı: /research who_am_i ile çağrılamaz (backend de 400 döner). */
+export class AgentTopicNotAllowedError extends Error {
+  constructor() {
+    super('research_not_allowed_for_topic');
+    this.name = 'AgentTopicNotAllowedError';
+  }
+}
+
 export const agentApi = {
   /** Soru kabulü; 202 Accepted döner (202 axios tarafından başarı sayılır). */
   sendMessage: async (request: AgentMessageRequest): Promise<AgentRunAccepted> => {
@@ -56,10 +70,12 @@ export const agentApi = {
     return response.data.data;
   },
 
-  /** Açık derin araştırma; aynı kabul hattı, mod deep_research (backend sabitler). */
-  startResearch: async (
-    request: Omit<AgentMessageRequest, 'modePreference'>,
-  ): Promise<AgentRunAccepted> => {
+  /** Açık derin araştırma; aynı kabul hattı, mod deep_research (backend sabitler).
+   * who_am_i konusu ağ isteği yapılmadan reddedilir. */
+  startResearch: async (request: AgentResearchRequest): Promise<AgentRunAccepted> => {
+    if (request.conversationTopic === 'who_am_i') {
+      throw new AgentTopicNotAllowedError();
+    }
     const response = await apiClient.post<ApiResponse<AgentRunAccepted>>(
       `${BASE}/research`,
       request,
@@ -72,7 +88,7 @@ export const agentApi = {
 
   getRun: async (runId: string): Promise<AgentRunStatus> => {
     const response = await apiClient.get<ApiResponse<AgentRunStatus>>(
-      `${BASE}/runs/${runId}`,
+      runPath(runId),
     );
     if (!response.data.success || !response.data.data) {
       throw new Error(response.data.errors?.[0] ?? 'İş bulunamadı');
@@ -83,7 +99,7 @@ export const agentApi = {
   /** Commit edilmiş projection'dan replay; ``after`` ile kaldığı yerden sürer. */
   getEvents: async (runId: string, after = 0, limit = 200): Promise<AgentRunEvents> => {
     const response = await apiClient.get<ApiResponse<AgentRunEvents>>(
-      `${BASE}/runs/${runId}/events`,
+      `${runPath(runId)}/events`,
       { params: { after, limit } },
     );
     if (!response.data.success || !response.data.data) {
@@ -95,7 +111,7 @@ export const agentApi = {
   /** İptal TALEBİ: "requested" terminal değildir; terminal cancelled olayı gelir. */
   cancelRun: async (runId: string, reason?: string): Promise<AgentRunCancel> => {
     const response = await apiClient.post<ApiResponse<AgentRunCancel>>(
-      `${BASE}/runs/${runId}/cancel`,
+      `${runPath(runId)}/cancel`,
       reason ? { reason } : {},
     );
     if (!response.data.success || !response.data.data) {
@@ -110,7 +126,7 @@ export const agentApi = {
     versions: { expectedInputVersion?: number; expectedProposalVersion?: number },
   ): Promise<AgentRunResume> => {
     const response = await apiClient.post<ApiResponse<AgentRunResume>>(
-      `${BASE}/runs/${runId}/resume`,
+      `${runPath(runId)}/resume`,
       versions,
     );
     if (!response.data.success || !response.data.data) {

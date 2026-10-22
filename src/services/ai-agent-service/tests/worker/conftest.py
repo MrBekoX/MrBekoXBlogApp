@@ -242,7 +242,7 @@ def provision_vhost_and_users() -> None:
         {
             "configure": r".*",
             "write": r"blog\.(agent\.commands|content\.events)",
-            "read": r"backend\.agent\.events\.q(\.dlq)?|agent\.(execute|control|content)\.q",
+            "read": r"backend\.agent\.events\.q(\.dlq)?|agent\.(execute|control|content)(\.v2)?\.q",
         },
     )
     mgmt_request(
@@ -251,7 +251,7 @@ def provision_vhost_and_users() -> None:
         {
             "configure": "",
             "write": r"blog\.agent\.events",
-            "read": r"agent\.(execute|control|content)\.q(\.dlq)?",
+            "read": r"agent\.(execute|control|content)(\.v2)?\.q(\.dlq)?",
         },
     )
 
@@ -418,6 +418,32 @@ def db_pool() -> Any:
 @pytest.fixture()
 def store(db_pool: Any) -> JobStore:
     return JobStore(db_pool, schema="agent")
+
+
+@pytest.fixture()
+def wire_v2_pool(db_pool: Any) -> Any:
+    """Yeni worker havuzu: bağlantı başlangıcında ``agent.worker_wire_max=2`` bildirir.
+
+    ``db_pool`` (ayar yok → tetikleyici 1 varsayar) eski worker oturumunu temsil
+    eder; bu havuz v2 satırlarını claim/kapatabilen yeni worker'ı (migration 0005).
+    ``db_pool``'a bağımlıdır: tablo sıfırlaması ondan gelir.
+    """
+
+    ensure_loop()
+    pool = run(
+        asyncpg.create_pool(
+            **db_conn_kwargs(AGENT_TEST_DB),
+            min_size=1,
+            max_size=4,
+            server_settings={"agent.worker_wire_max": "2"},
+        )
+    )
+
+    async def _close() -> None:
+        await pool.close()
+
+    yield pool
+    run(_close())
 
 
 @pytest.fixture()

@@ -37,6 +37,31 @@
     <PackageReference Include="System.ServiceModel.Syndication" Version="10.0.5" />
   </ItemGroup>
 
+  <!-- Who am I (K2, A33): canonical yazar profili tek kaynaktan (src/content/author-profile)
+       build ve publish çıktısına content/author-profile/ olarak kopyalanır; çalışma zamanı
+       okuyucusu (FileAuthorProfileSource) AppContext.BaseDirectory/content/author-profile'ı
+       okur (cwd veya geliştirici yolu kullanılmaz). Kopya bayt-birebirdir; content_hash
+       (sha256(profile.json)) manifest ile doğrulanır. Docker build bağlamı bu yolu içerir
+       (docker/backend/Dockerfile). Api.Tests ProjectReference ile aynı dosyaları alır. -->
+  <PropertyGroup>
+    <AuthorProfileSourceDir>$(MSBuildThisFileDirectory)..\..\..\content\author-profile\</AuthorProfileSourceDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="$(AuthorProfileSourceDir)manifest.json"
+             Link="content\author-profile\manifest.json"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(AuthorProfileSourceDir)profile.json"
+             Link="content\author-profile\profile.json"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(AuthorProfileSourceDir)source\**\*"
+             Link="content\author-profile\source\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\Core\Application\Application.csproj" />
     <ProjectReference Include="..\..\Infrastructure\Infrastructure\Infrastructure.csproj" />

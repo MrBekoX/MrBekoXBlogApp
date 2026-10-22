@@ -9,37 +9,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Copy, Check } from "lucide-react";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
 import { readMermaidChart } from "@/components/mermaid-source";
-
-/**
- * XSS Protection: Validates URL to prevent javascript: and data: URIs
- * Only allows http:, https:, and relative paths
- */
-function sanitizeUrl(url: string | undefined): string | undefined {
-  if (!url) return undefined;
-  
-  // Decode URL to catch encoded attacks
-  const decodedUrl = decodeURIComponent(url).trim().toLowerCase();
-  
-  // Block dangerous protocols
-  const dangerousProtocols = ['javascript:', 'data:', 'vbscript:', 'file:'];
-  for (const protocol of dangerousProtocols) {
-    if (decodedUrl.startsWith(protocol)) {
-      return undefined;
-    }
-  }
-  
-  // Allow http, https, and relative paths
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/') || url.startsWith('#') || url.startsWith('./') || url.startsWith('../')) {
-    return url;
-  }
-  
-  // For other relative URLs (e.g., "image.png"), allow them
-  if (!url.includes(':')) {
-    return url;
-  }
-  
-  return undefined;
-}
+import { sanitizeUrl } from "@/lib/safe-url";
 
 function ArticlePre({
   children,

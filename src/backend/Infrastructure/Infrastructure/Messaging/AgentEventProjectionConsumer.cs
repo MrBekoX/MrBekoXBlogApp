@@ -74,7 +74,9 @@ public sealed class AgentEventProjectionConsumer(
 
         var result = await handler.ApplyAsync(payloadEvent, cancellationToken);
 
-        if (result.Decision == AgentEventDecision.Apply && result.Notification is not null)
+        // Bildirim yalnız commit edilmiş Apply (veya reddedilen olayın güvenli Failed kapanışı)
+        // kararında doludur; profil run'ındaki generation_delta bildirimi handler'da bastırılır.
+        if ((result.Decision is AgentEventDecision.Apply or AgentEventDecision.Rejected) && result.Notification is not null)
         {
             // Commit edilmiş projection üzerinden UI bildirimi (best-effort).
             var notifier = scope.ServiceProvider.GetRequiredService<IAgentRunNotifier>();
@@ -91,13 +93,15 @@ public sealed class AgentEventProjectionConsumer(
         }
     }
 
-    /// <summary>Payload'ı registry DTO türüne çözer ve projection girdisine eşler.</summary>
+    /// <summary>Payload'ı registry'nin (sürüm, tür) DTO türüne çözer ve projection girdisine eşler
+    /// (K3: v1 ve v2 olayları kendi sürümünün DTO'suyla okunur; v1 backlog'u v1 olarak kalır).</summary>
     private AgentRunEventProjectionEvent BuildProjectionEvent(
         AgentEnvelope envelope, System.Text.Json.Nodes.JsonObject payloadNode)
     {
-        var spec = AgentMessageTypeRegistry.TryGet(envelope.MessageType, out var messageSpec)
+        var spec = AgentMessageTypeRegistry.TryGet(envelope.SchemaVersion, envelope.MessageType, out var messageSpec)
             ? messageSpec
-            : throw new AgentEventRejectedException("message_type", $"bilinmeyen mesaj türü: {envelope.MessageType}");
+            : throw new AgentEventRejectedException(
+                "message_type", $"sözleşme v{envelope.SchemaVersion} içinde bilinmeyen mesaj türü: {envelope.MessageType}");
 
         AgentPayloadBase? payload;
         try
@@ -126,19 +130,42 @@ public sealed class AgentEventProjectionConsumer(
 
         var payloadJson = payloadNode.ToJsonString(PayloadOptions);
 
+        // Terminal olay kesinleşmiş modu taşır: mode_selected olayı sırasız teslimde
+        // stale düşse de run.SelectedMode terminal payload'dan dolar.
         return payload switch
         {
             AgentRunCompletedV1 completed => new AgentRunEventProjectionEvent(
                 AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
                 IsTerminal: true, TerminalStatus: AgentRunStatus.Completed,
-                SourceScope: completed.SourceScope),
+                SelectedMode: completed.SelectedMode, SourceScope: completed.SourceScope),
             AgentRunPartiallyCompletedV1 partial => new AgentRunEventProjectionEvent(
                 AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
                 IsTerminal: true, TerminalStatus: AgentRunStatus.PartiallyCompleted,
-                SourceScope: partial.SourceScope),
+                SelectedMode: partial.SelectedMode, SourceScope: partial.SourceScope),
             AgentRunFailedV1 failed => new AgentRunEventProjectionEvent(
                 AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
-                IsTerminal: true, TerminalStatus: AgentRunStatus.Failed),
+                IsTerminal: true, TerminalStatus: AgentRunStatus.Failed,
+                SelectedMode: failed.SelectedMode),
+            AgentRunCompletedV2 completedV2 => new AgentRunEventProjectionEvent(
+                AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
+                IsTerminal: true, TerminalStatus: AgentRunStatus.Completed,
+                SelectedMode: completedV2.SelectedMode, SourceScope: completedV2.SourceScope,
+                RunIntent: completedV2.RunIntent, ProfileSnapshot: completedV2.ProfileSnapshot),
+            AgentRunPartiallyCompletedV2 partialV2 => new AgentRunEventProjectionEvent(
+                AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
+                IsTerminal: true, TerminalStatus: AgentRunStatus.PartiallyCompleted,
+                SelectedMode: partialV2.SelectedMode, SourceScope: partialV2.SourceScope,
+                RunIntent: partialV2.RunIntent, ProfileSnapshot: partialV2.ProfileSnapshot),
+            AgentRunFailedV2 failedV2 => new AgentRunEventProjectionEvent(
+                AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
+                IsTerminal: true, TerminalStatus: AgentRunStatus.Failed,
+                SelectedMode: failedV2.SelectedMode,
+                RunIntent: failedV2.RunIntent, ProfileSnapshot: failedV2.ProfileSnapshot),
+            AgentRunModeSelectedV2 modeSelectedV2 => new AgentRunEventProjectionEvent(
+                AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
+                IsTerminal: false, SelectedMode: modeSelectedV2.SelectedMode,
+                SourceScope: modeSelectedV2.SourceScope,
+                RunIntent: modeSelectedV2.RunIntent, ProfileSnapshot: modeSelectedV2.ProfileSnapshot),
             AgentRunCancelledV1 cancelled => new AgentRunEventProjectionEvent(
                 AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
                 IsTerminal: true, TerminalStatus: AgentRunStatus.Cancelled),
@@ -147,7 +174,7 @@ public sealed class AgentEventProjectionConsumer(
                 IsTerminal: false, SelectedMode: modeSelected.SelectedMode),
             AgentRunProgressedV1 progressed => new AgentRunEventProjectionEvent(
                 AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence,
-                IsTerminal: false, ProgressMessage: progressed.Message),
+                IsTerminal: false, ProgressMessage: progressed.Message, ProgressKind: progressed.Kind),
             AgentRunAcceptedV1 => new AgentRunEventProjectionEvent(
                 AgentRunEventProjectionHandler.ConsumerName, envelope, payloadJson, eventSequence, IsTerminal: false),
             AgentRunNeedsInputV1 => new AgentRunEventProjectionEvent(

@@ -1,9 +1,15 @@
 """Kategorize sözleşme doğrulayıcı: parse_envelope.
 
 Adım sırası .NET ``AgentContractValidator`` ile birebir aynıdır:
-boyut → JSON çözümü → zarf kuralları → sürüm → tür kaydı → run kimliği/deadline/
-üretici yönü → payload kuralları → zarf bağlantısı ve eksik-alan çapraz kuralları.
-Ortak fixture seti iki tarafın aynı girdi için aynı kategoriyi üretmesini sabitler.
+boyut → JSON çözümü → zarf kuralları → sürüm → (sürüm, tür) kaydı → run kimliği/
+deadline/üretici yönü → payload kuralları → zarf bağlantısı ve eksik-alan çapraz
+kuralları → (v2) profil biçim çapraz kuralları. Ortak fixture setleri
+(``fixtures/`` v1, ``fixtures/v2/`` v2) iki tarafın aynı girdi için aynı
+kategoriyi üretmesini sabitler.
+
+Sürüm seçimi (K3): zarf ``schema_version`` önce okunur; ``SUPPORTED_SCHEMA_VERSIONS``
+dışı sürüm ``unknown_version``; sürümün kaydında olmayan tür (ör. v2 altında
+``content.*``) ``unknown_type``. v1 kuralları ve DTO'ları değişmez.
 
 Gövde yalnız JSON olarak çözümlenir; pickle veya keyfi nesne deserialization
 kullanılmaz (plan satır 239).
@@ -17,8 +23,10 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from .enums import ConversationTopic, RunIntent
 from .envelope import AgentEnvelope
 from .errors import AgentContractError, ContractErrorCategory
+from .formats import BAD_FORMAT_ERROR_TYPE
 from .payloads import (
     AgentActionProposedV1,
     AgentActionResultV1,
@@ -29,7 +37,13 @@ from .payloads import (
     AgentRunPartiallyCompletedV1,
     ArticleContentChangedV1,
 )
-from .registry import MAX_PAYLOAD_BYTES, SCHEMA_VERSION, MESSAGE_TYPE_REGISTRY, MessageTypeSpec
+from .payloads_v2 import (
+    AgentExecutionRequestedV2,
+    AgentRunCompletedV2,
+    AgentRunModeSelectedV2,
+    AgentRunPartiallyCompletedV2,
+)
+from .registry import MAX_PAYLOAD_BYTES, SUPPORTED_SCHEMA_VERSIONS, MessageTypeSpec, lookup_spec
 
 __all__ = ["ParsedEnvelope", "parse_envelope"]
 
@@ -49,6 +63,12 @@ class ParsedEnvelope:
     envelope: AgentEnvelope
     payload: Any
     spec: MessageTypeSpec
+
+    @property
+    def schema_version(self) -> int:
+        """Doğrulanmış zarfın sözleşme sürümü (kaydın sürümüyle aynıdır)."""
+
+        return self.envelope.schema_version
 
 
 def parse_envelope(raw: bytes | str, *, max_payload_bytes: int = MAX_PAYLOAD_BYTES) -> ParsedEnvelope:
@@ -85,19 +105,19 @@ def parse_envelope(raw: bytes | str, *, max_payload_bytes: int = MAX_PAYLOAD_BYT
     except ValidationError as exc:
         raise _to_contract_error(exc) from exc
 
-    if envelope.schema_version != SCHEMA_VERSION:
+    if envelope.schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise AgentContractError(
             ContractErrorCategory.UNKNOWN_VERSION,
             "schema_version",
             f"bilinmeyen sözleşme sürümü: {envelope.schema_version}",
         )
 
-    spec = MESSAGE_TYPE_REGISTRY.get(envelope.message_type)
+    spec = lookup_spec(envelope.schema_version, envelope.message_type)
     if spec is None:
         raise AgentContractError(
             ContractErrorCategory.UNKNOWN_TYPE,
             "message_type",
-            f"bilinmeyen mesaj türü: {envelope.message_type}",
+            f"sözleşme sürümü {envelope.schema_version} için bilinmeyen mesaj türü: {envelope.message_type}",
         )
 
     if spec.requires_run_identity and (envelope.run_id is None or envelope.conversation_id is None):
@@ -134,6 +154,7 @@ def parse_envelope(raw: bytes | str, *, max_payload_bytes: int = MAX_PAYLOAD_BYT
 
     _check_envelope_binding(envelope, payload)
     _check_missing_rules(payload)
+    _check_format_rules(payload)
     return ParsedEnvelope(envelope=envelope, payload=payload, spec=spec)
 
 
@@ -147,7 +168,7 @@ def _to_contract_error(exc: ValidationError, *, prefix: str = "") -> AgentContra
         category = ContractErrorCategory.MISSING_FIELD
     elif error_type == "extra_forbidden":
         category = ContractErrorCategory.EXTRA_FIELD
-    elif error_type in ("string_pattern_mismatch", "utc_format"):
+    elif error_type in ("string_pattern_mismatch", "utc_format", BAD_FORMAT_ERROR_TYPE):
         category = ContractErrorCategory.BAD_FORMAT
     else:
         category = ContractErrorCategory.WRONG_TYPE
@@ -212,4 +233,39 @@ def _check_missing_rules(payload: Any) -> None:
                 ContractErrorCategory.MISSING_FIELD,
                 "payload.answer",
                 "answer veya report zorunludur",
+            )
+
+    # --- v2: pinlenmiş profil sürümü zorunlulukları (missing_field) ---
+
+    if isinstance(payload, AgentExecutionRequestedV2):
+        if payload.conversation_topic is ConversationTopic.WHO_AM_I and payload.profile_snapshot is None:
+            raise AgentContractError(
+                ContractErrorCategory.MISSING_FIELD,
+                "payload.profile_snapshot",
+                "who_am_i konusu backend'in pinlediği profile_snapshot'ı taşımak zorundadır",
+            )
+
+    if isinstance(payload, (AgentRunModeSelectedV2, AgentRunCompletedV2, AgentRunPartiallyCompletedV2)):
+        if payload.run_intent is RunIntent.PROFILE and payload.profile_snapshot is None:
+            raise AgentContractError(
+                ContractErrorCategory.MISSING_FIELD,
+                "payload.profile_snapshot",
+                "run_intent=profile için profile_snapshot zorunludur",
+            )
+
+
+def _check_format_rules(payload: Any) -> None:
+    """v2 biçim çapraz kuralı (bad_format): profile citation pinlenmiş sürüme bağlı olmalıdır.
+
+    Sürüm eşliği (snapshot varken) model doğrulayıcısındadır; burada snapshot'sız
+    taşınan profile kaynağı reddedilir (profile niyetinde eksik snapshot önceki
+    adımda ``missing_field`` olarak sınıflandırılır).
+    """
+
+    if isinstance(payload, (AgentRunCompletedV2, AgentRunPartiallyCompletedV2)):
+        if payload.profile_snapshot is None and any(c.kind == "profile" for c in payload.citations):
+            raise AgentContractError(
+                ContractErrorCategory.BAD_FORMAT,
+                "payload.citations",
+                "profile citation payload profile_snapshot olmadan taşınamaz",
             )

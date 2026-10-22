@@ -19,6 +19,7 @@ from agent_core.ports import (
     ContentRepository,
     EmbeddingProvider,
     ModelProvider,
+    ProfileKnowledgeRepository,
     ProfileRepository,
     ProgressSink,
     ProjectRepository,
@@ -31,6 +32,7 @@ from agent_core.adapters.test_doubles import (
     FakeContentRepository,
     FakeEmbeddingProvider,
     FakeModelProvider,
+    FakeProfileKnowledgeRepository,
     FakeProfileRepository,
     FakeProjectRepository,
     FakeSourceReader,
@@ -46,6 +48,7 @@ PORT_AND_DOUBLE_CASES = [
     (FakeSourceReader(), SourceReader),
     (FakeContentRepository(), ContentRepository),
     (FakeProfileRepository(), ProfileRepository),
+    (FakeProfileKnowledgeRepository(), ProfileKnowledgeRepository),
     (FakeProjectRepository(), ProjectRepository),
     (FakeCheckpointStore(), CheckpointStore),
     (FakeBudgetStore(), BudgetStore),
@@ -61,8 +64,9 @@ def test_every_exported_test_double_is_marked() -> None:
         assert getattr(obj, "is_test_double", False) is True, f"{name} is_test_double işareti taşımıyor"
 
 
-def test_all_eleven_ports_have_a_test_double() -> None:
-    assert len(PORT_AND_DOUBLE_CASES) == 11
+def test_all_twelve_ports_have_a_test_double() -> None:
+    # 11 A1 portu + Who am I ProfileKnowledgeRepository (K5).
+    assert len(PORT_AND_DOUBLE_CASES) == 12
 
 
 def test_test_doubles_satisfy_their_port_protocols() -> None:
@@ -77,3 +81,10 @@ def test_adapters_root_namespace_contains_no_test_doubles() -> None:
             assert getattr(obj, "is_test_double", False) is not True, (
                 f"{name} test double işaretli ama üretim kökünde; yalnız test_doubles altında olabilir"
             )
+
+
+def test_canonical_profile_repository_is_a_real_adapter() -> None:
+    from agent_core.profile import CanonicalProfileRepository
+
+    assert CanonicalProfileRepository.is_test_double is False
+    assert FakeProfileKnowledgeRepository.is_test_double is True

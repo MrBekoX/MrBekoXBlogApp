@@ -239,7 +239,8 @@ class TransportRetryService:
 
         retry_body = _with_delivery_attempt(parsed, failed_attempt + 1)
         exchange = f"blog.agent.retry.{tier}s"
-        routing_key = message.routing_key or f"{parsed.envelope.message_type}.v1"
+        # Yedek routing key zarfın kendi sürümünün kaydından (K4: .v1/.v2).
+        routing_key = message.routing_key or parsed.spec.routing_key
         result: PublishResult = await self._publisher.publish_raw(
             exchange,
             routing_key,
@@ -437,7 +438,8 @@ class DlqReplayService:
             )
 
         exchange = self._origin_exchange or _default_origin_exchange(self._queue_name)
-        routing_key = message.routing_key or f"{parsed.envelope.message_type}.v1"
+        # Yedek routing key zarfın kendi sürümünün kaydından (K4: .v1/.v2).
+        routing_key = message.routing_key or parsed.spec.routing_key
         result = await self._publisher.publish_raw(
             exchange,
             routing_key,

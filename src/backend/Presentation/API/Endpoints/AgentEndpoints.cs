@@ -10,6 +10,7 @@ using BlogApp.Core.Application.Features.AgentFeature.Collaboration;
 using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentObservationsQuery;
 using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunEventsQuery;
 using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunQuery;
+using BlogApp.Core.Application.Features.AgentFeature.Services;
 using BlogApp.Presentation.Api.Helpers;
 using BlogApp.Presentation.Api.Services;
 using MediatR;
@@ -71,6 +72,8 @@ public static class AgentEndpoints
                     ? Guid.NewGuid().ToString("D")
                     : body.IdempotencyKey.Trim(),
                 GuestSessionId = guestSessionId,
+                // K1/K6: eksikse auto; trim + küçük harf. who_am_i kuralları doğrulayıcıdadır.
+                ConversationTopic = AgentConversationTopics.Normalize(body.ConversationTopic),
             }, cancellationToken);
 
             // 202 Accepted: iş kabul edildi (backend kaydı + outbox); yürütme
@@ -87,7 +90,8 @@ public static class AgentEndpoints
         .Produces<ApiResponse<AgentRunAcceptedDto>>(400)
         .Produces<ApiResponse<AgentRunAcceptedDto>>(401)
         .Produces<ApiResponse<AgentRunAcceptedDto>>(403)
-        .Produces<ApiResponse<AgentRunAcceptedDto>>(409);
+        .Produces<ApiResponse<AgentRunAcceptedDto>>(409)
+        .Produces<ApiResponse<AgentRunAcceptedDto>>(503);
 
         // ------------------------------------------------------- POST /research
         group.MapPost("/research", async (
@@ -112,6 +116,9 @@ public static class AgentEndpoints
                     ? Guid.NewGuid().ToString("D")
                     : body.IdempotencyKey.Trim(),
                 GuestSessionId = guestSessionId,
+                // /research + who_am_i → 400 validation_error (profil konusu web araştırması başlatamaz).
+                ConversationTopic = AgentConversationTopics.Normalize(body.ConversationTopic),
+                IsResearchRequest = true,
             }, cancellationToken);
 
             return response.IsSuccess
@@ -126,7 +133,8 @@ public static class AgentEndpoints
         .Produces<ApiResponse<AgentRunAcceptedDto>>(400)
         .Produces<ApiResponse<AgentRunAcceptedDto>>(401)
         .Produces<ApiResponse<AgentRunAcceptedDto>>(403)
-        .Produces<ApiResponse<AgentRunAcceptedDto>>(409);
+        .Produces<ApiResponse<AgentRunAcceptedDto>>(409)
+        .Produces<ApiResponse<AgentRunAcceptedDto>>(503);
 
         // ------------------------------------------------- GET /runs/{runId}
         group.MapGet("/runs/{runId}", async (
@@ -546,7 +554,8 @@ public static class AgentEndpoints
             statusCode: StatusCodes.Status400BadRequest);
 }
 
-/// <summary>POST /messages gövdesi; alan adları istemciye camelCase olarak döner.</summary>
+/// <summary>POST /messages gövdesi; alan adları istemciye camelCase olarak döner.
+/// <c>conversationTopic</c>: <c>auto</c> (varsayılan) | <c>who_am_i</c> (K1).</summary>
 public sealed record AgentMessageRequestBody(
     string Question,
     string? Language,
@@ -555,9 +564,11 @@ public sealed record AgentMessageRequestBody(
     Guid? ArticleId,
     string? SelectedText,
     Guid? ConversationId,
-    string? IdempotencyKey);
+    string? IdempotencyKey,
+    string? ConversationTopic = null);
 
-/// <summary>POST /research gövdesi: mod tercihi deep_research sabittir (açık araştırma).</summary>
+/// <summary>POST /research gövdesi: mod tercihi deep_research sabittir (açık araştırma).
+/// <c>conversationTopic=who_am_i</c> burada reddedilir (400).</summary>
 public sealed record AgentResearchRequestBody(
     string Question,
     string? Language,
@@ -565,7 +576,8 @@ public sealed record AgentResearchRequestBody(
     Guid? ArticleId,
     string? SelectedText,
     Guid? ConversationId,
-    string? IdempotencyKey);
+    string? IdempotencyKey,
+    string? ConversationTopic = null);
 
 public sealed record AgentCancelRequestBody(string? Reason);
 

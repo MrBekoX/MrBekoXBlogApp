@@ -21,6 +21,14 @@ devralınmış sayılmasın"). Commit öncesi çökme rollback ile kurtarılır 
 yok); commit sonrası çökmede tekrar teslim inbox/job'a çarpar ve yeni iş
 yaratmadan ACK alır.
 
+Wire sürümü (K4, migration 0005): kabul edilen işin ``wire_version``'ı execute
+zarfının ``schema_version``'ıdır ve run boyunca değişmez; accepted olayı, deneme
+tükenmesi kapanışı ve worker'ın terminal olayları bu sürümle kurulur, outbox
+satırının routing key'i zarfın kendi sürümünden gelir (``wire.outbox_route``).
+``payload_hash`` mesaj başınadır: aynı run_id'nin farklı sürümlü payload'ı
+çatışmadır. Claim yalnız bu kodun yürütebildiği sürümleri seçer
+(``wire_version <= WORKER_WIRE_MAX``); eski worker'ı DB tetikleyicisi dışlar.
+
 Kaynaklar: [ENG-OUTBOX#C1] iş verisiyle mesajın aynı transaction'da
 saklanması; [ENG-OUTBOX#C2] relay tekrarlarına karşı consumer idempotency;
 [PG-ISOLATION#C2] Read Committed'ta eşzamanlı yazan işlemi bekleme ve güncel
@@ -42,11 +50,16 @@ from typing import Any, Callable
 import asyncpg
 
 from .contracts import (
+    WIRE_VERSION_V1,
     AgentEnvelope,
-    MESSAGE_TYPE_REGISTRY,
     ParsedEnvelope,
-    Producer,
-    SCHEMA_VERSION,
+)
+from .wire import (
+    WORKER_WIRE_MAX,
+    WORKER_WIRE_MAX_SETTING,
+    compose_run_envelope,
+    normalize_wire_version,
+    outbox_route,
 )
 
 __all__ = [
@@ -155,6 +168,8 @@ class ClaimedJob:
     started_at: datetime | None
     #: Bu claim bir recovery mi? (önceki denemenin lease'i bitmiş.)
     recovered: bool = False
+    #: Run'ın wire sürümü (``agent.jobs.wire_version``); tüm run mesajları bununla kurulur.
+    wire_version: int = WIRE_VERSION_V1
 
 
 @dataclass(frozen=True)
@@ -165,7 +180,9 @@ class TerminalWriteResult:
     terminal olay outbox'a AYNI transaction'da yazıldı demektir. 'rejected'
     ise ``reason`` gerekçeyi taşır: ``not_found`` | ``not_running`` (iş
     terminalde) | ``fencing_mismatch`` (eski deneme) | ``cancel_requested``
-    (aktif iptal niyeti var — terminal 'cancelled' geçişini B7 üretir).
+    (aktif iptal niyeti var — terminal 'cancelled' geçişini B7 üretir) |
+    ``wire_isolated`` (iş, oturumun ``agent.worker_wire_max`` değerinden yüksek
+    sürümde; 0005 tetikleyicisi güncellemeyi atladı).
     """
 
     outcome: str  # "completed" | "failed" | "rejected"
@@ -204,18 +221,19 @@ def build_accepted_envelope(
     causation_id bu olayı doğuran komutun message_id'sidir. event_sequence 0
     intake'in ilk olayıdır; B5 run başına atomik sıra üretimini devralır
     (plan satır 237: transport tekrarı ile yürütme denemesi ayrıdır).
+    Sürüm, kabul edilen execute komutunun sürümüdür (run wire sürümü, K4).
     """
 
-    return AgentEnvelope(
-        message_id=str(new_message_id()),
+    assert parsed.envelope.run_id is not None and parsed.envelope.conversation_id is not None
+    return compose_run_envelope(
+        schema_version=parsed.envelope.schema_version,
         message_type=ACCEPTED_MESSAGE_TYPE,
-        schema_version=SCHEMA_VERSION,
         run_id=parsed.envelope.run_id,
         conversation_id=parsed.envelope.conversation_id,
         correlation_id=parsed.envelope.correlation_id,
         causation_id=parsed.envelope.message_id,
         occurred_at=format_utc(accepted_at),
-        producer=Producer.AGENT_PY,
+        new_message_id=new_message_id,
         payload={
             "event_sequence": 0,
             "accepted_at": format_utc(accepted_at),
@@ -420,8 +438,8 @@ class JobStore:
         await conn.execute(
             f"INSERT INTO {self._schema}.jobs "
             "(job_id, run_id, conversation_id, origin_message_id, payload_hash, "
-            "payload, envelope, status, deadline_at, accepted_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10)",
+            "payload, envelope, status, deadline_at, accepted_at, wire_version) "
+            "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11)",
             job_id,
             uuid.UUID(envelope.run_id),
             uuid.UUID(envelope.conversation_id),
@@ -432,12 +450,14 @@ class JobStore:
             JOB_STATUS_ACCEPTED,
             _parse_iso(envelope.deadline_at) if envelope.deadline_at else accepted_at,
             accepted_at,
+            # Run wire sürümü = kabul edilen execute zarfının sürümü (K4; değişmez).
+            normalize_wire_version(envelope.schema_version),
         )
 
     async def _insert_outbox_event(
         self, conn: asyncpg.Connection, *, envelope: AgentEnvelope, created_at: datetime
     ) -> uuid.UUID:
-        spec_entry = MESSAGE_TYPE_REGISTRY[envelope.message_type]
+        exchange, routing_key = outbox_route(envelope)
         outbox_id = uuid.uuid4()
         await conn.execute(
             f"INSERT INTO {self._schema}.outbox_events "
@@ -446,8 +466,8 @@ class JobStore:
             outbox_id,
             uuid.UUID(envelope.message_id),
             envelope.message_type,
-            spec_entry.exchange,
-            spec_entry.routing_key,
+            exchange,
+            routing_key,
             envelope.model_dump_json(exclude_none=True),
             created_at,
         )
@@ -567,6 +587,10 @@ class JobStore:
         - Aktif iptal niyeti olan iş claim edilmez: iptal, yeni yürütme
           başlatmaz (plan B7: "Execute komutu henüz gelmediyse iptal kaydı
           erken başlatmayı engellesin" ilkesinin recovery karşılığı).
+        - Yalnız bu kodun yürütebildiği wire sürümleri seçilir
+          (``wire_version <= WORKER_WIRE_MAX``): bilinmeyen gelecek sürüm kuyruğun
+          başını tıkamaz. DB tetikleyicisi (0005) aynı sınırı oturum GUC'uyla
+          ikinci kez uygular (eski worker kodu v2 satırını güncelleyemez).
         """
 
         classes = [queue_class] if isinstance(queue_class, str) else list(queue_class)
@@ -588,6 +612,7 @@ class JobStore:
                 "    AND (c.deadline_at IS NULL OR c.deadline_at > now()) "
                 "    AND NOT EXISTS ("
                 f"      SELECT 1 FROM {self._schema}.cancel_intents x WHERE x.run_id = c.run_id) "
+                "    AND c.wire_version <= $6 "
                 "  ORDER BY c.accepted_at, c.job_id "
                 "  LIMIT 1 "
                 "  FOR UPDATE SKIP LOCKED"
@@ -603,12 +628,13 @@ class JobStore:
                 "WHERE j.job_id = p.job_id "
                 "RETURNING j.job_id, j.run_id, j.conversation_id, j.origin_message_id, "
                 "j.payload, j.envelope, j.queue_class, j.deadline_at, j.execution_attempt, "
-                "j.fencing_token, j.accepted_at, j.started_at, p.was_recoverable",
+                "j.fencing_token, j.accepted_at, j.started_at, j.wire_version, p.was_recoverable",
                 worker_id,
                 float(lease_seconds),
                 classes,
                 list(CLAIMABLE_JOB_STATUSES),
                 int(max_execution_attempts),
+                int(WORKER_WIRE_MAX),
             )
         if row is None:
             return None
@@ -626,6 +652,7 @@ class JobStore:
             accepted_at=row["accepted_at"],
             started_at=row["started_at"],
             recovered=bool(row["was_recoverable"]),
+            wire_version=normalize_wire_version(row["wire_version"]),
         )
 
     async def renew_lease(
@@ -749,7 +776,9 @@ class JobStore:
         """Red gerekçesini ayırt eder (izlenebilirlik; davranış değişmez)."""
 
         row = await conn.fetchrow(
-            f"SELECT status, fencing_token FROM {self._schema}.jobs WHERE run_id = $1",
+            f"SELECT status, fencing_token, wire_version, "
+            f"coalesce(nullif(current_setting('{WORKER_WIRE_MAX_SETTING}', true), ''), '1')::int AS wire_max "
+            f"FROM {self._schema}.jobs WHERE run_id = $1",
             uuid.UUID(run_id),
         )
         if row is None:
@@ -758,6 +787,9 @@ class JobStore:
             return "not_running"
         if int(row["fencing_token"]) != int(fencing_token):
             return "fencing_mismatch"
+        if int(row["wire_version"]) > int(row["wire_max"]):
+            # 0005 tetikleyicisi güncellemeyi atladı: oturum bu sürümü bildirmiyor.
+            return "wire_isolated"
         return "cancel_requested"
 
     async def _write_outbox_with_sequence(
@@ -769,7 +801,7 @@ class JobStore:
         payload = dict(envelope.payload)
         payload["event_sequence"] = sequence
         stamped = envelope.model_copy(update={"payload": payload})
-        spec_entry = MESSAGE_TYPE_REGISTRY[stamped.message_type]
+        exchange, routing_key = outbox_route(stamped)
         await conn.execute(
             f"INSERT INTO {self._schema}.outbox_events "
             "(outbox_id, message_id, message_type, exchange, routing_key, envelope, created_at) "
@@ -777,8 +809,8 @@ class JobStore:
             uuid.uuid4(),
             uuid.UUID(stamped.message_id),
             stamped.message_type,
-            spec_entry.exchange,
-            spec_entry.routing_key,
+            exchange,
+            routing_key,
             stamped.model_dump_json(exclude_none=True),
             datetime.now(timezone.utc),
         )
@@ -895,7 +927,7 @@ class JobStore:
                     f"    SELECT 1 FROM {self._schema}.cancel_intents x WHERE x.run_id = $1) "
                     "RETURNING job_id, run_id, conversation_id, origin_message_id, "
                     "payload, envelope, queue_class, deadline_at, execution_attempt, "
-                    "fencing_token, accepted_at, started_at",
+                    "fencing_token, accepted_at, started_at, wire_version",
                     uuid.UUID(run_id),
                     worker_id,
                     float(lease_seconds),
@@ -917,6 +949,7 @@ class JobStore:
             accepted_at=row["accepted_at"],
             started_at=row["started_at"],
             recovered=False,
+            wire_version=normalize_wire_version(row["wire_version"]),
         )
 
     async def fail_expired_jobs_beyond_attempts(
@@ -933,14 +966,14 @@ class JobStore:
         VE ``execution_attempt >= max`` VE aktif iptal niyeti YOK (iptal niyeti
         varsa terminal 'cancelled' geçişini B7'nin koşullu UPDATE'i üretir).
         Terminal başarısızlık olayı iş durumuyla AYNI transaction'da outbox'a
-        yazılır (plan B5 kuralı).
+        yazılır (plan B5 kuralı) ve run'ın wire sürümüyle kurulur (K4).
         """
 
         closed: list[str] = []
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 f"SELECT run_id, conversation_id, envelope, origin_message_id, "
-                f"execution_attempt FROM {self._schema}.jobs c "
+                f"execution_attempt, wire_version FROM {self._schema}.jobs c "
                 "WHERE status = $1 AND lease_until IS NOT NULL AND lease_until < now() "
                 "AND execution_attempt >= $2 "
                 "AND NOT EXISTS ("
@@ -980,17 +1013,15 @@ class JobStore:
                         int(max_execution_attempts),
                     )
                     if updated is None:
-                        continue  # eşzamanlı reaper/worker kazandı
-                    envelope = AgentEnvelope(
-                        message_id=str(uuid.uuid4()),
+                        continue  # eşzamanlı reaper/worker kazandı (ya da sürüm izolasyonu)
+                    envelope = compose_run_envelope(
+                        schema_version=normalize_wire_version(row["wire_version"]),
                         message_type="agent.run.failed",
-                        schema_version=SCHEMA_VERSION,
                         run_id=run_id,
                         conversation_id=str(row["conversation_id"]),
                         correlation_id=stored.correlation_id,
                         causation_id=str(row["origin_message_id"]),
                         occurred_at=format_utc(datetime.now(timezone.utc)),
-                        producer=Producer.AGENT_PY,
                         payload={
                             "event_sequence": 0,
                             "execution_attempt": attempt,
@@ -1025,7 +1056,7 @@ class JobStore:
             return await conn.fetchrow(
                 f"SELECT job_id, run_id, conversation_id, origin_message_id, payload_hash, "
                 "status, queue_class, lease_owner, lease_until, execution_attempt, "
-                "fencing_token, result_json, deadline_at, accepted_at, started_at "
+                "fencing_token, result_json, deadline_at, accepted_at, started_at, wire_version "
                 f"FROM {self._schema}.jobs WHERE run_id = $1",
                 uuid.UUID(run_id),
             )

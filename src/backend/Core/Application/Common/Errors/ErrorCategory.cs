@@ -11,5 +11,6 @@ public enum ErrorCategory
     Forbidden = 2,     // 403 — authenticated but not permitted
     NotFound = 3,      // 404 — entity does not exist
     Conflict = 4,      // 409 — state/uniqueness violation
-    Domain = 5         // 400 fallback — generic domain rule violation
+    Domain = 5,        // 400 fallback — generic domain rule violation
+    Unavailable = 6    // 503 — capability temporarily unavailable (feature gate / dependency not ready)
 }

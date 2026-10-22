@@ -19,6 +19,19 @@ B4-B9 bileşenlerinin üretim kompozisyonu (referans: ``tests/e2e/harness.py``
 - **Ortam yükleme:** ``_async_main`` başında ``load_env_file()`` (``env_file``
   modülü) hizmet kökü ``.env``'ini okur; öncelik GERÇEK ORTAM > ``.env`` >
   kod varsayılanıdır (``AGENT_ENV_FILE`` ile açık yol verilebilir).
+- **Profil kaynağı (Who am I, K2/K5):** ``resolve_profile_dir(environ)``
+  (``AGENT_PROFILE_DIR`` mutlak yolu → modül konumundan yukarı yürüyerek
+  ``src/content/author-profile``; cwd KULLANILMAZ) ile canonical dizin çözülür;
+  ``CanonicalProfileRepository`` hem ``deps.profile_knowledge`` (v2 profil RAG,
+  pinlenmiş sürüm) hem legacy ``deps.profile_repository`` (v1 A9 yolu; özet
+  aynı canonical kaynaktan türetilir) olarak bağlanır. Dizin çözülemezse servis
+  makale/genel akışlar için YİNE başlar; profil bağımlılığı her çağrıda
+  ``ProfileSourceError`` (→ ``config_error``) üreten açık bir depoyla
+  değiştirilir — üretimde sahte sağlayıcıya veya kaynaksız modele düşülmez.
+- **Wire sürümleri (K4):** v1 ve v2 execute/control kuyruklarının dördü de
+  tüketilir (``agent.execute.q``, ``agent.execute.v2.q``, ``agent.control.q``,
+  ``agent.control.v2.q``); her tüketici kendi kuyruğunun sürümünü kabul eder.
+  DB havuzu ``agent.worker_wire_max=2`` bildirir (claim izolasyonu, 0005).
 - **Paralel yaşam:** intake tüketimi + worker ``run_forever`` + outbox relay
   döngüsü + control tüketimi + deadline reaper ``asyncio`` görevleriyle
   birlikte çalışır; SIGINT/SIGTERM'de düzgün kapanır (görevler iptal edilip
@@ -56,6 +69,11 @@ from agent_core.adapters.local_embedding import (  # noqa: E402
     LOCAL_EMBEDDING_CONFIG,
     LocalHashingEmbedding,
 )
+from agent_core.profile import (  # noqa: E402
+    CanonicalProfileRepository,
+    ProfileSourceError,
+    resolve_profile_dir,
+)
 from agent_core.qa.retrieval import SnapshotRetriever  # noqa: E402
 
 from .messaging.connection import connect_broker  # noqa: E402
@@ -71,10 +89,23 @@ from .messaging.outbox import OutboxRelay  # noqa: E402
 from .messaging.publisher import BrokerPublisher  # noqa: E402
 from .messaging.reaper import DeadlineReaper  # noqa: E402
 from .messaging.settings import BrokerSettings, from_env as broker_settings_from_env  # noqa: E402
-from .messaging.topology import CONTROL_QUEUE, EXECUTE_QUEUE, declare_topology  # noqa: E402
+from .messaging.contracts import SUPPORTED_SCHEMA_VERSIONS  # noqa: E402
+from .messaging.topology import (  # noqa: E402
+    control_queue_for,
+    declare_topology,
+    execute_queue_for,
+)
 from .messaging.worker import ExecutionDependencies, ExecutionWorker, WorkerSettings  # noqa: E402
 
-__all__ = ["ServiceComponents", "build_components_async", "main", "resolve_model", "run_service"]
+__all__ = [
+    "ServiceComponents",
+    "UnavailableProfileRepository",
+    "build_components_async",
+    "main",
+    "resolve_model",
+    "resolve_profile_repository",
+    "run_service",
+]
 
 logger = logging.getLogger("service_main")
 
@@ -89,6 +120,51 @@ def resolve_model() -> Any:
     # Anahtar yok: mevcut çözümleyici davranışı birebir (anlaşılır config_error
     # üretir; test ortamında test sağlayıcısına izin verir).
     return resolve_model_provider(ProviderSettings())
+
+
+class UnavailableProfileRepository:
+    """Canonical profil kaynağı çözülemediğinde enjekte edilen AÇIK hata deposu.
+
+    Hem ``ProfileKnowledgeRepository`` (``active_snapshot``/``load``) hem legacy
+    ``ProfileRepository`` (``get_profile``) çağrıları her seferinde
+    ``ProfileSourceError`` (``config_error``) yükseltir: profil run'ı anlaşılır
+    failed/config_error ile kapanır; servis makale/genel akışlar için çalışmayı
+    sürdürür. Sahte veri veya kaynaksız model cevabı ÜRETMEZ.
+    """
+
+    is_test_double = False
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def _fail(self) -> ProfileSourceError:
+        return ProfileSourceError(f"canonical profil kaynağı kullanılamıyor: {self.reason}")
+
+    def active_snapshot(self) -> Any:
+        raise self._fail()
+
+    def load(self, snapshot: Any) -> Any:
+        raise self._fail()
+
+    async def get_profile(self) -> Any:
+        raise self._fail()
+
+
+def resolve_profile_repository(environ: dict[str, str] | None = None) -> Any:
+    """Canonical profil deposunu kurar (cwd'den bağımsız yol çözümü).
+
+    Dönüş: ``CanonicalProfileRepository`` veya çözüm başarısızsa
+    ``UnavailableProfileRepository`` (hata loglanır; servis yine başlar). Kaynak
+    içeriğinin (hash/manifest) doğrulaması her okumada depo tarafından yapılır.
+    """
+
+    try:
+        directory = resolve_profile_dir(environ)
+    except ProfileSourceError as error:
+        logger.error("profil kaynağı çözülemedi; profil run'ları config_error üretecek: %s", error.message)
+        return UnavailableProfileRepository(error.message)
+    logger.info("profil kaynağı: canonical dizin bağlandı (%s)", directory.name)
+    return CanonicalProfileRepository(directory)
 
 
 class ServiceComponents:
@@ -109,6 +185,9 @@ class ServiceComponents:
         execute_consumer: Any | None = None,
         control_consumer: Any | None = None,
         content: Any | None = None,
+        intakes: dict[int, IntakeService] | None = None,
+        control_services: dict[int, ControlConsumerService] | None = None,
+        profile_repository: Any | None = None,
     ) -> None:
         self.pool = pool
         self.store = store
@@ -122,6 +201,15 @@ class ServiceComponents:
         self.execute_consumer = execute_consumer
         self.control_consumer = control_consumer
         self.content = content
+        #: Sürüm → execute intake servisi (v1 ``agent.execute.q``, v2 ``agent.execute.v2.q``).
+        self.intakes = intakes if intakes is not None else {1: intake}
+        #: Sürüm → kontrol servisi (v1 ``agent.control.q``, v2 ``agent.control.v2.q``).
+        self.control_services = control_services if control_services is not None else {1: control_service}
+        #: Canonical profil deposu (veya açık hata deposu); worker'a bağlıdır.
+        self.profile_repository = profile_repository
+        #: run_service kurar: sürüm → tüketici.
+        self.execute_consumers: dict[int, Any] = {}
+        self.control_consumers: dict[int, Any] = {}
 
 
 async def build_components_async(
@@ -132,13 +220,15 @@ async def build_components_async(
     pool: Any = None,
     model: Any | None = None,
     content: Any | None = None,
+    profile_repository: Any | None = None,
 ) -> ServiceComponents:
     """Bileşenleri kurar; havuz verilmediyse açar (async kompozisyon).
 
     Relay publisher'ı broker bağlantısı gerektirdiğinden ``run_service``
     kurar; burada bileşen yalnız DB köklü olanlar kurulur. ``content``
     verilmezse ``AGENT_CONTENT_BASE_URL`` doluysa HTTP içerik deposu bağlanır,
-    boşsa depo bağlı kalmaz (MEVCUT davranış).
+    boşsa depo bağlı kalmaz (MEVCUT davranış). ``profile_repository``
+    verilmezse ``resolve_profile_repository(env)`` canonical depoyu kurar.
     """
 
     env = os.environ if environ is None else environ
@@ -163,8 +253,17 @@ async def build_components_async(
             model_config=LOCAL_EMBEDDING_CONFIG,
         )
         logger.info("içerik deposu: HTTP iç uç (AGENT_CONTENT_BASE_URL dolu) + yerel bölüm araması")
+    # Who am I: tek canonical kaynak hem v2 profil RAG'ine (pinlenmiş sürüm) hem
+    # legacy A9 profil yoluna (özet aynı kaynaktan türetilir) bağlanır.
+    resolved_profile = (
+        profile_repository if profile_repository is not None else resolve_profile_repository(dict(env))
+    )
     deps = ExecutionDependencies(
-        model=resolved_model, content=resolved_content, retriever=resolved_retriever
+        model=resolved_model,
+        content=resolved_content,
+        retriever=resolved_retriever,
+        profile_knowledge=resolved_profile,
+        profile_repository=resolved_profile,
     )
 
     worker_settings = WorkerSettings(
@@ -183,14 +282,23 @@ async def build_components_async(
         publisher=event_publisher,
         control_store=control_store,
     )
-    intake = IntakeService(store)
+    # Sürüm başına intake/kontrol servisi: her kuyruk yalnız kendi sürümünü kabul
+    # eder; aynı consumer_name (inbox idempotency) ve aynı depolar paylaşılır.
+    intakes = {
+        version: IntakeService(store, accepted_versions=(version,)) for version in SUPPORTED_SCHEMA_VERSIONS
+    }
+    intake = intakes[1]
     driver = CollaborationResumeDriver(
         worker,
         store,
         worker_id=worker_settings.worker_id,
         lease_seconds=worker_settings.lease_seconds,
     )
-    control_service = ControlConsumerService(control_store, resume_driver=driver)
+    control_services = {
+        version: ControlConsumerService(control_store, resume_driver=driver, accepted_versions=(version,))
+        for version in SUPPORTED_SCHEMA_VERSIONS
+    }
+    control_service = control_services[1]
     reaper = DeadlineReaper(control_store, interval_seconds=env_float("AGENT_REAPER_INTERVAL", 30.0))
 
     return ServiceComponents(
@@ -203,6 +311,9 @@ async def build_components_async(
         reaper=reaper,
         broker=broker,
         content=resolved_content,
+        intakes=intakes,
+        control_services=control_services,
+        profile_repository=resolved_profile,
     )
 
 
@@ -254,14 +365,31 @@ async def run_service(
     await relay_publisher.start()
     components.relay = OutboxRelay(components.store, relay_publisher)
 
-    execute_consumer = BrokerConsumer(
-        execute_conn, EXECUTE_QUEUE, components.intake.handle_delivery, components.broker
-    )
-    control_consumer = BrokerConsumer(
-        control_conn, CONTROL_QUEUE, components.control_service.handle_delivery, components.broker
-    )
-    components.execute_consumer = execute_consumer
-    components.control_consumer = control_consumer
+    # v1 + v2 kuyrukları (K4): yeni worker dördünü de tüketir; v2 kuyruklarında
+    # tüketici varlığı backend'in üretici bariyerinin (readiness) ön koşuludur.
+    execute_consumers = {
+        version: BrokerConsumer(
+            execute_conn,
+            execute_queue_for(version),
+            components.intakes[version].handle_delivery,
+            components.broker,
+        )
+        for version in sorted(components.intakes)
+    }
+    control_consumers = {
+        version: BrokerConsumer(
+            control_conn,
+            control_queue_for(version),
+            components.control_services[version].handle_delivery,
+            components.broker,
+        )
+        for version in sorted(components.control_services)
+    }
+    components.execute_consumers = execute_consumers
+    components.control_consumers = control_consumers
+    components.execute_consumer = execute_consumers.get(1)
+    components.control_consumer = control_consumers.get(1)
+    all_consumers = [*execute_consumers.values(), *control_consumers.values()]
 
     relay_interval = env_float("AGENT_RELAY_INTERVAL", 0.2)
 
@@ -281,19 +409,22 @@ async def run_service(
         asyncio.create_task(_relay_loop(), name="outbox-relay"),
         asyncio.create_task(components.reaper.run_forever(stop=stop), name="deadline-reaper"),
     ]
-    consumers_started = False
+    started: list[Any] = []
     try:
-        await execute_consumer.start()
-        await control_consumer.start()
-        consumers_started = True
-        logger.info("servis canlı: execute+control tüketimi, worker, relay, reaper")
+        for consumer in all_consumers:
+            await consumer.start()
+            started.append(consumer)
+        logger.info(
+            "servis canlı: execute(v%s)+control(v%s) tüketimi, worker, relay, reaper",
+            "/v".join(str(v) for v in sorted(execute_consumers)),
+            "/v".join(str(v) for v in sorted(control_consumers)),
+        )
         await stop.wait()
     finally:
         stop.set()
-        if consumers_started:
+        for consumer in started:
             try:
-                await execute_consumer.stop()
-                await control_consumer.stop()
+                await consumer.stop()
             except Exception:
                 logger.exception("consumer kapanışı başarısız")
         for task in tasks:

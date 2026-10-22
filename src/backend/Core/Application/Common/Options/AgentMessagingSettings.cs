@@ -8,9 +8,6 @@ public sealed class AgentMessagingSettings
 {
     public const string SectionName = "AgentMessaging";
 
-    /// <summary>Kabul edilen tek sözleşme major sürümü (envelope.schema_version).</summary>
-    public int SchemaVersion { get; set; } = 1;
-
     /// <summary>Komut/olay gövdesi üst sınırı; plan B1 ve B0 K7 kararı: 256 KiB.</summary>
     public int MaxPayloadBytes { get; set; } = 262_144;
 

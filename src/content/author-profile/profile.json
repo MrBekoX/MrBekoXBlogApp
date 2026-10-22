@@ -1,0 +1,1426 @@
+{
+  "schema": "author-profile/1",
+  "profile_id": "berkay-kaplan",
+  "language": "tr",
+  "owner": {
+    "name": "Berkay Kaplan",
+    "aliases": [
+      "Berkay Kaplan",
+      "Berkay",
+      "MrBekoX",
+      "mrbekox",
+      "Beko",
+      "blog sahibi",
+      "blog yazarı",
+      "yazar",
+      "blog owner",
+      "the author",
+      "author"
+    ]
+  },
+  "privacy": {
+    "undisclosed_topics": [
+      "current_employer",
+      "client_projects",
+      "job_applications",
+      "personal_contact_details"
+    ],
+    "unknown_fields": [
+      "age",
+      "birth_date",
+      "salary",
+      "marital_status",
+      "total_years_experience",
+      "rates",
+      "availability"
+    ],
+    "contact_channels": [
+      {
+        "kind": "website",
+        "label": "Web sitesi",
+        "url": "https://mrbekox.dev"
+      },
+      {
+        "kind": "github",
+        "label": "GitHub",
+        "url": "https://github.com/MrBekoX"
+      },
+      {
+        "kind": "linkedin",
+        "label": "LinkedIn",
+        "url": "https://www.linkedin.com/in/berkay-kaplan-133b35245/"
+      },
+      {
+        "kind": "x",
+        "label": "X (@mrbeko_)",
+        "url": "https://x.com/mrbeko_"
+      }
+    ]
+  },
+  "sections": [
+    {
+      "section_id": "overview",
+      "anchor": "overview",
+      "kind": "bio",
+      "heading_path": [
+        "Kısaca"
+      ],
+      "title": {
+        "tr": "Kısaca",
+        "en": "Overview"
+      },
+      "aliases": {
+        "tr": [
+          "kimdir",
+          "kim",
+          "tanıt",
+          "tanıtım",
+          "hakkında",
+          "özet",
+          "nerede yaşıyor",
+          "istanbul",
+          "ne iş yapıyor",
+          "meslek",
+          "odak"
+        ],
+        "en": [
+          "who is",
+          "who",
+          "about",
+          "introduce",
+          "introduction",
+          "summary",
+          "bio",
+          "biography",
+          "where does he live",
+          "lives",
+          "istanbul",
+          "what does he do",
+          "profession",
+          "focus",
+          "background"
+        ]
+      },
+      "body": "Ben Berkay Kaplan (çevrimiçi adım MrBekoX). İstanbul'da yaşıyorum. Backend ağırlıklı çalışan bir yazılım geliştiriciyim; ana ekosistemim .NET ve C#. Clean/Onion Architecture ve CQRS ile REST servisleri yazıyorum, arayüz tarafında Next.js ve React Native kullanıyorum. Son dönemde iki şeye odaklanıyorum: RAG tabanlı yapay zekâ ajanlarını gerçek backend mimarilerine bağlamak ve Claude Code gibi ajan odaklı araçların etrafında düzenli bir yazılım geliştirme süreci kurmak. Bir yandan yazılım eğitmenliği yapıyorum.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          4,
+          4
+        ]
+      }
+    },
+    {
+      "section_id": "education",
+      "anchor": "education",
+      "kind": "bio",
+      "heading_path": [
+        "Eğitim ve kariyer yolum",
+        "Eğitim"
+      ],
+      "title": {
+        "tr": "Eğitim",
+        "en": "Education"
+      },
+      "aliases": {
+        "tr": [
+          "eğitim",
+          "üniversite",
+          "okul",
+          "okudu",
+          "mezun",
+          "mezuniyet",
+          "lisans",
+          "bölüm",
+          "bilgisayar mühendisliği",
+          "malatya",
+          "turgut özal"
+        ],
+        "en": [
+          "education",
+          "university",
+          "college",
+          "school",
+          "studied",
+          "study",
+          "degree",
+          "graduate",
+          "graduated",
+          "bachelor",
+          "major",
+          "computer engineering"
+        ]
+      },
+      "body": "- **Eğitim:** Malatya Turgut Özal Üniversitesi, Bilgisayar Mühendisliği (2020–2024).",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "historical",
+        "date_precision": "year"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          7,
+          7
+        ]
+      }
+    },
+    {
+      "section_id": "internships",
+      "anchor": "internships",
+      "kind": "bio",
+      "heading_path": [
+        "Eğitim ve kariyer yolum",
+        "Staj"
+      ],
+      "title": {
+        "tr": "Staj",
+        "en": "Internships"
+      },
+      "aliases": {
+        "tr": [
+          "staj",
+          "stajyer",
+          "stajlar",
+          "eksra",
+          "gaziantep",
+          "akıllı kent",
+          "django",
+          "iot",
+          "arduino",
+          "deneyim",
+          "kariyer"
+        ],
+        "en": [
+          "internship",
+          "internships",
+          "intern",
+          "work experience",
+          "experience",
+          "career",
+          "django",
+          "iot",
+          "arduino"
+        ]
+      },
+      "body": "- **Staj, Eksra A.Ş.:** Arduino tabanlı IoT projeleri ve algoritma geliştirme. Donanım ve yazılımı birlikte çalıştırmayı burada öğrendim.\n- **Staj, Gaziantep Bilişim ve Akıllı Kent Teknolojileri A.Ş. (2023):** Django ile kullanıcı ve içerik yönetimli bir blog platformu yazdım. Arayüzü HTML, CSS ve JavaScript ile, veritabanı işlemlerini SQLAlchemy ile yaptım.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "historical",
+        "date_precision": "year"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          8,
+          9
+        ]
+      }
+    },
+    {
+      "section_id": "teaching",
+      "anchor": "teaching",
+      "kind": "bio",
+      "heading_path": [
+        "Eğitim ve kariyer yolum",
+        "Yazılım eğitmenliği"
+      ],
+      "title": {
+        "tr": "Yazılım eğitmenliği",
+        "en": "Teaching and mentoring"
+      },
+      "aliases": {
+        "tr": [
+          "eğitmen",
+          "eğitmenlik",
+          "öğretmen",
+          "öğretmenlik",
+          "ders",
+          "dersler",
+          "eğitim veriyor",
+          "mentor",
+          "mentorluk",
+          "techcareer",
+          "yetgim",
+          "acunmedya",
+          "deneyim",
+          "kariyer"
+        ],
+        "en": [
+          "teaching",
+          "teacher",
+          "teach",
+          "teaches",
+          "instructor",
+          "trainer",
+          "training",
+          "lecturer",
+          "courses",
+          "classes",
+          "mentor",
+          "mentoring",
+          "experience",
+          "career"
+        ]
+      },
+      "body": "- **Yazılım eğitmenliği (2024'ten beri):** Techcareer'de C#, Python, veri bilimi ve backend dersleri veriyorum. YETGIM ve AcunMedya Akademi'de de eğitim ve mentorluk yaptım. Algoritma, nesne yönelimli programlama (OOP) ve yazılım geliştirme prensiplerini kapsayan uygulamalı materyaller hazırlıyorum. Dersleri To-Do uygulaması, ürün yönetim sistemi gibi gerçek hayat senaryoları üzerinden işliyorum.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source",
+        "date_precision": "year"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          10,
+          10
+        ]
+      }
+    },
+    {
+      "section_id": "skills",
+      "anchor": "skills",
+      "kind": "bio",
+      "heading_path": [
+        "Teknik yetkinliklerim"
+      ],
+      "title": {
+        "tr": "Teknik yetkinliklerim",
+        "en": "Technical skills"
+      },
+      "aliases": {
+        "tr": [
+          "yetkinlik",
+          "teknoloji",
+          "teknolojiler",
+          "diller",
+          "programlama dili",
+          "backend",
+          "frontend",
+          "mobil",
+          "veritabanı",
+          "önbellek",
+          "bulut",
+          "devops",
+          "güvenlik",
+          "gözlemlenebilirlik",
+          "yapay zeka",
+          "stack",
+          "biliyor",
+          "kullanıyor"
+        ],
+        "en": [
+          "skills",
+          "skill",
+          "technologies",
+          "tech stack",
+          "stack",
+          "languages",
+          "programming languages",
+          "backend",
+          "frontend",
+          "mobile",
+          "database",
+          "cache",
+          "cloud",
+          "devops",
+          "security",
+          "observability",
+          "ai",
+          "knows",
+          "uses",
+          "expertise"
+        ]
+      },
+      "body": "- **Diller:** C#, TypeScript, Python, JavaScript\n- **Backend:** ASP.NET Core, FastAPI, Node.js (NestJS'i de inceledim)\n- **Frontend ve mobil:** Next.js, React, React Native (Expo)\n- **Veritabanı ve önbellek:** PostgreSQL, SQL Server, SQLite, Redis, Supabase\n- **Mimari:** Clean/Onion Architecture, N-Tier, CQRS (MediatR), Repository ve Unit of Work, Options Pattern, Result Pattern, Outbox Pattern\n- **Bulut ve DevOps:** Docker, Docker Compose, AWS EC2, Git\n- **API ve güvenlik:** REST, JWT kimlik doğrulama ve yetkilendirme, RBAC, CORS, rate limiting, Row Level Security\n- **Gözlemlenebilirlik:** Serilog, OpenTelemetry\n- **Yapay zekâ:** RAG, LangGraph, LangChain, Model Context Protocol (MCP), ChromaDB, Ollama, RabbitMQ ile olay tabanlı ajan servisleri",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          13,
+          21
+        ]
+      }
+    },
+    {
+      "section_id": "project-mrbekox-dev",
+      "anchor": "project-mrbekox-dev",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "mrbekox.dev (bu blog)"
+      ],
+      "title": {
+        "tr": "mrbekox.dev (bu blog)",
+        "en": "mrbekox.dev (this blog)"
+      },
+      "aliases": {
+        "tr": [
+          "bu blog",
+          "blog",
+          "mrbekox.dev",
+          "site",
+          "proje",
+          "projeler",
+          "dağıtım",
+          "aws",
+          "yayında"
+        ],
+        "en": [
+          "this blog",
+          "blog",
+          "website",
+          "site",
+          "project",
+          "projects",
+          "deployment",
+          "deployed",
+          "aws"
+        ]
+      },
+      "body": "- **mrbekox.dev (bu blog):** .NET 10 ve Clean Architecture ile yazılmış API, Next.js 16 arayüzü. JWT kimlik doğrulama, Redis önbellek ve SignalR ile gerçek zamanlı özellikler var. Docker ile paketlenip AWS EC2 üzerinde, HTTPS ve yük dengeleyici arkasında yayında. Yanında Python FastAPI ve LangGraph tabanlı bir yapay zekâ ajan servisi çalışıyor (aşağıda anlattım).",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source",
+        "status": "published"
+      },
+      "notes": [
+        "Bu bölüm Berkay'ın 21 Ekim 2026 tarihli profil beyanıdır. Bu deponun incelenen sürümünde ajan servisi FastAPI uygulaması değil, RabbitMQ üzerinden çalışan bir Python worker sürecidir; LangGraph kullanılır. Canlı dağıtımın mimarisi bu kaynakla bağımsız olarak doğrulanmamıştır."
+      ],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          24,
+          24
+        ]
+      }
+    },
+    {
+      "section_id": "project-auth-token-server",
+      "anchor": "project-auth-token-server",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Auth Token Server"
+      ],
+      "title": {
+        "tr": "Auth Token Server",
+        "en": "Auth Token Server"
+      },
+      "aliases": {
+        "tr": [
+          "auth token server",
+          "kimlik doğrulama",
+          "yetkilendirme",
+          "identity",
+          "jwt",
+          "proje",
+          "projeler"
+        ],
+        "en": [
+          "auth token server",
+          "authentication",
+          "authorization",
+          "identity server",
+          "jwt",
+          "project",
+          "projects"
+        ]
+      },
+      "body": "- **Auth Token Server:** ASP.NET Core ve Microsoft Identity ile yazdığım, N-Tier mimarili merkezi kimlik doğrulama ve yetkilendirme servisi. Kullanıcı yönetimi, parola işlemleri, JWT üretimi ve rol bazlı erişim kontrolü sunuyor. Swagger/OpenAPI ile dokümante, birden fazla .NET uygulamasında yeniden kullanılacak şekilde tasarlandı.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source",
+        "status": "published"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          25,
+          25
+        ]
+      }
+    },
+    {
+      "section_id": "project-vibeo",
+      "anchor": "project-vibeo",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Vibeo"
+      ],
+      "title": {
+        "tr": "Vibeo",
+        "en": "Vibeo"
+      },
+      "aliases": {
+        "tr": [
+          "vibeo",
+          "ruh hali",
+          "duygu durumu",
+          "mood",
+          "proje",
+          "projeler",
+          "mobil uygulama",
+          "gdpr",
+          "gizlilik"
+        ],
+        "en": [
+          "vibeo",
+          "mood tracking",
+          "mood tracker",
+          "mood",
+          "project",
+          "projects",
+          "mobile app",
+          "gdpr",
+          "privacy"
+        ]
+      },
+      "body": "- **Vibeo:** React Native (Expo) ile yazdığım yapay zekâ destekli ruh hali takip uygulaması. Backend'de Supabase var; Row Level Security ve Vault kullanıyor. Biyometrik kimlik doğrulama ve çevrimdışı öncelikli mimarisi var. Cihaz üstünde çalışan bir içgörü motoru ile sunucu tarafında RAG tabanlı bir ajanı birleştiren hibrit bir yapı kurdum. Hassas notları LLM'e göndermemek için kriz ifadelerini yakalayan ayrı bir kontrol katmanı koydum. Gizlilik tarafında GDPR'ı baştan tasarıma dahil ettim. Abonelikler RevenueCat ile yönetiliyor.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source",
+        "status": "published"
+      },
+      "notes": [
+        "GDPR bu projede tasarıma baştan dahil edilen bir gizlilik yaklaşımı olarak beyan edilmiştir; kaynakta bağımsız uyumluluk denetimi veya sertifikasyon bilgisi yoktur."
+      ],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          26,
+          26
+        ]
+      }
+    },
+    {
+      "section_id": "project-emojify",
+      "anchor": "project-emojify",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Emojify"
+      ],
+      "title": {
+        "tr": "Emojify",
+        "en": "Emojify"
+      },
+      "aliases": {
+        "tr": [
+          "emojify",
+          "emoji",
+          "gif",
+          "proje",
+          "projeler",
+          "mobil uygulama"
+        ],
+        "en": [
+          "emojify",
+          "emoji",
+          "gif",
+          "project",
+          "projects",
+          "mobile app"
+        ]
+      },
+      "body": "- **Emojify:** Kullanıcıların özel emoji ve GIF üretip paylaştığı mobil uygulama. React Native, Skia ve FFmpeg ile yazdım, satın alma altyapısı RevenueCat.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source",
+        "status": "published"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          27,
+          27
+        ]
+      }
+    },
+    {
+      "section_id": "project-adhan-time",
+      "anchor": "project-adhan-time",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Adhan Time"
+      ],
+      "title": {
+        "tr": "Adhan Time",
+        "en": "Adhan Time"
+      },
+      "aliases": {
+        "tr": [
+          "adhan time",
+          "ezan",
+          "namaz vakti",
+          "namaz",
+          "kıble",
+          "pusula",
+          "bildirim",
+          "proje",
+          "projeler",
+          "mobil uygulama"
+        ],
+        "en": [
+          "adhan time",
+          "adhan",
+          "prayer times",
+          "prayer",
+          "qibla",
+          "compass",
+          "notifications",
+          "project",
+          "projects",
+          "mobile app"
+        ]
+      },
+      "body": "- **Adhan Time:** Seçilen şehre göre namaz vakti bildirimi gönderen, kıble pusulası da olan mobil uygulama. Bildirimleri Supabase (Postgres, Edge Functions, pg_cron) ve Expo Push ile sunucu tarafından gönderiyorum, çünkü yerel bildirimler iOS ve Android pil kısıtlarında güvenilir değil. Kıble pusulasındaki titreme ve donma sorununu sensör verisi ve filtreleme tarafında inceledim.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source",
+        "status": "published"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          28,
+          28
+        ]
+      }
+    },
+    {
+      "section_id": "project-urban-sound",
+      "anchor": "project-urban-sound",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Kentsel Ses Sınıflandırma"
+      ],
+      "title": {
+        "tr": "Kentsel Ses Sınıflandırma",
+        "en": "Urban sound classification"
+      },
+      "aliases": {
+        "tr": [
+          "kentsel ses",
+          "ses sınıflandırma",
+          "urbansound8k",
+          "derin öğrenme",
+          "cnn",
+          "lstm",
+          "proje",
+          "projeler"
+        ],
+        "en": [
+          "urban sound",
+          "sound classification",
+          "audio classification",
+          "urbansound8k",
+          "deep learning",
+          "cnn",
+          "lstm",
+          "project",
+          "projects"
+        ]
+      },
+      "body": "- **Kentsel Ses Sınıflandırma:** UrbanSound8K veri setiyle derin öğrenme modeli. CNN ve LSTM mimarilerini karşılaştırdım.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "historical"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          29,
+          29
+        ]
+      }
+    },
+    {
+      "section_id": "projects-in-development",
+      "anchor": "projects-in-development",
+      "kind": "project",
+      "heading_path": [
+        "Projelerim",
+        "Geliştirme aşamasındakiler"
+      ],
+      "title": {
+        "tr": "Geliştirme aşamasındakiler",
+        "en": "Projects in development"
+      },
+      "aliases": {
+        "tr": [
+          "geliştirme aşamasında",
+          "sınav arkadaşım",
+          "yks",
+          "futbol",
+          "bilgi yarışması",
+          "now-coffe",
+          "now coffe",
+          "kafe",
+          "planlıyor",
+          "proje",
+          "projeler"
+        ],
+        "en": [
+          "in development",
+          "upcoming",
+          "planned",
+          "sinav arkadasim",
+          "exam",
+          "football",
+          "quiz",
+          "trivia",
+          "now-coffe",
+          "now coffee",
+          "cafe",
+          "project",
+          "projects"
+        ]
+      },
+      "body": "- **Geliştirme aşamasındakiler:** \"Sınav Arkadaşım\" (YKS öğrencileri için çalışma uygulaması, React Native ve Supabase), bir futbol bilgi yarışması oyunu ve kafelerdeki anlık yoğunluk, gürültü, priz durumu gibi bilgileri gösteren \"now-coffe\" (Onion Architecture ile kendi .NET backend'ini yazmayı planlıyorum).",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source",
+        "status": "in_development"
+      },
+      "notes": [
+        "Bu projeler kaynak tarihinde geliştirme aşamasındadır; now-coffe için .NET backend'i planlanan bir çalışmadır. Yayınlanmış ürün olarak beyan edilmemiştir."
+      ],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "section_id": "ai-blog-agent",
+      "anchor": "ai-blog-agent",
+      "kind": "ai_work",
+      "heading_path": [
+        "Yapay zekâ ve ajan çalışmalarım",
+        "Blogdaki ajan"
+      ],
+      "title": {
+        "tr": "Blogdaki ajan",
+        "en": "The blog's AI agent"
+      },
+      "aliases": {
+        "tr": [
+          "blog ajanı",
+          "ajan",
+          "yapay zeka ajanı",
+          "rag",
+          "makale",
+          "modelprovider",
+          "rabbitmq",
+          "mimari",
+          "nasıl çalışıyor"
+        ],
+        "en": [
+          "blog agent",
+          "agent",
+          "ai agent",
+          "rag",
+          "articles",
+          "model provider",
+          "rabbitmq",
+          "architecture",
+          "how does it work"
+        ]
+      },
+      "body": "**Blogdaki ajan.** Okuyucuların makaleler hakkında konuşabildiği bir yapay zekâ ajanı yazdım. Zorluğa göre yol seçiyor: basit sorularda doğrudan cevap, makaleye dayalı sorularda RAG, çok adımlı sorularda ajan tabanlı akış. Servis Python, FastAPI ve LangGraph ile yazıldı, RabbitMQ ile .NET backend'e bağlanıyor, vektör arama için ChromaDB kullanıyor. LLM erişimi bir `ModelProvider` arayüzünün arkasında; yani sağlayıcıyı (yerel Ollama, OpenAI uyumlu uçlar) kodu değiştirmeden yapılandırmayla değiştirebiliyorum. SSRF koruması, bütçe sınırlayıcı ve olay tekrarına karşı idempotency gibi üretim konularına da ayrıca emek verdim.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [
+        "Bu bölüm Berkay'ın 21 Ekim 2026 tarihli profil beyanıdır. Bu deponun incelenen sürümünde ajan servisi FastAPI değil RabbitMQ worker süreci olarak çalışır; makale retrieval'ı bellek içi indeks ve yerel lexical/hash tabanlı arama kullanır, ChromaDB bağlı değildir. Canlı dağıtımın mimarisi bu kaynakla bağımsız olarak doğrulanmamıştır."
+      ],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          33,
+          33
+        ]
+      }
+    },
+    {
+      "section_id": "ai-agentic-sdlc",
+      "anchor": "ai-agentic-sdlc",
+      "kind": "ai_work",
+      "heading_path": [
+        "Yapay zekâ ve ajan çalışmalarım",
+        "agentic-sdlc"
+      ],
+      "title": {
+        "tr": "agentic-sdlc",
+        "en": "agentic-sdlc"
+      },
+      "aliases": {
+        "tr": [
+          "agentic-sdlc",
+          "agentic sdlc",
+          "skill kütüphanesi",
+          "skill",
+          "claude code",
+          "codex",
+          "sürüm",
+          "release",
+          "lisans",
+          "açık kaynak"
+        ],
+        "en": [
+          "agentic-sdlc",
+          "agentic sdlc",
+          "skill library",
+          "skills",
+          "claude code",
+          "codex",
+          "version",
+          "release",
+          "license",
+          "open source"
+        ]
+      },
+      "body": "**agentic-sdlc.** Claude Code ve Codex için, spesifikasyondan commit'e uzanan geliştirme sürecini disipline eden bir skill kütüphanesi. Fikir şu: yapay zekâ ajanları hızlı kod yazar ama \"önce bağlamı oku, önce spesifikasyonu yaz, iddia etmeden önce test et\" gibi disiplini kendiliğinden uygulamazlar. Bu disiplini prosedür dokümanı olarak değil, sürümlenebilir ve test edilebilir bir bileşen olarak kurguladım. Bir yönlendirici işe yetecek en küçük beceriyi seçiyor, yalnızca uçtan uca işlerde tam süreç orkestratörüne çıkıyor. Güvenlik tarafında komut seviyesindeki hook'un tek başına yetmediğini görüp git hook'ları ve iş bitince diski tarayan ikinci bir kontrol ekledim. Proje MIT lisanslı ve GitHub'da herkese açık (MrBekoX/agentic-sdlc), şu an 0.6.0 sürümünde. Claude Code ve Codex için tam çalışma zamanı koruma adaptörleri var; Kimi Code, ZCode ve Grok CLI adaptörleri deneysel. Barındırılan bir servis değil, yerel bir geliştirme eklentisi. Resmi bir GitHub release'i henüz yayınlamadım.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "dated_snapshot",
+        "status": "published"
+      },
+      "notes": [
+        "Sürüm (0.6.0), release ve adaptör durumu 21 Ekim 2026 tarihli beyandır; güncel GitHub durumu bu kaynakla doğrulanmamıştır."
+      ],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          35,
+          35
+        ]
+      }
+    },
+    {
+      "section_id": "ai-root-agent",
+      "anchor": "ai-root-agent",
+      "kind": "ai_work",
+      "heading_path": [
+        "Yapay zekâ ve ajan çalışmalarım",
+        "Root Agent"
+      ],
+      "title": {
+        "tr": "Root Agent",
+        "en": "Root Agent"
+      },
+      "aliases": {
+        "tr": [
+          "root agent",
+          "grok",
+          "grok bot",
+          "koordinatör ajan",
+          "lead bot",
+          "skill",
+          "test",
+          "canlı test",
+          "sürüm"
+        ],
+        "en": [
+          "root agent",
+          "grok",
+          "grok bot",
+          "coordinator agent",
+          "lead bot",
+          "skills",
+          "tests",
+          "live tests",
+          "version"
+        ]
+      },
+      "body": "**Root Agent.** Grok Bot için yazdığım koordinatör ajan çerçevesi (MrBekoX/root-agent-skill-framework, MIT lisanslı, sürüm 0.3.2). Root Agent isteği netleştiriyor, işin gerektirdiği Bot ekibini kuruyor, günlük yönetimi Lead Bot'lara devrediyor, teslimatı doğrulayıp sonucu raporluyor; uzmanlık işini kendisi yapmıyor. 18 Root skill'i ve 2 isteğe bağlı Lead skill'i var. Bu bir kod projesi değil, prompt ve skill mühendisliği projesi. README'de de belirttiğim gibi canlı Grok Bot davranış senaryoları henüz koşulmadı, yalnızca yerel doğrulama araçları test edildi.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "dated_snapshot",
+        "status": "published"
+      },
+      "notes": [
+        "Sürüm (0.3.2) ve test durumu 21 Ekim 2026 tarihli beyandır: yalnızca yerel doğrulama araçları test edilmiş, canlı Grok Bot davranış senaryoları koşulmamıştır."
+      ],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          37,
+          37
+        ]
+      }
+    },
+    {
+      "section_id": "ai-daily-usage",
+      "anchor": "ai-daily-usage",
+      "kind": "ai_work",
+      "heading_path": [
+        "Yapay zekâ ve ajan çalışmalarım",
+        "Günlük kullanım"
+      ],
+      "title": {
+        "tr": "Günlük kullanım",
+        "en": "Daily AI tooling"
+      },
+      "aliases": {
+        "tr": [
+          "claude code",
+          "codex",
+          "claude.md",
+          "günlük kullanım",
+          "context7",
+          "playwright",
+          "mcp",
+          "nasıl kullanıyor",
+          "kişisel ajan"
+        ],
+        "en": [
+          "claude code",
+          "codex",
+          "claude.md",
+          "daily usage",
+          "workflow",
+          "context7",
+          "playwright",
+          "mcp",
+          "how does he use",
+          "personal agent"
+        ]
+      },
+      "body": "**Günlük kullanım.** Claude Code ve Codex'i geliştirme sürecimin aktif parçası olarak kullanıyorum. Proje hafızasını `CLAUDE.md`, modüler kural dosyaları, skill'ler, slash komutları ve görev dosyalarıyla (backlog, active, done, lessons) yönetiyorum. Güncel kütüphane dokümanı için Context7, tarayıcı testleri için Playwright MCP kullanıyorum. Kendi sunucuma kurduğum kişisel bir ajanı da deniyorum.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          39,
+          39
+        ]
+      }
+    },
+    {
+      "section_id": "oss-xerj",
+      "anchor": "oss-xerj",
+      "kind": "oss",
+      "heading_path": [
+        "Açık kaynak katkım: XERJ Corpus Hub"
+      ],
+      "title": {
+        "tr": "Açık kaynak katkım: XERJ Corpus Hub",
+        "en": "Open source contribution: XERJ Corpus Hub"
+      },
+      "aliases": {
+        "tr": [
+          "xerj",
+          "corpus hub",
+          "açık kaynak",
+          "katkı",
+          "katkıcı",
+          "kurulum",
+          "kurabilir miyim",
+          "lisans incelemesi"
+        ],
+        "en": [
+          "xerj",
+          "corpus hub",
+          "open source",
+          "contribution",
+          "contributor",
+          "install",
+          "can i install",
+          "license review"
+        ]
+      },
+      "body": "XERJ, yapay zekâ kodlama ajanlarının kod yazmadan önce arayıp çalışan örnek olarak getirebildiği açık bir referans hafıza. Her örnek yazarı ve deposuyla birlikte gösteriliyor. Blogumun deposu (MrBekoX/MrBekoXBlogApp) bu hafızaya alınmak üzere seçildi; 15 Ekim 2026'da buna izin verdim ve o tarihten beri Corpus Hub'da katkıcı olarak listeleniyorum. Eser kendi lisansı ve atıfla duruyor. Seçilen commit, token streaming ve gerçek ortam entegrasyonlarını kapsıyor (Python ve C#). Lisans incelemesi sürdüğü için henüz XERJ komutlarıyla kurulabilir değil. Profilim: https://hub.xerj.org/contributors/MrBekoX",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "dated_snapshot",
+        "date_precision": "day"
+      },
+      "notes": [
+        "Seçilme, izin (15 Ekim 2026) ve lisans incelemesi durumu 21 Ekim 2026 tarihli beyandır; bu kaynakta güncel kurulabilirlik doğrulanmamıştır."
+      ],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          42,
+          42
+        ]
+      }
+    },
+    {
+      "section_id": "architecture",
+      "anchor": "architecture",
+      "kind": "bio",
+      "heading_path": [
+        "Mimari konusundaki yaklaşımım"
+      ],
+      "title": {
+        "tr": "Mimari konusundaki yaklaşımım",
+        "en": "Architectural approach"
+      },
+      "aliases": {
+        "tr": [
+          "mimari",
+          "yaklaşım",
+          "onion",
+          "clean architecture",
+          "cqrs",
+          "mediatr",
+          "repository",
+          "persistence",
+          "infrastructure",
+          "result pattern",
+          "modüler monolit",
+          "mikroservis"
+        ],
+        "en": [
+          "architecture",
+          "architectural approach",
+          "approach",
+          "onion",
+          "clean architecture",
+          "cqrs",
+          "mediatr",
+          "repository",
+          "persistence",
+          "infrastructure",
+          "result pattern",
+          "modular monolith",
+          "microservices"
+        ]
+      },
+      "body": "- Onion Architecture'da beş proje kullanırım: Domain, Application, Persistence (EF Core, DbContext, migration), Infrastructure (Redis, SMTP, dış API'ler, arka plan işleri) ve API. Persistence ile Infrastructure'ı bilerek ayırırım.\n- Repository arayüzleri Application katmanında durur. Domain, verinin nasıl saklandığından habersiz kalır.\n- Application katmanını özellik bazlı klasörlerim: her özelliğin altında Commands ve Queries, doğrulayıcılar komutun yanında.\n- CQRS için MediatR kullanırım; doğrulama, loglama ve performans ölçümü pipeline behavior olarak eklenir.\n- Hata akışında Result Pattern, paralel işlemlerde kilit ve benzersiz indeks gibi eşzamanlılık önlemleri, zamanda `TimeProvider`, para hesaplarında `decimal` kullanırım.\n- Mimariyi gereğinden büyütmem. İki kişilik bir ekipte mikroservis yerine modüler monolit mantıklıdır.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "section_id": "blog-topics",
+      "anchor": "blog-topics",
+      "kind": "bio",
+      "heading_path": [
+        "Blogda ne yazıyorum"
+      ],
+      "title": {
+        "tr": "Blogda ne yazıyorum",
+        "en": "What he writes about"
+      },
+      "aliases": {
+        "tr": [
+          "blog",
+          "yazılar",
+          "yazıyor",
+          "konular",
+          "makaleler",
+          "ne yazıyor",
+          "context engineering",
+          "bağlam mühendisliği"
+        ],
+        "en": [
+          "blog",
+          "posts",
+          "writes",
+          "writing",
+          "topics",
+          "articles",
+          "what does he write",
+          "context engineering"
+        ]
+      },
+      "body": ".NET, Onion/Clean Architecture, CQRS, Claude Code, Context Engineering ve yapay zekâ ajanları üzerine Türkçe teknik yazılar yazıyorum. Örneğin Onion Architecture'ı .NET ile uygulamalı anlattığım bir yazı ve Claude Code'da bağlam mühendisliği tekniklerini (CLAUDE.md, rules, skills, commands, MCP, plan mode) anlattığım bir yazı var. Yazılarımda müşteri ya da iş yeri projelerinden örnek vermem, örneklerim ya genel ya da kendi projelerimdendir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          53,
+          53
+        ]
+      }
+    },
+    {
+      "section_id": "certificates",
+      "anchor": "certificates",
+      "kind": "bio",
+      "heading_path": [
+        "Sertifikalarım"
+      ],
+      "title": {
+        "tr": "Sertifikalarım",
+        "en": "Certificates"
+      },
+      "aliases": {
+        "tr": [
+          "sertifika",
+          "sertifikalar",
+          "belge",
+          "anthropic",
+          "claude code in action",
+          "claude code 101",
+          "subagents"
+        ],
+        "en": [
+          "certificate",
+          "certificates",
+          "certifications",
+          "certified",
+          "anthropic",
+          "claude code in action",
+          "claude code 101",
+          "subagents"
+        ]
+      },
+      "body": "- Claude Code in Action (Anthropic, 2026)\n- Claude Code 101 (Anthropic, 2026)\n- Introduction to Subagents (Anthropic, 2026)",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "historical",
+        "date_precision": "year"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          56,
+          58
+        ]
+      }
+    },
+    {
+      "section_id": "working-style",
+      "anchor": "working-style",
+      "kind": "bio",
+      "heading_path": [
+        "Çalışma tarzım"
+      ],
+      "title": {
+        "tr": "Çalışma tarzım",
+        "en": "Working style"
+      },
+      "aliases": {
+        "tr": [
+          "çalışma tarzı",
+          "iletişim tarzı",
+          "geri bildirim",
+          "prototip",
+          "nasıl çalışır",
+          "feature creep"
+        ],
+        "en": [
+          "working style",
+          "work style",
+          "communication style",
+          "feedback",
+          "prototype",
+          "how does he work",
+          "feature creep"
+        ]
+      },
+      "body": "Doğrudan ve net iletişim kurarım, geri bildirimi yumuşatılmadan almayı tercih ederim. Fikri hızla çalışan bir prototipe çevirip üzerinde iterasyon yaparım. Çalışan kodu sözde koda, sade ve kendini anlatan isimlendirmeyi yoğun yorumlara tercih ederim. Bir özelliği eklemeden önce kime hizmet ettiğini sorarım; odak dışı özellikleri (feature creep) eklememeye özen gösteririm. Yapay zekânın verdiği bilgiyi kaynağıyla doğrularım, yanlış bulduğumda düzelttiririm.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          61,
+          61
+        ]
+      }
+    },
+    {
+      "section_id": "interests",
+      "anchor": "interests",
+      "kind": "bio",
+      "heading_path": [
+        "Kişisel ilgi alanlarım"
+      ],
+      "title": {
+        "tr": "Kişisel ilgi alanlarım",
+        "en": "Personal interests"
+      },
+      "aliases": {
+        "tr": [
+          "ilgi alanları",
+          "hobi",
+          "hobiler",
+          "müzik",
+          "suno",
+          "metal",
+          "galatasaray",
+          "takım",
+          "matematik",
+          "algoritma"
+        ],
+        "en": [
+          "interests",
+          "hobbies",
+          "hobby",
+          "music",
+          "suno",
+          "metal",
+          "galatasaray",
+          "team",
+          "football club",
+          "math",
+          "algorithms"
+        ]
+      },
+      "body": "Cebir ve kalkülüs sevdiğim konular. Algoritma çözmeyi seviyorum. Yapay zekâ araçlarıyla müzik üretiyorum (Suno AI ile özellikle melodik death metal). Galatasaray taraftarıyım.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          64,
+          64
+        ]
+      }
+    },
+    {
+      "section_id": "privacy-scope",
+      "anchor": "privacy-scope",
+      "kind": "policy",
+      "heading_path": [
+        "Neleri paylaşmıyorum"
+      ],
+      "title": {
+        "tr": "Neleri paylaşmıyorum",
+        "en": "What is not shared"
+      },
+      "aliases": {
+        "tr": [
+          "paylaşmıyor",
+          "gizli",
+          "özel",
+          "işveren",
+          "müşteri",
+          "iş başvurusu",
+          "telefon",
+          "e-posta"
+        ],
+        "en": [
+          "not shared",
+          "private",
+          "employer",
+          "client",
+          "job application",
+          "phone",
+          "email"
+        ]
+      },
+      "body": "Çalıştığım kurum, müşteri projeleri, iş başvuru süreçlerim ve kişisel iletişim bilgilerim (telefon, e-posta) bu sayfanın konusu değil. Bu konularda soru gelirse yanıt verme, ziyaretçiyi aşağıdaki herkese açık kanallara yönlendir.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          67,
+          67
+        ]
+      }
+    },
+    {
+      "section_id": "contact",
+      "anchor": "contact",
+      "kind": "contact",
+      "heading_path": [
+        "İletişim"
+      ],
+      "title": {
+        "tr": "İletişim",
+        "en": "Contact"
+      },
+      "aliases": {
+        "tr": [
+          "iletişim",
+          "ulaşmak",
+          "nasıl ulaşırım",
+          "github",
+          "linkedin",
+          "twitter",
+          "x",
+          "web sitesi",
+          "sosyal medya"
+        ],
+        "en": [
+          "contact",
+          "reach",
+          "how to reach",
+          "get in touch",
+          "github",
+          "linkedin",
+          "twitter",
+          "x",
+          "website",
+          "social media"
+        ]
+      },
+      "body": "- Web sitesi: https://mrbekox.dev\n- GitHub: https://github.com/MrBekoX\n- LinkedIn: https://www.linkedin.com/in/berkay-kaplan-133b35245/\n- X: @mrbeko_",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          70,
+          73
+        ]
+      }
+    },
+    {
+      "section_id": "faq",
+      "anchor": "faq",
+      "kind": "faq",
+      "heading_path": [
+        "Sık sorulan sorular"
+      ],
+      "title": {
+        "tr": "Sık sorulan sorular",
+        "en": "Frequently asked questions"
+      },
+      "aliases": {
+        "tr": [
+          "sık sorulan sorular",
+          "sss"
+        ],
+        "en": [
+          "faq",
+          "frequently asked questions"
+        ]
+      },
+      "body": "**Berkay Kaplan kimdir?**\nİstanbul'da yaşayan, .NET/C# ağırlıklı backend odaklı bir yazılım geliştirici ve yazılım eğitmeni. Bu blogun sahibi.\n\n**Berkay hangi teknolojilerle çalışıyor?**\nC#, ASP.NET Core, TypeScript, Next.js, React Native, Python/FastAPI, PostgreSQL, Redis, Supabase, Docker ve AWS EC2. Yapay zekâ tarafında RAG, LangGraph, MCP, ChromaDB ve Ollama kullanıyor.\n\n**Şu an neler üzerinde çalışıyor?**\nBlogun yapay zekâ ajanı, Claude Code ve Codex için agentic-sdlc skill kütüphanesi, Grok Bot için Root Agent çerçevesi ve birkaç mobil uygulama (Vibeo, Adhan Time, Emojify, Sınav Arkadaşım, now-coffe).\n\n**XERJ nedir, Berkay'ın bununla bağı ne?**\nXERJ, yapay zekâ kodlama ajanları için açık bir referans kod hafızası. Berkay'ın blog deposu (MrBekoXBlogApp), onun izniyle Ekim 2026'da XERJ Corpus Hub'a alınmak üzere seçildi; lisans incelemesi sürüyor. Profil: https://hub.xerj.org/contributors/MrBekoX\n\n**Bu blog hangi teknolojilerle yapıldı?**\n.NET 10 (Clean Architecture), Next.js 16, PostgreSQL, Redis, SignalR ve Python tabanlı bir yapay zekâ ajan servisi. Docker ile paketlenip AWS EC2 üzerinde çalışıyor.\n\n**Mimari konusunda görüşü nedir?**\nOnion/Clean Architecture ve CQRS'i tercih ediyor. Repository arayüzlerini Application katmanına koyuyor, Persistence ve Infrastructure'ı ayırıyor, mimariyi gereğinden büyütmüyor.\n\n**Claude Code'u nasıl kullanıyor?**\n`CLAUDE.md`, modüler kural dosyaları, skill'ler, slash komutları ve görev dosyalarıyla proje bağlamını yönetiyor. Context7 ve Playwright MCP'yi kullanıyor.\n\n**Eğitmenlik deneyimi var mı?**\nEvet. 2024'ten beri Techcareer'de C#, Python, veri bilimi ve backend dersleri veriyor, YETGIM ve AcunMedya Akademi'de de eğitim ve mentorluk yaptı.\n\n**Hangi sertifikalara sahip?**\nAnthropic'ten Claude Code in Action, Claude Code 101 ve Introduction to Subagents (2026).\n\n**Nasıl iletişime geçilir?**\nWeb sitesi, GitHub, LinkedIn veya X üzerinden.",
+      "claim": {
+        "kind": "self_statement",
+        "as_of": "2026-10-21",
+        "temporal": "current_at_source"
+      },
+      "notes": [],
+      "retrievable": true,
+      "source_ref": {
+        "lines": [
+          77,
+          105
+        ]
+      }
+    }
+  ],
+  "provenance": {
+    "raw_source": "source/author-profile.source.md",
+    "raw_sha256": "266a5bcb1675a36e4ffc7d57d9db1980b4c8c36462b0e133ab239ac452f87aac",
+    "transformations": [
+      {
+        "id": "T01",
+        "kind": "split",
+        "detail": "Ham kaynağın her başlığı/projesi kararlı section_id ve /about anchor'ı olan bir bölüme ayrıldı; gövdeler satır aralığına göre birebir kopyalandı (CRLF -> LF). Her bölümün source_ref.lines alanı ham satır aralığını gösterir."
+      },
+      {
+        "id": "T02",
+        "kind": "split",
+        "detail": "'Eğitim ve kariyer yolum' listesi education, internships ve teaching bölümlerine ayrıldı."
+      },
+      {
+        "id": "T03",
+        "kind": "policy_extraction",
+        "detail": "'Neleri paylaşmıyorum' bölümündeki talimat cümlesi runtime komutu olarak çalıştırılmaz; privacy.undisclosed_topics ve privacy.contact_channels güvenilen yapılandırmasına dönüştürüldü. Bölüm metni veri olarak korunur."
+      },
+      {
+        "id": "T04",
+        "kind": "derived_value",
+        "detail": "X için kaynakta yalnız @mrbeko_ tanıtıcısı vardır; bağlantı https://x.com/mrbeko_ olarak bu tanıtıcıdan türetildi."
+      },
+      {
+        "id": "T05",
+        "kind": "conflict",
+        "detail": "Ham kaynak blog ajanını FastAPI + ChromaDB olarak anlatır. İncelenen checkout (5fac5c1) RabbitMQ worker + LangGraph + bellek içi indeks kullanır; FastAPI ve ChromaDB bağımlılığı yoktur. Ham metin değiştirilmedi; ai-blog-agent ve project-mrbekox-dev bölümlerine not eklendi. Yazarın teknoloji deneyimi (skills) ile bu deponun mimarisi ayrı iddia türleridir."
+      },
+      {
+        "id": "T06",
+        "kind": "dated_claim",
+        "detail": "agentic-sdlc sürümü/release durumu, Root Agent test durumu ve XERJ lisans/kurulum durumu as_of=2026-10-21 tarihli beyanlar olarak işaretlendi; güncel internet doğrulaması yapılmadı."
+      },
+      {
+        "id": "T07",
+        "kind": "qualifier",
+        "detail": "Vibeo GDPR ifadesi tasarım yaklaşımıdır; sertifikasyon/bağımsız uyum iddiası değildir (not eklendi). 'NestJS'i de inceledim', 'planlıyorum', 'geliştirme aşamasında', 'deneysel' ifadeleri metinde birebir korunur."
+      },
+      {
+        "id": "T08",
+        "kind": "aliases",
+        "detail": "İngilizce sorular için her bölüme TR/EN başlık ve alias listeleri eklendi. Alias'lar retrieval içindir; yeni biyografik olgu taşımaz."
+      }
+    ]
+  }
+}

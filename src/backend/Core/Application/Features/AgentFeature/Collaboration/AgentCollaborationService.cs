@@ -283,7 +283,8 @@ public sealed class AgentCollaborationService(
                 producer: messagingOptions.Value.ProducerName,
                 checkpointReference: AgentCollaborationEnvelopeComposer.ComposeCheckpointReference(
                     runId, proposalId),
-                userRef: current.OwnerKey);
+                userRef: current.OwnerKey,
+                schemaVersion: run.WireVersion);
 
             var contractResult = new AgentContractValidator(messagingOptions.Value).Validate(envelopeJson);
             if (!contractResult.IsValid)
@@ -301,7 +302,7 @@ public sealed class AgentCollaborationService(
                 MessageId = messageId,
                 MessageType = AgentMessageTypes.ResumeRequested,
                 Exchange = AgentMessageTypeRegistry.CommandsExchange,
-                RoutingKey = "agent.resume.requested.v1",
+                RoutingKey = AgentMessageTypeRegistry.RoutingKeyFor(run.WireVersion, AgentMessageTypes.ResumeRequested),
                 CorrelationId = correlationId,
                 RunId = runId,
                 EnvelopeJson = envelopeJson,
@@ -345,7 +346,8 @@ public sealed class AgentCollaborationService(
             outcome: "accepted",
             reason: null,
             appliedArticleRevision: proposal.ArticleRevision,
-            validatedAt: confirmedAt);
+            validatedAt: confirmedAt,
+            schemaVersion: run.WireVersion);
 
         var contractResult = new AgentContractValidator(messagingOptions.Value).Validate(envelopeJson);
         if (!contractResult.IsValid)
@@ -361,7 +363,7 @@ public sealed class AgentCollaborationService(
             MessageId = messageId,
             MessageType = AgentMessageTypes.ActionResult,
             Exchange = AgentMessageTypeRegistry.CommandsExchange,
-            RoutingKey = "agent.action.result.v1",
+            RoutingKey = AgentMessageTypeRegistry.RoutingKeyFor(run.WireVersion, AgentMessageTypes.ActionResult),
             CorrelationId = correlationId,
             RunId = run.RunId,
             EnvelopeJson = envelopeJson,
@@ -404,7 +406,8 @@ public sealed class AgentCollaborationService(
             reason: reason,
             appliedArticleRevision: null,
             validatedAt: at,
-            deterministicMessageId: messageId);
+            deterministicMessageId: messageId,
+            schemaVersion: run.WireVersion);
 
         var contractResult = new AgentContractValidator(messagingOptions.Value).Validate(envelopeJson);
         if (!contractResult.IsValid)
@@ -420,7 +423,7 @@ public sealed class AgentCollaborationService(
             MessageId = envelopeMessageId,
             MessageType = AgentMessageTypes.ActionResult,
             Exchange = AgentMessageTypeRegistry.CommandsExchange,
-            RoutingKey = "agent.action.result.v1",
+            RoutingKey = AgentMessageTypeRegistry.RoutingKeyFor(run.WireVersion, AgentMessageTypes.ActionResult),
             CorrelationId = correlationId,
             RunId = run.RunId,
             EnvelopeJson = envelopeJson,

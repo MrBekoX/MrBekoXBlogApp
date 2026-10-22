@@ -38,7 +38,7 @@ public static class AgentContentEventComposer
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.ArticleContentChanged,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = AgentMessageTypeRegistry.ContentSchemaVersion,
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
@@ -74,7 +74,7 @@ public static class AgentContentEventComposer
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.SyncBatch,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = AgentMessageTypeRegistry.ContentSchemaVersion,
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
@@ -113,7 +113,7 @@ public static class AgentContentEventComposer
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.SyncCompleted,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = AgentMessageTypeRegistry.ContentSchemaVersion,
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
@@ -144,7 +144,7 @@ public static class AgentContentEventComposer
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.ProfileContentChanged,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = AgentMessageTypeRegistry.ContentSchemaVersion,
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
@@ -177,7 +177,7 @@ public static class AgentContentEventComposer
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.ProjectContentChanged,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = AgentMessageTypeRegistry.ContentSchemaVersion,
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,

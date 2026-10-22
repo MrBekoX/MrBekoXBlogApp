@@ -39,10 +39,63 @@ public class AgentMessagingBrokerContractMirrorTests
             .Select(b => (b.Exchange, b.RoutingKey))
             .ToList();
 
-        foreach (var spec in AgentMessageTypeRegistry.MessageTypes)
+        foreach (var spec in AgentMessageTypeRegistry.AllMessageTypes)
         {
             var covered = bindings.Any(b => b.Exchange == spec.Exchange && TopicMatches(b.RoutingKey, spec.RoutingKey));
-            Assert.True(covered, $"{spec.MessageType} ({spec.RoutingKey}, {spec.Exchange}) için binding yok");
+            Assert.True(covered, $"v{spec.SchemaVersion} {spec.MessageType} ({spec.RoutingKey}, {spec.Exchange}) için binding yok");
+        }
+    }
+
+    [Fact]
+    public void CommandRoutingKeys_AreIsolatedPerWireVersion()
+    {
+        // K4 broker izolasyonu: her backend→agent komut routing key'i TAM OLARAK bir ana kuyruğa
+        // bağlıdır; v1 komutları v1 kuyruklarına, v2 komutları yalnız *.v2.q kuyruklarına gider
+        // (eski worker v2 komutunu hiç görmez). Liste BuildingBlocks'ta literal, kaynak ise
+        // Core registry'si: bu test ikisini eşler.
+        var mainQueues = AgentMessagingTopology.MainQueueRoutingKeys;
+        var mainBindings = AgentMessagingTopology.Bindings(AgentMessagingTopology.DefaultRetryTierSeconds)
+            .Where(b => mainQueues.ContainsKey(b.Queue))
+            .ToList();
+        foreach (var spec in AgentMessageTypeRegistry.AllMessageTypes
+                     .Where(s => s.Direction == AgentMessageDirection.BackendToAgent && s.Exchange == AgentMessageTypeRegistry.CommandsExchange))
+        {
+            var boundQueues = mainBindings
+                .Where(b => b.Exchange == spec.Exchange && TopicMatches(b.RoutingKey, spec.RoutingKey))
+                .Select(b => b.Queue)
+                .Distinct()
+                .ToList();
+            var queue = Assert.Single(boundQueues);
+
+            var expected = (spec.SchemaVersion, spec.MessageType) switch
+            {
+                (1, AgentMessageTypes.ExecutionRequested) => AgentMessagingTopology.ExecuteQueue,
+                (1, _) => AgentMessagingTopology.ControlQueue,
+                (2, AgentMessageTypes.ExecutionRequested) => AgentMessagingTopology.ExecuteQueueV2,
+                (2, _) => AgentMessagingTopology.ControlQueueV2,
+                _ => throw new InvalidOperationException($"beklenmeyen sürüm {spec.SchemaVersion}"),
+            };
+            Assert.Equal(expected, queue);
+        }
+
+        // v2 kuyruklarına v1 anahtarı bağlanmaz (ters yön izolasyonu).
+        Assert.All(mainQueues[AgentMessagingTopology.ExecuteQueueV2].Concat(mainQueues[AgentMessagingTopology.ControlQueueV2]),
+            key => Assert.EndsWith(".v2", key));
+    }
+
+    [Fact]
+    public void V2Queues_HaveDeadLetterAndRetryPlans_LikeV1()
+    {
+        var queues = AgentMessagingTopology.Queues(AgentMessagingTopology.DefaultRetryTierSeconds).ToDictionary(q => q.Name);
+        foreach (var queue in (string[])[AgentMessagingTopology.ExecuteQueueV2, AgentMessagingTopology.ControlQueueV2])
+        {
+            Assert.True(queues[queue].Durable);
+            Assert.Equal(AgentMessagingTopology.DeadLetterExchange, queues[queue].Arguments["x-dead-letter-exchange"]);
+            Assert.True(queues.ContainsKey(AgentMessagingTopology.DeadLetterQueueFor(queue)));
+            foreach (var tier in AgentMessagingTopology.DefaultRetryTierSeconds)
+            {
+                Assert.True(queues.ContainsKey(AgentMessagingTopology.RetryQueueFor(queue, tier)));
+            }
         }
     }
 

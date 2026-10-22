@@ -13,6 +13,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using BlogApp.Core.Application.Features.AgentFeature.Services;
 
 namespace BlogApp.Core.Application.Features.AgentFeature.Commands.CancelAgentRunCommand;
 
@@ -114,13 +115,16 @@ public sealed class CancelAgentRunCommandHandler(
                 var correlationId = Guid.TryParseExact(callerCorrelation, "D", out var callerCorrelationId)
                     ? callerCorrelationId.ToString("D")
                     : Guid.NewGuid().ToString("D");
+                // K4: kontrol komutu run'ın kabulde kararlaşan wire sürümünü korur (v1 run → v1 kuyruğu).
+                var wireVersion = AgentRunWireContext.Parse(run.ContextSnapshotJson).WireVersion;
                 var (envelopeJson, messageId) = AgentControlEnvelopeComposer.ComposeCancellationRequested(
                     request.RunId,
                     run.ConversationId,
                     correlationId,
                     requestedAt,
                     producer: messagingOptions.Value.ProducerName,
-                    reason: string.IsNullOrEmpty(reason) ? null : reason);
+                    reason: string.IsNullOrEmpty(reason) ? null : reason,
+                    schemaVersion: wireVersion);
 
                 var contractResult = new AgentContractValidator(messagingOptions.Value).Validate(envelopeJson);
                 if (!contractResult.IsValid)
@@ -137,7 +141,7 @@ public sealed class CancelAgentRunCommandHandler(
                     MessageId = messageId,
                     MessageType = AgentMessageTypes.CancellationRequested,
                     Exchange = AgentMessageTypeRegistry.CommandsExchange,
-                    RoutingKey = "agent.cancel.requested.v1",
+                    RoutingKey = AgentMessageTypeRegistry.RoutingKeyFor(wireVersion, AgentMessageTypes.CancellationRequested),
                     CorrelationId = correlationId,
                     RunId = request.RunId,
                     EnvelopeJson = envelopeJson,

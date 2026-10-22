@@ -7,6 +7,13 @@
 
 export type AgentModePreference = 'auto' | 'fast' | 'analysis' | 'deep_research';
 
+/**
+ * Sohbet konusu (Who am I). Çalışma derinliği (AgentModePreference) ile AYNI
+ * kavram DEĞİLDİR: konu kaynak kapsamını belirler. Eksik/bilinmeyen değer
+ * istemcide 'auto' olarak okunur (eski backend/kayıt uyumu).
+ */
+export type AgentConversationTopic = 'auto' | 'who_am_i';
+
 export type AgentRunState =
   | 'Accepted'
   | 'Completed'
@@ -38,13 +45,20 @@ export interface AgentRunAccepted {
 }
 
 export interface AgentRunCitation {
-  kind: 'article' | 'web';
+  /** 'profile': yayımlanmış yazar profili bölümü (/about#{sectionId}). Bilinmeyen
+   * tür istemcide bağlantısız metin olarak gösterilir (toleranslı okuma). */
+  kind: 'article' | 'web' | 'profile' | (string & {});
   title?: string | null;
   url?: string | null;
   articleId?: string | null;
   articleRevision?: number | null;
   chunkIndex?: number | null;
   sourceId?: string | null;
+  // kind === 'profile' alanları (backend v2 sözleşmesi; camelCase DTO)
+  profileId?: string | null;
+  profileRevision?: number | null;
+  profileContentHash?: string | null;
+  sectionId?: string | null;
 }
 
 export interface AgentRunResult {
@@ -55,6 +69,9 @@ export interface AgentRunResult {
   report?: string | null;
   citations: AgentRunCitation[];
   unresolvedQuestion?: string | null;
+  /** Sunum guard'ı maskelediyse gerekçe. Profil kodları: "profile_updated",
+   * "profile_unavailable", "legacy_profile_unavailable" (yerelleştirilmiş mesaja
+   * çevrilir); diğer değerler (makale guard'ı) metin olarak gösterilir. */
   unavailableReason?: string | null;
 }
 
@@ -69,6 +86,9 @@ export interface AgentRunStatus {
   question: string;
   language: string;
   articleId?: string | null;
+  /** Run'ın kabul anında sabitlenen konusu. Eski backend/kayıtta yoksa 'auto'
+   * sayılır; geri yüklemede panel konusuyla eşleşmesi zorunludur. */
+  conversationTopic?: AgentConversationTopic | string | null;
   acceptedAt: string;
   deadlineAt: string;
   terminalAt?: string | null;
@@ -123,12 +143,18 @@ export interface AgentMessageRequest {
   question: string;
   language: 'tr' | 'en';
   modePreference: AgentModePreference;
+  /** Eksikse backend 'auto' kabul eder. who_am_i'de articleId/selectedText GÖNDERİLMEZ. */
+  conversationTopic?: AgentConversationTopic;
   budgetProfile?: string;
   articleId?: string;
   selectedText?: string;
   conversationId?: string;
   idempotencyKey: string;
 }
+
+/** POST /api/v1/agent/research gövdesi (mod backend'de deep_research sabittir).
+ * who_am_i ile ASLA kullanılmaz (istemci reddeder; backend 400 döner). */
+export type AgentResearchRequest = Omit<AgentMessageRequest, 'modePreference'>;
 
 /** SignalR "RunUpdated" payload'ı (snake_case — B5 notifier sözleşmesi). */
 export interface AgentRunNotification {

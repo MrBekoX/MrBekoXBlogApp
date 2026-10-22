@@ -25,9 +25,9 @@ from .openai_provider import OpenAiModelProvider
 from .static_records import (
     APPROVED_ARTICLE_CATALOG,
     APPROVED_PROJECTS,
-    APPROVED_PROFILE,
     StaticProfileRepository,
     StaticProjectRepository,
+    approved_profile,
 )
 
 __all__ = [
@@ -47,3 +47,11 @@ __all__ = [
     "resolve_model_provider",
     "resolve_web_search_provider",
 ]
+
+
+def __getattr__(name: str):
+    # ``APPROVED_PROFILE`` canonical kaynaktan erişimde türetilir (import anında
+    # dosya okunmaz; bozuk kaynak paket import'unu çökertmez).
+    if name == "APPROVED_PROFILE":
+        return approved_profile()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

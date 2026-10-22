@@ -6,6 +6,17 @@ tablosundan (satır 219-233) alınmıştır. ``content.project.changed.v1`` bind
 B1 registry'sinde tanımlı olduğu için eklenmiştir; bağlı olmayan routing key
 kuyruğa düşmez (unroutable) — B1 sözleşmesindeki türe teslim gerekir.
 
+Sürümlü kuyruklar (Who am I, karar kaydı K4): komut kuyruklarının binding'leri
+sözleşme kaydından (``contracts.registry``) TÜRETİLİR. v1 kuyrukları ve
+binding'leri aynen kalır (``agent.execute.q``/``agent.control.q`` ← ``*.v1``);
+v2 komutları ayrı kuyruklara düşer: ``agent.execute.v2.q`` ←
+``agent.execute.requested.v2``, ``agent.control.v2.q`` ← ``agent.cancel.requested.v2``
+/ ``agent.resume.requested.v2`` / ``agent.action.result.v2``. v2'yi bilmeyen eski
+worker v2 kuyruklarını tüketmez; ortak ``agent.jobs`` tablosundaki claim
+izolasyonu ise DB tetikleyicisindedir (migration 0005). Backend olay kuyruğu
+``agent.run.#``/``agent.action.#`` joker binding'leriyle iki sürümü de alır.
+v2 kuyrukları v1 ile aynı DLX/DLQ ve retry kademesi argümanlarıyla doğar.
+
 Sorumluluk (K3): üretimde tek declarer backend'dir. ``declare_topology`` yalnız
 dev/test ve yönetimsel kurulum içindir; agent tarafı üretimde
 ``verify_topology`` ile pasif doğrular ve uyuşmazlıkta fail-fast eder.
@@ -26,6 +37,7 @@ from typing import Any
 import aio_pika
 from aio_pika.abc import AbstractChannel, AbstractRobustConnection
 
+from .contracts import SUPPORTED_SCHEMA_VERSIONS, WIRE_VERSION_V1, registry_for
 from .errors import TopologyError
 
 __all__ = [
@@ -35,13 +47,20 @@ __all__ = [
     "DEAD_EXCHANGE",
     "EXECUTE_QUEUE",
     "CONTROL_QUEUE",
+    "EXECUTE_V2_QUEUE",
+    "CONTROL_V2_QUEUE",
     "CONTENT_QUEUE",
     "BACKEND_EVENTS_QUEUE",
     "DEFAULT_RETRY_TIER_SECONDS",
+    "EXECUTE_COMMAND_TYPES",
+    "CONTROL_COMMAND_TYPES",
     "Topology",
     "QueueSpec",
     "build_topology",
+    "command_routing_keys",
+    "control_queue_for",
     "declare_topology",
+    "execute_queue_for",
     "verify_topology",
 ]
 
@@ -54,6 +73,37 @@ EXECUTE_QUEUE = "agent.execute.q"
 CONTROL_QUEUE = "agent.control.q"
 CONTENT_QUEUE = "agent.content.q"
 BACKEND_EVENTS_QUEUE = "backend.agent.events.q"
+
+#: Komut kuyruklarının taşıdığı tür kümeleri (routing key'ler kayıttan türetilir).
+EXECUTE_COMMAND_TYPES: tuple[str, ...] = ("agent.execute.requested",)
+CONTROL_COMMAND_TYPES: tuple[str, ...] = (
+    "agent.cancel.requested",
+    "agent.resume.requested",
+    "agent.action.result",
+)
+
+
+def execute_queue_for(schema_version: int) -> str:
+    """Sürümün execute kuyruğu: v1 ``agent.execute.q`` (donmuş ad), vN ``agent.execute.vN.q``."""
+
+    return EXECUTE_QUEUE if schema_version == WIRE_VERSION_V1 else f"agent.execute.v{schema_version}.q"
+
+
+def control_queue_for(schema_version: int) -> str:
+    """Sürümün kontrol kuyruğu: v1 ``agent.control.q`` (donmuş ad), vN ``agent.control.vN.q``."""
+
+    return CONTROL_QUEUE if schema_version == WIRE_VERSION_V1 else f"agent.control.v{schema_version}.q"
+
+
+def command_routing_keys(schema_version: int, message_types: tuple[str, ...]) -> tuple[str, ...]:
+    """Kayıttan routing key'ler (elle yazılmaz; sürüm soneki ``.vN``)."""
+
+    registry = registry_for(schema_version)
+    return tuple(registry[name].routing_key for name in message_types)
+
+
+EXECUTE_V2_QUEUE = execute_queue_for(2)
+CONTROL_V2_QUEUE = control_queue_for(2)
 
 #: Hedefe özel retry kademeleri (saniye). B7 başlangıç önerisi: 10s/30s/2dk.
 DEFAULT_RETRY_TIER_SECONDS: tuple[int, ...] = (10, 30, 120)
@@ -111,16 +161,9 @@ def build_topology(
 ) -> Topology:
     """Plan diyagramındaki topology'yi parametrik üretir (retry kademeleri ayarlanabilir)."""
 
-    target_rks: tuple[tuple[str, tuple[str, ...]], ...] = (
-        (EXECUTE_QUEUE, ("agent.execute.requested.v1",)),
-        (
-            CONTROL_QUEUE,
-            (
-                "agent.cancel.requested.v1",
-                "agent.resume.requested.v1",
-                "agent.action.result.v1",
-            ),
-        ),
+    target_rks: list[tuple[str, tuple[str, ...]]] = [
+        (EXECUTE_QUEUE, command_routing_keys(WIRE_VERSION_V1, EXECUTE_COMMAND_TYPES)),
+        (CONTROL_QUEUE, command_routing_keys(WIRE_VERSION_V1, CONTROL_COMMAND_TYPES)),
         (
             CONTENT_QUEUE,
             (
@@ -130,8 +173,19 @@ def build_topology(
                 "content.project.changed.v1",
             ),
         ),
+        # Joker binding'ler her iki sürümün olaylarını da alır (.v1 / .v2).
         (BACKEND_EVENTS_QUEUE, ("agent.run.#", "agent.action.#")),
-    )
+    ]
+    # v1 sonrası sürümler: ayrı execute/control kuyrukları (kayıttan türetilir).
+    for version in SUPPORTED_SCHEMA_VERSIONS:
+        if version == WIRE_VERSION_V1:
+            continue
+        target_rks.append(
+            (execute_queue_for(version), command_routing_keys(version, EXECUTE_COMMAND_TYPES))
+        )
+        target_rks.append(
+            (control_queue_for(version), command_routing_keys(version, CONTROL_COMMAND_TYPES))
+        )
 
     exchanges = [
         COMMANDS_EXCHANGE,

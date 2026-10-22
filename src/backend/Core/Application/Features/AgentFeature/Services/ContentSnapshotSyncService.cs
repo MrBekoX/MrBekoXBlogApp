@@ -81,13 +81,13 @@ public sealed class ContentSnapshotSyncService(
             envelopes.Add(CreateMessage(
                 AgentContentEventComposer.ComposeSyncBatch(syncId.ToString("D"), batchIndex, totalBatches, slice, producer),
                 AgentMessageTypes.SyncBatch,
-                "content.sync.batch.v1"));
+                AgentMessageTypeRegistry.RoutingKeyFor(AgentMessageTypeRegistry.ContentSchemaVersion, AgentMessageTypes.SyncBatch)));
         }
 
         envelopes.Add(CreateMessage(
             AgentContentEventComposer.ComposeSyncCompleted(syncId.ToString("D"), items.Count, producer),
             AgentMessageTypes.SyncCompleted,
-            "content.sync.completed.v1"));
+            AgentMessageTypeRegistry.RoutingKeyFor(AgentMessageTypeRegistry.ContentSchemaVersion, AgentMessageTypes.SyncCompleted)));
 
         var syncRecord = new AgentContentSync
         {

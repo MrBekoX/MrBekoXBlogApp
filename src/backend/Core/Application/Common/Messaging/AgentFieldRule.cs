@@ -19,7 +19,13 @@ public enum AgentFieldFormat
     UtcIso,
     HashHex,
     LanguageCode,
-    TraceParent
+    TraceParent,
+
+    /// <summary>v2: <c>^[a-z0-9][a-z0-9-]{0,63}$</c> (profile_id).</summary>
+    ProfileId,
+
+    /// <summary>v2: <c>^[a-z0-9][a-z0-9-]{0,127}$</c> (section_id = /about anchor).</summary>
+    SectionId
 }
 
 /// <summary>

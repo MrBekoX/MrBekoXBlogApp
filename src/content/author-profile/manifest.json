@@ -1,0 +1,18 @@
+{
+  "manifest_schema": 1,
+  "profile_id": "berkay-kaplan",
+  "revision": 1,
+  "language": "tr",
+  "content_file": "profile.json",
+  "content_hash": "4f3b02e187c2b8c04134aa2c80df4b2d8c817377780aca74d2a11e9bf0c1406d",
+  "status": "public",
+  "approved": true,
+  "content_created_at": "2026-10-22T00:00:00Z",
+  "source": {
+    "file": "source/author-profile.source.md",
+    "sha256": "266a5bcb1675a36e4ffc7d57d9db1980b4c8c36462b0e133ab239ac452f87aac",
+    "received_at": "2026-10-21",
+    "verified_at": null,
+    "verification": "self_reported_not_independently_verified"
+  }
+}

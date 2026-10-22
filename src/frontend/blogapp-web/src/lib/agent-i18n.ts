@@ -12,6 +12,10 @@ export function detectAgentLang(): AgentLang {
   return navigator.language?.toLowerCase().startsWith('en') ? 'en' : 'tr';
 }
 
+/** SSR/hydration için sabit sunucu dili: sunucu HTML'i her zaman 'tr' üretir;
+ * tarayıcı dili hydration SONRASI uygulanır (useAgentLang). */
+export const AGENT_SERVER_LANG: AgentLang = 'tr';
+
 const tr = {
   panelTitle: 'Bu yazıya sorun',
   panelDescription: 'Makale bağlamında soru cevap, özet ve derin araştırma.',
@@ -91,6 +95,37 @@ const tr = {
   retryFailed: 'Son soruyu tekrar gönder',
   a11yStepStarted: 'Adım başladı',
   a11yNewSteps: 'Yeni işlem adımları var',
+  // Who am I konusu (K7): konu seçici, çalışma tercihinden AYRI kavramdır
+  topicLabel: 'Konu',
+  topicAuto: 'Otomatik',
+  topicWhoAmI: 'Who am I · Berkay Kaplan',
+  topicHint: 'Konu değişince yeni bir sohbet başlar.',
+  topicLockedHint: 'Çalışma sürerken konu değiştirilemez.',
+  topicChanged: 'Konu değişti; yeni sohbet başladı.',
+  whoAmITitle: 'Who am I · Berkay Kaplan',
+  whoAmIAskTitle: 'Berkay Kaplan hakkında sorun',
+  whoAmIPanelDescription:
+    'Berkay Kaplan hakkında yayımlanmış profil bilgilerine dayanarak cevap verir; kaynaklar profil bölümlerine bağlanır.',
+  whoAmIInputPlaceholder: 'Berkay Kaplan hakkında sorun... (Enter gönderir)',
+  whoAmIScopeNote: 'Yalnız yayımlanmış profil kullanılır; makale bağlamı ve web araştırması bu konuda kapalıdır.',
+  whoAmISuggestionWho: 'Berkay Kaplan kimdir?',
+  whoAmISuggestionEducation: 'Hangi üniversitede okudu?',
+  whoAmISuggestionTeaching: 'Eğitmenlik deneyimi var mı?',
+  whoAmISuggestionArchitecture: 'Mimari yaklaşımı nedir?',
+  whoAmIStatusStarted: 'Profil bölümleri inceleniyor',
+  whoAmIVerifiedAnswerNote: 'Yanıt, kaynak denetiminden sonra tek seferde gösterilir.',
+  whoAmIUnavailable: 'Who am I şu an kullanılamıyor. Lütfen daha sonra tekrar deneyin.',
+  researchNotAllowed: 'Bu konuda derin araştırma kullanılamaz.',
+  sourceProfile: 'Profil',
+  sourceProfileSection: 'Profil bölümü',
+  sourceUnlinked: 'Bağlantı doğrulanamadı',
+  unavailableProfileUpdated:
+    'Profil bilgisi bu yanıttan sonra güncellendi; eski yanıt gösterilmiyor. Güncel bilgi için soruyu yeniden sorun.',
+  unavailableProfileUnavailable:
+    'Profil bilgisi şu an kullanılamıyor; bu yanıt gösterilemiyor. Daha sonra yeniden sorabilirsiniz.',
+  unavailableLegacyProfile:
+    'Bu eski profil yanıtı artık doğrulanamıyor. Güncel bilgi için soruyu yeniden sorun.',
+  askAgain: 'Soruyu yeniden sor',
 } as const;
 
 /** Genişletilmiş metin tipi: alan adları tr sözlüğünden, değer tipleri string. */
@@ -174,9 +209,74 @@ const en: AgentTexts = {
   retryFailed: 'Resend the last question',
   a11yStepStarted: 'Step started',
   a11yNewSteps: 'New processing steps available',
+  // Who am I topic (K7): the topic selector is SEPARATE from the execution preference
+  topicLabel: 'Topic',
+  topicAuto: 'Automatic',
+  topicWhoAmI: 'Who am I · Berkay Kaplan',
+  topicHint: 'Changing the topic starts a new conversation.',
+  topicLockedHint: 'The topic cannot be changed while a run is active.',
+  topicChanged: 'Topic changed; a new conversation started.',
+  whoAmITitle: 'Who am I · Berkay Kaplan',
+  whoAmIAskTitle: 'Ask about Berkay Kaplan',
+  whoAmIPanelDescription:
+    "Answers from Berkay Kaplan's published profile; sources link to profile sections.",
+  whoAmIInputPlaceholder: 'Ask about Berkay Kaplan... (Enter to send)',
+  whoAmIScopeNote: 'Only the published profile is used; article context and web research are off for this topic.',
+  whoAmISuggestionWho: 'Who is Berkay Kaplan?',
+  whoAmISuggestionEducation: 'Which university did he attend?',
+  whoAmISuggestionTeaching: 'Does he have teaching experience?',
+  whoAmISuggestionArchitecture: 'What is his architectural approach?',
+  whoAmIStatusStarted: 'Reviewing profile sections',
+  whoAmIVerifiedAnswerNote: 'The answer is shown at once after source validation.',
+  whoAmIUnavailable: 'Who am I is currently unavailable. Please try again later.',
+  researchNotAllowed: 'Deep research is not available for this topic.',
+  sourceProfile: 'Profile',
+  sourceProfileSection: 'Profile section',
+  sourceUnlinked: 'Link could not be verified',
+  unavailableProfileUpdated:
+    'The profile was updated after this answer, so the old answer is hidden. Ask again for current information.',
+  unavailableProfileUnavailable:
+    'Profile information is currently unavailable, so this answer cannot be shown. You can ask again later.',
+  unavailableLegacyProfile:
+    'This older profile answer can no longer be verified. Ask again for current information.',
+  askAgain: 'Ask the question again',
 };
 
 export const agentTexts: Record<AgentLang, AgentTexts> = { tr, en };
+
+/** Konuya göre panel metinleri (başlık, açıklama, placeholder, durum, öneriler). */
+export interface AgentTopicTexts {
+  title: string;
+  description: string;
+  placeholder: string;
+  statusStarted: string;
+  suggestions: string[];
+}
+
+export function agentTopicTexts(lang: AgentLang, topic: 'auto' | 'who_am_i'): AgentTopicTexts {
+  const t = agentTexts[lang];
+  if (topic === 'who_am_i') {
+    return {
+      title: t.whoAmITitle,
+      description: t.whoAmIPanelDescription,
+      placeholder: t.whoAmIInputPlaceholder,
+      statusStarted: t.whoAmIStatusStarted,
+      suggestions: [
+        t.whoAmISuggestionWho,
+        t.whoAmISuggestionEducation,
+        t.whoAmISuggestionTeaching,
+        t.whoAmISuggestionArchitecture,
+      ],
+    };
+  }
+  return {
+    title: t.panelTitle,
+    description: t.panelDescription,
+    placeholder: t.inputPlaceholder,
+    statusStarted: t.statusStarted,
+    suggestions: [t.suggestionSummary, t.suggestionMainIdea, t.suggestionCode],
+  };
+}
 
 /**
  * Ortak olay sözleşmesi kind → kullanıcı-dostu adım etiketi (TR/EN).

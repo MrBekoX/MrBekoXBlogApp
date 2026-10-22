@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-__all__ = ["AgentMode", "ModePreference", "ProgressKind", "RunIntent", "RunStatus", "SourceScope"]
+__all__ = ["AgentMode", "ConversationTopic", "ModePreference", "ProgressKind", "RunIntent", "RunStatus", "SourceScope"]
 
 
 class RunStatus(StrEnum):
@@ -63,6 +63,19 @@ class ModePreference(StrEnum):
     FAST = "fast"
     ANALYSIS = "analysis"
     DEEP_RESEARCH = "deep_research"
+
+
+class ConversationTopic(StrEnum):
+    """Kullanıcının seçtiği sohbet konusu (v2 sözleşmesi ``conversation_topic``).
+
+    Çalışma derinliğinden (``ModePreference``) bağımsızdır. ``WHO_AM_I`` blog
+    sahibi Berkay Kaplan'ın onaylı public profilini konu alır; ziyaretçinin
+    kimliğini değil. ``AUTO`` routing'e bırakılır. v1 run'larında konu yoktur
+    (``ExecutionContext.conversation_topic is None``).
+    """
+
+    AUTO = "auto"
+    WHO_AM_I = "who_am_i"
 
 
 class SourceScope(StrEnum):

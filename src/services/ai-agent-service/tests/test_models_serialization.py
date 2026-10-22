@@ -73,8 +73,12 @@ def test_context_json_uses_snake_case_and_iso_timestamps() -> None:
         "run_id", "conversation_id", "question", "language", "mode_preference",
         "article_id", "article_revision", "article_content_hash", "article_snapshot",
         "selected_text", "conversation_history", "budget_profile",
+        # v2 (Who am I): konu ve pinlenmiş profil sürümü; v1 run'da ikisi de null.
+        "conversation_topic", "profile_snapshot",
     }
     assert expected_keys == set(payload)
+    assert payload["conversation_topic"] is None
+    assert payload["profile_snapshot"] is None
     assert payload["mode_preference"] == "auto"
     assert payload["article_snapshot"]["fetched_at"] == conftest.NOW.isoformat().replace("+00:00", "Z")
 

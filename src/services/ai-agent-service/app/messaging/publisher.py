@@ -31,7 +31,7 @@ from messaging.contracts import (
     AgentEnvelope,
     Direction,
     MAX_PAYLOAD_BYTES,
-    MESSAGE_TYPE_REGISTRY,
+    lookup_spec,
 )
 
 from .settings import BrokerSettings
@@ -92,11 +92,15 @@ class BrokerPublisher:
 
         Yalnız ``agent_to_backend`` yönü ve izinli üretici yayınlanabilir;
         yön/üretici uyuşmazlığı ValueError ile reddedilir (B1 producer kuralı).
+        Kayıt zarfın kendi sürümünden seçilir (K4): v2 olayı ``.v2`` routing
+        key'iyle, v1 olayı ``.v1`` ile yayınlanır.
         """
 
-        spec_entry = MESSAGE_TYPE_REGISTRY.get(envelope.message_type)
+        spec_entry = lookup_spec(envelope.schema_version, envelope.message_type)
         if spec_entry is None:
-            raise ValueError(f"Bilinmeyen mesaj türü: {envelope.message_type}")
+            raise ValueError(
+                f"Bilinmeyen mesaj türü/sürümü: {envelope.message_type} v{envelope.schema_version}"
+            )
         if spec_entry.direction is not Direction.AGENT_TO_BACKEND:
             raise ValueError(
                 f"{envelope.message_type} agent yayın yönünde değil: "

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v2:payload:agent.action.result",
+  "title": "AgentActionResultPayloadV2",
+  "description": "Backend'in ActionProposal kararı: kabul veya gerekçeli ret. Kabul edilen eylem için applied_article_revision zorunludur (A1 ValidatedActionResult kuralı). Backend → Python kontrol kuyruğu.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proposal_id",
+    "outcome",
+    "validated_at"
+  ],
+  "properties": {
+    "proposal_id": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/identifier"
+    },
+    "outcome": {
+      "enum": [
+        "accepted",
+        "rejected"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "applied_article_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "validated_at": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/utc_iso"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "accepted"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "required": [
+          "applied_article_revision"
+        ]
+      }
+    }
+  ]
+}

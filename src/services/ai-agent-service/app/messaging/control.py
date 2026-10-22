@@ -25,6 +25,12 @@
 ACK, depo commit'inden SONRA normal dönüşle verilir (B2 consumer tabanı);
 commit öncesi istisna teslimi ACK'sız bırakır ve DLX'e gider.
 
+Sürüm (K4): ``agent.control.q`` v1, ``agent.control.v2.q`` v2 komutlarını taşır
+(``accepted_versions``). Üretilen terminal olaylar komutun değil İŞİN
+``wire_version``'ıyla kurulur (``ControlStore``); devam komutunda komut ile iş
+sürümü farklıysa uyarı loglanır. İptal sürüm farkı yüzünden reddedilmez — iptal
+bir güvenlik işlemidir ve olay yine işin sürümüyle üretilir.
+
 Kaynaklar: [RMQ-CONFIRMS#C2] ACK işleme tamamlandıktan sonra; [PY-ASYNCIO#C2]
 iptal isteği kesin garanti değildir — terminal kararının kalıcı depoda
 atomikleşmesinin nedeni budur; [LG-INTERRUPTS#C1] resume girdisi Command ile
@@ -103,10 +109,13 @@ class ControlConsumerService:
         *,
         consumer_name: str = "control",
         resume_driver: ControlResumeDriver | None = None,
+        accepted_versions: tuple[int, ...] | None = None,
     ) -> None:
         self._store = store
         self._consumer_name = consumer_name
         self._resume_driver = resume_driver
+        # None: kuyruk/sürüm denetimi yok (geriye dönük kurulum).
+        self._accepted_versions = accepted_versions
 
     async def handle_delivery(self, raw: bytes, message: AbstractIncomingMessage) -> dict[str, Any]:
         """Tek teslimi işler; normal dönüş = commit yapıldı, ACK alınabilir."""
@@ -223,6 +232,15 @@ class ControlConsumerService:
             raise ControlPolicyError(
                 f"run {envelope.run_id} için iş kaydı yok; {envelope.message_type} değerlendirilemez"
             )
+        if state.get("wire_version") not in (None, parsed.schema_version):
+            logger.warning(
+                "kontrol komutu sürümü iş sürümünden farklı: type=%s run_id=%s komut=v%s iş=v%s "
+                "(olaylar iş sürümüyle üretilir)",
+                envelope.message_type,
+                envelope.run_id,
+                parsed.schema_version,
+                state.get("wire_version"),
+            )
 
         payload = parsed.spec.payload_model.model_validate(envelope.payload)
         if parsed.envelope.message_type == RESUME_COMMAND_TYPE:
@@ -277,6 +295,11 @@ class ControlConsumerService:
             raise ControlPolicyError(
                 f"control kuyruğu yalnız {'/'.join(CONTROL_MESSAGE_TYPES)} kabul eder; gelen: {spec.message_type}"
             )
+        if self._accepted_versions is not None and parsed.schema_version not in self._accepted_versions:
+            raise ControlPolicyError(
+                f"bu control kuyruğu yalnız v{'/v'.join(str(v) for v in self._accepted_versions)} "
+                f"kabul eder; gelen: v{parsed.schema_version}"
+            )
         if spec.direction is not Direction.BACKEND_TO_AGENT:
             raise ControlPolicyError(
                 f"{spec.message_type} backend→agent yönünde değil: {spec.direction.value}"
@@ -292,28 +315,35 @@ def build_control_consumer(
     tiers: tuple[int, ...],
     consumer_tag: str = "control-b7",
     resume_driver: ControlResumeDriver | None = None,
+    queue_name: str | None = None,
+    accepted_versions: tuple[int, ...] | None = None,
 ) -> Any:
     """Kontrol kuyruğu consumer'ını retry sarmalayıcısıyla kurar (gecikici import yok).
 
     ``retry_publisher``: retry exchange'leri üzerinde yetkili confirm'lu
     ``BrokerPublisher`` (exchanges=tuple(blog.agent.retry.{tier}s)).
     ``resume_driver`` (B9 ADDITIVE): bağlıysa resume/action_result komutları
-    graph devamına bağlanır; yoksa B7 davranışı korunur.
+    graph devamına bağlanır; yoksa B7 davranışı korunur. ``queue_name``
+    verilmezse v1 kontrol kuyruğu (``agent.control.q``) tüketilir; v2 için
+    ``agent.control.v2.q`` + ``accepted_versions=(2,)`` verilir.
     """
 
     from .retry import RetryAwareBrokerConsumer, TransportRetryService
     from .topology import CONTROL_QUEUE
 
-    service = ControlConsumerService(store, resume_driver=resume_driver)
+    target_queue = queue_name or CONTROL_QUEUE
+    service = ControlConsumerService(
+        store, resume_driver=resume_driver, accepted_versions=accepted_versions
+    )
     retrying = TransportRetryService(
         service.handle_delivery,
         retry_publisher,
-        queue_name=CONTROL_QUEUE,
+        queue_name=target_queue,
         tiers=tiers,
     )
     return RetryAwareBrokerConsumer(
         connection,
-        CONTROL_QUEUE,
+        target_queue,
         retrying.handle_delivery,
         settings,
         consumer_tag=consumer_tag,

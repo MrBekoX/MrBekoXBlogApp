@@ -36,7 +36,7 @@ public static class ResultHttpExtensions
         return Results.Json(body, statusCode: status);
     }
 
-    private static int MapStatus(Error? error) => error?.Category switch
+    public static int MapStatus(Error? error) => error?.Category switch
     {
         ErrorCategory.Validation => StatusCodes.Status400BadRequest,
         ErrorCategory.Unauthorized => StatusCodes.Status401Unauthorized,
@@ -44,6 +44,7 @@ public static class ResultHttpExtensions
         ErrorCategory.NotFound => StatusCodes.Status404NotFound,
         ErrorCategory.Conflict => StatusCodes.Status409Conflict,
         ErrorCategory.Domain => StatusCodes.Status400BadRequest,
+        ErrorCategory.Unavailable => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status400BadRequest
     };
 }

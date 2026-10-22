@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site-config';
 import { fetchPosts } from '@/lib/server-api';
-import { sitemapLastModified, type SitemapPostFields } from '@/lib/sitemap-entries';
+import { sitemapLastModified, staticSitemapPages, type SitemapPostFields } from '@/lib/sitemap-entries';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,20 +31,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const posts = await getPublishedPosts();
   const now = new Date();
 
-  const staticPages: MetadataRoute.Sitemap = [
-    {
-      url: SITE_URL,
-      lastModified: now,
-      changeFrequency: 'daily',
-      priority: 1.0,
-    },
-    {
-      url: `${SITE_URL}/posts`,
-      lastModified: now,
-      changeFrequency: 'daily',
-      priority: 0.9,
-    },
-  ];
+  const staticPages: MetadataRoute.Sitemap = staticSitemapPages(SITE_URL, now);
 
   const postPages: MetadataRoute.Sitemap = posts.map((post) => ({
     url: `${SITE_URL}/posts/${post.slug}`,

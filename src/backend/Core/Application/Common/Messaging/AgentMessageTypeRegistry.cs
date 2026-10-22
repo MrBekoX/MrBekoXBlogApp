@@ -1,6 +1,7 @@
 namespace BlogApp.Core.Application.Common.Messaging;
 
-/// <summary>Mesaj türlerinin makine-okur adları; routing key "{ad}.v1" kuralıyla türetilir.</summary>
+/// <summary>Mesaj türlerinin makine-okur adları; routing key "{ad}.v{sürüm}" kuralıyla türetilir
+/// (<see cref="AgentMessageTypeRegistry.RoutingKeyFor"/>).</summary>
 public static class AgentMessageTypes
 {
     public const string ExecutionRequested = "agent.execute.requested";
@@ -33,6 +34,9 @@ public enum AgentMessageDirection
 /// zarf gereksinimleri ve payload kural kümesi. contract.json kaydıyla ayna testleriyle eşlenir.</summary>
 public sealed record AgentMessageTypeSpec
 {
+    /// <summary>Sözleşme major sürümü (zarf schema_version); kayıt anahtarı (sürüm, tür) çiftidir.</summary>
+    public required int SchemaVersion { get; init; }
+
     public required string MessageType { get; init; }
     public required AgentMessageDirection Direction { get; init; }
     public required string Exchange { get; init; }
@@ -46,12 +50,25 @@ public sealed record AgentMessageTypeSpec
 }
 
 /// <summary>
-/// 18 mesaj türünün tek kaynağı. Exchange'ler ve routing key'leri plan satır 219-233 tablosundan;
-/// payload kuralları src/contracts/agent/v1/payloads/*.schema.json dosyalarından yansıtılmıştır.
+/// Sürümlü sözleşme kaydının tek kaynağı: anahtar (schema_version, message_type).
+/// v1 = 18 tür (src/contracts/agent/v1; donuk), v2 = v1'in run kapsamlı 13 türü + konu/etkin niyet/
+/// profil snapshot alanları ve profile kaynak türü (src/contracts/agent/v2; K3). content.* türleri
+/// yalnız v1'dedir. Tek global sürüm sabiti YOKTUR: üreticiler run'ın wire sürümüyle compose eder,
+/// doğrulayıcı zarfın sürümünü önce okur (<see cref="SupportedVersions"/> dışı → unknown_version).
+/// Exchange'ler ve routing key'leri contract.json'dan; payload kuralları payload şemalarından
+/// yansıtılmıştır (ayna testleri denkliği sabitler).
 /// </summary>
 public static class AgentMessageTypeRegistry
 {
-    public const int SchemaVersion = 1;
+    public const int V1 = 1;
+    public const int V2 = 2;
+
+    /// <summary>Doğrulayıcının kabul ettiği sözleşme sürümleri.</summary>
+    public static readonly IReadOnlyList<int> SupportedVersions = [V1, V2];
+
+    /// <summary>İçerik (content.*) olayları yalnız v1 sözleşmesindedir.</summary>
+    public const int ContentSchemaVersion = V1;
+
     public const string ContentType = "application/json";
     public const string CommandsExchange = "blog.agent.commands";
     public const string EventsExchange = "blog.agent.events";
@@ -63,12 +80,63 @@ public static class AgentMessageTypeRegistry
 
     public static readonly IReadOnlyList<string> AllProducers = [ProducerBackendNet, ProducerAgentPy, ProducerTestExecutor];
 
-    private static readonly Dictionary<string, AgentMessageTypeSpec> Specs = Build().ToDictionary(s => s.MessageType, StringComparer.Ordinal);
+    /// <summary>v2 konu değerleri (common.schema.json $defs/conversation_topic).</summary>
+    public static readonly IReadOnlyList<string> ConversationTopics = ["auto", "who_am_i"];
 
-    public static IReadOnlyCollection<AgentMessageTypeSpec> MessageTypes => Specs.Values;
+    /// <summary>v2 etkin niyet değerleri (common.schema.json $defs/run_intent).</summary>
+    public static readonly IReadOnlyList<string> RunIntents =
+    [
+        "article_qa", "summarize", "explain", "compare", "research",
+        "general", "profile", "projects", "content_suggestion", "collaboration"
+    ];
 
-    public static bool TryGet(string messageType, out AgentMessageTypeSpec spec) =>
-        Specs.TryGetValue(messageType, out spec!);
+    /// <summary>source_scope değerleri (v1 ve v2 aynı küme).</summary>
+    public static readonly IReadOnlyList<string> SourceScopes =
+        ["article", "web", "article_and_web", "profile", "projects", "general"];
+
+    private static readonly IReadOnlyDictionary<int, IReadOnlyDictionary<string, AgentMessageTypeSpec>> Specs = BuildAll();
+
+    /// <summary>Tüm sürümlerin kayıtları (sürüm, tür sırasıyla).</summary>
+    public static IReadOnlyCollection<AgentMessageTypeSpec> AllMessageTypes { get; } =
+        SupportedVersions.SelectMany(v => Specs[v].Values).ToList();
+
+    public static bool IsSupportedVersion(int version) => Specs.ContainsKey(version);
+
+    /// <summary>Bir sürümün kayıtları; desteklenmeyen sürümde boş küme.</summary>
+    public static IReadOnlyCollection<AgentMessageTypeSpec> MessageTypesFor(int version) =>
+        Specs.TryGetValue(version, out var specs) ? specs.Values.ToList() : [];
+
+    public static bool TryGet(int version, string messageType, out AgentMessageTypeSpec spec)
+    {
+        if (Specs.TryGetValue(version, out var specs) && specs.TryGetValue(messageType, out var found))
+        {
+            spec = found;
+            return true;
+        }
+
+        spec = null!;
+        return false;
+    }
+
+    /// <summary>Kayıtlı (sürüm, tür) çiftini döndürür; yoksa üretici hatasıdır (komut üretilmez).</summary>
+    public static AgentMessageTypeSpec Get(int version, string messageType) =>
+        TryGet(version, messageType, out var spec)
+            ? spec
+            : throw new ArgumentException($"Sözleşmede kayıtlı olmayan (sürüm, tür): ({version}, {messageType})", nameof(messageType));
+
+    /// <summary>Outbox routing key'i registry'den türetilir (literal yok).</summary>
+    public static string RoutingKeyFor(int version, string messageType) => Get(version, messageType).RoutingKey;
+
+    private static IReadOnlyDictionary<int, IReadOnlyDictionary<string, AgentMessageTypeSpec>> BuildAll()
+    {
+        var v1 = BuildV1();
+        var v2 = BuildV2(v1);
+        return new Dictionary<int, IReadOnlyDictionary<string, AgentMessageTypeSpec>>
+        {
+            [V1] = v1.ToDictionary(s => s.MessageType, StringComparer.Ordinal),
+            [V2] = v2.ToDictionary(s => s.MessageType, StringComparer.Ordinal),
+        };
+    }
 
     private static AgentFieldRule[] RunEventFields(params AgentFieldRule[] extra)
     {
@@ -117,7 +185,7 @@ public static class AgentMessageTypeRegistry
             AgentFieldRule.Text("proposed_content", required: true, maxLength: 20000),
             AgentFieldRule.Text("created_at", required: true, format: AgentFieldFormat.UtcIso));
 
-    private static List<AgentMessageTypeSpec> Build()
+    private static List<AgentMessageTypeSpec> BuildV1()
     {
         var backendProducers = new List<string> { ProducerBackendNet, ProducerTestExecutor };
         var agentProducers = new List<string> { ProducerAgentPy, ProducerTestExecutor };
@@ -126,6 +194,7 @@ public static class AgentMessageTypeRegistry
         [
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.ExecutionRequested,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = CommandsExchange,
@@ -156,6 +225,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.CancellationRequested,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = CommandsExchange,
@@ -169,6 +239,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.ResumeRequested,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = CommandsExchange,
@@ -186,6 +257,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.ActionResult,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = CommandsExchange,
@@ -206,6 +278,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.RunAccepted,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -219,6 +292,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.RunModeSelected,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -235,6 +309,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.RunProgressed,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -255,6 +330,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.RunNeedsInput,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -271,6 +347,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.RunCompleted,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -294,6 +371,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.RunPartiallyCompleted,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -316,6 +394,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.RunFailed,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -335,6 +414,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.RunCancelled,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -350,6 +430,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.ActionProposed,
                 Direction = AgentMessageDirection.AgentToBackend,
                 Exchange = EventsExchange,
@@ -371,6 +452,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.ArticleContentChanged,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = ContentExchange,
@@ -392,6 +474,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.SyncBatch,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = ContentExchange,
@@ -417,6 +500,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.SyncCompleted,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = ContentExchange,
@@ -434,6 +518,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.ProfileContentChanged,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = ContentExchange,
@@ -452,6 +537,7 @@ public static class AgentMessageTypeRegistry
             },
             new()
             {
+                SchemaVersion = V1,
                 MessageType = AgentMessageTypes.ProjectContentChanged,
                 Direction = AgentMessageDirection.BackendToAgent,
                 Exchange = ContentExchange,
@@ -470,5 +556,116 @@ public static class AgentMessageTypeRegistry
                 ]
             }
         ];
+    }
+
+    // ------------------------------------------------------------------ v2
+
+    private static AgentFieldRule ProfileSnapshotRule(bool required = false) =>
+        AgentFieldRule.Composite("profile_snapshot", required,
+            AgentFieldRule.Text("profile_id", required: true, maxLength: 64, format: AgentFieldFormat.ProfileId),
+            AgentFieldRule.Integer("revision", required: true, minimum: 1),
+            AgentFieldRule.Text("content_hash", required: true, format: AgentFieldFormat.HashHex));
+
+    /// <summary>v2 source_reference: article|web|profile. Tür bazlı zorunlu/yasak alanlar ve profile
+    /// kimlik/URL biçimi çapraz kural olarak doğrulayıcıdadır (şemadaki allOf if/then dalları).</summary>
+    private static AgentFieldRule SourceReferenceRuleV2() =>
+        AgentFieldRule.Composite("kind_source_reference", false,
+            AgentFieldRule.Choice("kind", required: true, "article", "web", "profile"),
+            AgentFieldRule.Text("source_id", maxLength: 512),
+            AgentFieldRule.Text("title", maxLength: 512),
+            AgentFieldRule.Text("article_id", maxLength: 128),
+            AgentFieldRule.Integer("article_revision"),
+            AgentFieldRule.Integer("chunk_index"),
+            AgentFieldRule.Text("url", maxLength: 2048),
+            AgentFieldRule.Text("accessed_at", format: AgentFieldFormat.UtcIso),
+            AgentFieldRule.Text("profile_id", maxLength: 64, format: AgentFieldFormat.ProfileId),
+            AgentFieldRule.Integer("profile_revision", minimum: 1),
+            AgentFieldRule.Text("profile_content_hash", format: AgentFieldFormat.HashHex),
+            AgentFieldRule.Text("section_id", maxLength: 128, format: AgentFieldFormat.SectionId)) with
+        { Name = "citations_item" };
+
+    private static AgentFieldRule RunIntentRule(bool required) =>
+        AgentFieldRule.Choice("run_intent", required, [.. RunIntents]);
+
+    /// <summary>
+    /// v2 = v1'in run kapsamlı (run kimliği taşıyan) 13 türü; routing key "{tür}.v2". Şekli değişmeyen
+    /// türler v1 DTO'sunu paylaşır (alan kümesi aynı); değişen beş tür (execute, mode_selected,
+    /// completed, partially_completed, failed) v2 DTO'su ve alan kuralı taşır.
+    /// </summary>
+    private static List<AgentMessageTypeSpec> BuildV2(IEnumerable<AgentMessageTypeSpec> v1)
+    {
+        var result = new List<AgentMessageTypeSpec>();
+        foreach (var spec in v1.Where(s => s.RequiresRunIdentity))
+        {
+            var v2 = spec with
+            {
+                SchemaVersion = V2,
+                RoutingKey = $"{spec.MessageType}.v{V2}",
+            };
+
+            v2 = spec.MessageType switch
+            {
+                AgentMessageTypes.ExecutionRequested => v2 with
+                {
+                    PayloadDtoType = typeof(AgentExecutionRequestedV2),
+                    PayloadFields =
+                    [
+                        .. spec.PayloadFields,
+                        AgentFieldRule.Choice("conversation_topic", required: true, [.. ConversationTopics]),
+                        ProfileSnapshotRule()
+                    ]
+                },
+                AgentMessageTypes.RunModeSelected => v2 with
+                {
+                    PayloadDtoType = typeof(AgentRunModeSelectedV2),
+                    PayloadFields =
+                    [
+                        .. spec.PayloadFields,
+                        RunIntentRule(required: true),
+                        AgentFieldRule.Choice("source_scope", required: true, [.. SourceScopes]),
+                        ProfileSnapshotRule()
+                    ]
+                },
+                AgentMessageTypes.RunCompleted => v2 with
+                {
+                    PayloadDtoType = typeof(AgentRunCompletedV2),
+                    PayloadFields =
+                    [
+                        .. spec.PayloadFields.Select(f => f.Name == "citations"
+                            ? AgentFieldRule.List("citations", SourceReferenceRuleV2())
+                            : f),
+                        RunIntentRule(required: true),
+                        ProfileSnapshotRule()
+                    ]
+                },
+                AgentMessageTypes.RunPartiallyCompleted => v2 with
+                {
+                    PayloadDtoType = typeof(AgentRunPartiallyCompletedV2),
+                    PayloadFields =
+                    [
+                        .. spec.PayloadFields.Select(f => f.Name == "citations"
+                            ? AgentFieldRule.List("citations", SourceReferenceRuleV2())
+                            : f),
+                        RunIntentRule(required: true),
+                        ProfileSnapshotRule()
+                    ]
+                },
+                AgentMessageTypes.RunFailed => v2 with
+                {
+                    PayloadDtoType = typeof(AgentRunFailedV2),
+                    PayloadFields =
+                    [
+                        .. spec.PayloadFields,
+                        RunIntentRule(required: false),
+                        ProfileSnapshotRule()
+                    ]
+                },
+                _ => v2,
+            };
+
+            result.Add(v2);
+        }
+
+        return result;
     }
 }

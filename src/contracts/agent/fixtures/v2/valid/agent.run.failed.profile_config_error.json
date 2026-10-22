@@ -1,0 +1,33 @@
+{
+  "message_id": "55555555-5555-4555-8555-555555555506",
+  "message_type": "agent.run.failed",
+  "schema_version": 2,
+  "occurred_at": "2026-10-11T09:00:00Z",
+  "producer": "agent-py",
+  "payload": {
+    "event_sequence": 4,
+    "error_code": "config_error",
+    "error_message": "Profil kaynagi dogrulanamadi",
+    "usage": {
+      "run_id": "aaaaaaa1-0000-4000-8000-000000000001",
+      "model_calls": 5,
+      "prompt_tokens": 4200,
+      "completion_tokens": 1100,
+      "total_tokens": 5300,
+      "tool_calls": 3,
+      "web_search_calls": 2,
+      "duration_seconds": 42.5,
+      "recorded_at": "2026-10-11T09:04:30Z"
+    },
+    "run_intent": "profile",
+    "profile_snapshot": {
+      "profile_id": "berkay-kaplan",
+      "revision": 1,
+      "content_hash": "4f3b02e187c2b8c04134aa2c80df4b2d8c817377780aca74d2a11e9bf0c1406d"
+    }
+  },
+  "correlation_id": "ccccccc1-0000-4000-8000-000000000003",
+  "run_id": "aaaaaaa1-0000-4000-8000-000000000001",
+  "conversation_id": "bbbbbbb1-0000-4000-8000-000000000002",
+  "trace_context": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}

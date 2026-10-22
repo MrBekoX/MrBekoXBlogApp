@@ -44,6 +44,18 @@ Sorumluluk dağılımı (plan B6 — 02-rabbitmq-haberlesme-plani.md:374-400):
   (``uncertain=True``) yakınır yazılır.
 - **Konuşma geçmişi:** ``conversation_history`` backend snapshot'ından
   (execute payload) aynen alınır; worker onayla değiştirmez.
+- **Wire sürümü (K4):** claim edilen işin ``wire_version``'ı (migration 0005)
+  payload'ın hangi DTO ile yeniden doğrulanacağını (v1/v2) ve worker'ın ürettiği
+  her olayın (mode_selected, progress, needs_input, terminal, failed) sürümünü
+  belirler. v2 run'ında ``ExecutionContext.conversation_topic``/``profile_snapshot``
+  dolar; v1 run'ında konu yoktur (legacy A9 profil yolu).
+- **Who am I sınırları (K5, savunma derinliği):** etkin niyet PROFILE olduğunda
+  (açık who_am_i konusu veya AUTO→PROFILE) sink ``generation_delta``'yı HİÇ
+  yayınlamaz, ilerleme mesajı sabit durum metnine indirgenir ve detail yalnız
+  sayaç taşır; web araç kümesi çekirdeğe hiç verilmez (port düzeyi kapatma —
+  ``max_web_search_calls=0`` tek başına yetmez). Terminal sonuç kaynak denetimi:
+  profil kapsamı yalnız pinlenmiş snapshot'a ait profile kaynağı taşır;
+  who_am_i isteği PROFILE dışı niyetle sonuçlanamaz; ihlal ``validation_error``.
 
 Kaynaklar: [LG-PERSISTENCE#C2] kalıcı checkpointer, süreç restart'ında
 checkpoint korunur; [PY-ASYNCIO#C2] iptal istisnası bastırılmaz;
@@ -55,8 +67,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
-import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -76,12 +88,16 @@ from agent_core.models import (
     AgentMode,
     AgentOutcome,
     BudgetProfile,
+    ConversationTopic,
     ConversationTurn,
     ExecutionContext,
     ModePreference,
+    ProfileSnapshotRef,
     ProgressKind,
+    RunIntent,
     RunStatus,
     SourceReference,
+    SourceScope,
 )
 from agent_core.ports import (
     BudgetStore,
@@ -93,16 +109,22 @@ from agent_core.ports import (
 )
 from agent_core.ports.checkpoint import CheckpointStore as CheckpointStorePort
 
-from .contracts import AgentEnvelope, Producer, SCHEMA_VERSION
+from pydantic import ValidationError
+
+from .contracts import (
+    WIRE_VERSION_V2,
+    AgentContractError,
+    AgentEnvelope,
+    AgentExecutionRequestedV2,
+    spec_for,
+)
 from .contracts.payloads import (
     AgentActionProposalContent,
     AgentExecutionRequestedV1,
-    AgentRunCompletedV1,
-    AgentRunFailedV1,
-    AgentRunPartiallyCompletedV1,
     AgentSourceReference,
     AgentUsageRecord,
 )
+from .contracts.payloads_v2 import AgentSourceReferenceV2
 from .content import StaleExecutionRejected
 from .control_store import ControlStore
 from .events import (
@@ -116,6 +138,13 @@ from .job_store import (
     QUEUE_CLASS_RESEARCH,
     ClaimedJob,
     JobStore,
+)
+from .wire import (
+    WireVersionMismatch,
+    compose_run_envelope,
+    to_transport_citation,
+    to_transport_profile_snapshot,
+    versioned_payload,
 )
 
 __all__ = [
@@ -175,7 +204,12 @@ class ExecutionDependencies:
     ``profile_repository``/``project_repository``/``article_catalog`` A9
     rehberlik kaynaklarıdır (W6 F3): taze yürütmede ve checkpoint devamında
     çekirdeğe AYNEN aktarılır; bağlı değilken çekirdek dürüst
-    ``config_error`` döner (kayıtsız modele düşmez).
+    ``config_error`` döner (kayıtsız modele düşmez). ``profile_repository``
+    legacy A9 (v1 PROFILE) yoludur ve geçiş için açık kalır.
+    ``profile_knowledge`` (Who am I, K5): canonical profil deposu
+    (``ProfileKnowledgeRepository`` — ``active_snapshot()``/``load(snapshot)``);
+    v2 PROFILE niyeti yalnız pinlenmiş sürüme karşı bununla yürür. Bağlı
+    değilken çekirdek ``config_error`` üretir (kaynaksız model cevabı yok).
     """
 
     model: ModelProvider
@@ -189,6 +223,7 @@ class ExecutionDependencies:
     profile_repository: Any | None = None
     project_repository: Any | None = None
     article_catalog: Any | None = None
+    profile_knowledge: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -332,8 +367,34 @@ class _MeteredModel:
         return response
 
 
+#: Profil (Who am I) run'larında ilerleme mesajının yerine geçen sabit durum
+#: metinleri: ara olaylar chunk, taslak veya biyografi cevabı TAŞIMAZ (K5).
+_PROFILE_PROGRESS_TEXT: dict[str, str] = {
+    ProgressKind.RUN_STARTED.value: "Çalışma başladı",
+    ProgressKind.MODE_SELECTED.value: "Profil sorusu olarak yönlendirildi",
+    ProgressKind.RUN_RESUMED.value: "Çalışma sürdürülüyor",
+    ProgressKind.RETRIEVAL_STARTED.value: "Profil kaynakları aranıyor",
+    ProgressKind.RETRIEVAL_COMPLETED.value: "Profil kaynakları bulundu",
+    ProgressKind.GENERATION_STARTED.value: "Yanıt hazırlanıyor",
+    ProgressKind.GENERATION_COMPLETED.value: "Yanıt hazırlandı",
+    ProgressKind.VALIDATION_COMPLETED.value: "Yanıt kaynaklarla denetlendi",
+    ProgressKind.TOOL_ERROR.value: "Bir adım tamamlanamadı",
+}
+_PROFILE_PROGRESS_DEFAULT = "Profil yanıtı hazırlanıyor"
+#: Profil run'ında detail yalnız sayaç (negatif olmayan tam sayı metni) taşır.
+_COUNTER_VALUE = re.compile(r"^[0-9]{1,9}$")
+
+
 class _WorkerProgressSink(ProgressSink):
-    """DomainProgress → B5 olay yayıncısı + lease heartbeat."""
+    """DomainProgress → B5 olay yayıncısı + lease heartbeat.
+
+    ``profile_guard`` (Who am I savunma derinliği, K5): açıkken
+    ``GENERATION_DELTA`` HİÇ yayınlanmaz (doğrulanmamış cevap token'ı sızmaz),
+    ilerleme mesajı sabit durum metnine indirgenir, detail yalnız sayaç taşır
+    ve içerik önerisi olayı düşürülür. Koruma çekirdeğin doğru davranmasına
+    BAĞLI DEĞİLDİR; açık who_am_i konusunda baştan, AUTO→PROFILE'da rota
+    kararından hemen sonra açılır ve bir daha kapanmaz.
+    """
 
     def __init__(
         self,
@@ -345,18 +406,38 @@ class _WorkerProgressSink(ProgressSink):
         execution_attempt: int,
         publisher: AgentEventPublisher | None,
         watch: _LeaseWatch,
+        profile_guard: bool = False,
     ) -> None:
         self._ids = (run_id, conversation_id, correlation_id, causation_id)
         self._attempt = execution_attempt
         self._publisher = publisher
         self._watch = watch
+        self._profile_guard = profile_guard
+        #: Gözlem/test: profil korumasıyla düşürülen delta olayı sayısı.
+        self.dropped_deltas = 0
+
+    @property
+    def profile_guard(self) -> bool:
+        return self._profile_guard
+
+    def enable_profile_guard(self) -> None:
+        """Profil korumasını açar (tek yönlü; run boyunca kapanmaz)."""
+
+        self._profile_guard = True
 
     async def publish(self, event: Any) -> None:
         await self._watch.heartbeat()  # lease ilerlemeye bağlı (plan B6)
+        kind = event.kind if isinstance(event.kind, str) else event.kind.value
+        if self._profile_guard:
+            if kind == ProgressKind.GENERATION_DELTA.value:
+                self.dropped_deltas += 1  # biyografi cevabı ara olayla yayınlanmaz
+                return
+            if kind == ProgressKind.ACTION_PROPOSED.value:
+                logger.warning("profil run'ında içerik önerisi olayı düşürüldü: run=%s", self._ids[0])
+                return
         if self._publisher is None:
             return
         run_id, conversation_id, correlation_id, causation_id = self._ids
-        kind = event.kind if isinstance(event.kind, str) else event.kind.value
         # W6 F1: A9 öneri olayı sözleşmedeki agent.action.proposed'a çevrilir.
         # Bu olay B9 proposal kaydının (backend agent_proposals) TEK kaynağıdır;
         # agent.run.progressed'e düşürülseydi hat tüketicide işlenmezdi (ölü yol).
@@ -396,13 +477,22 @@ class _WorkerProgressSink(ProgressSink):
                 occurred_at=event.occurred_at,
             )
             return
+        message = event.message
+        detail = event.detail
+        if self._profile_guard:
+            message = _PROFILE_PROGRESS_TEXT.get(kind, _PROFILE_PROGRESS_DEFAULT)
+            detail = {
+                key: value
+                for key, value in (detail or {}).items()
+                if isinstance(value, str) and _COUNTER_VALUE.match(value)
+            }
         result = await self._publisher.publish_progress(
             run_id=run_id,
             conversation_id=conversation_id,
             correlation_id=correlation_id,
             kind=kind,
-            message=event.message,
-            detail=event.detail,
+            message=message,
+            detail=detail,
             execution_attempt=self._attempt,
             causation_id=causation_id,
         )
@@ -410,26 +500,18 @@ class _WorkerProgressSink(ProgressSink):
             logger.debug("ilerleme seyrekleştirildi: run=%s kind=%s", run_id, kind)
 
 
-def _to_transport_citation(citation: SourceReference) -> AgentSourceReference:
-    """Domain ``SourceReference`` → B1 ``AgentSourceReference`` (alan kümeleri birebir).
+def _to_transport_citation(
+    citation: SourceReference, wire_version: int = 1
+) -> AgentSourceReference | AgentSourceReferenceV2:
+    """Domain ``SourceReference`` → run sürümünün transport kaynak modeli.
 
-    ``TransportModel`` açık null taşınmasını reddeder (``model_fields_set``
-    taranır); opsiyonel alanlar None ise KONSTRUCTÖRE HİÇ geçilmez.
+    v1: article|web (``source_id`` artık düşürülmez — v1 şeması izin verir);
+    v2: article|web|profile (profil sürümü + bölüm/parça + ``/about#`` bağlantısı).
+    ``TransportModel`` açık null reddeder; None alanlar kurucuya geçilmez. v1 run'ı
+    profile kaynağı taşıyamaz (``WireVersionMismatch``).
     """
 
-    fields: dict[str, Any] = {
-        "kind": citation.kind,
-        "article_id": citation.article_id,
-        "article_revision": citation.article_revision,
-        "chunk_index": citation.chunk_index,
-        "url": citation.url,
-        "title": citation.title,
-    }
-    if citation.accessed_at is not None:
-        fields["accessed_at"] = citation.accessed_at.astimezone(timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-    return AgentSourceReference(**{key: value for key, value in fields.items() if value is not None})
+    return to_transport_citation(citation, wire_version)
 
 
 def _to_transport_usage(run_id: str, usage: Any) -> AgentUsageRecord:
@@ -446,19 +528,94 @@ def _to_transport_usage(run_id: str, usage: Any) -> AgentUsageRecord:
     )
 
 
-def _to_transport_outcome_dataclass(kind: str, outcome: AgentOutcome) -> TransportAgentOutcome:
+def _to_transport_outcome_dataclass(
+    kind: str, outcome: AgentOutcome, run_intent: RunIntent | None = None
+) -> TransportAgentOutcome:
     """Domain sonucunu B5 yayıncısının veri sınıfına çevirir (scope kontrolü için).
 
     Yalnız ``AgentEventPublisher._check_source_scope``'un okuduğu alanlar
-    doldurulur; kuralın tek kaynağı events.py'de kalır (kopyalanmaz).
+    doldurulur (``kind``'ı okunan citation'lar, kapsam, etkin niyet); kuralın tek
+    kaynağı events.py'de kalır (kopyalanmaz).
     """
 
     return TransportAgentOutcome(
         kind=kind,  # type: ignore[arg-type]
         selected_mode=outcome.selected_mode.value,
         source_scope=outcome.source_scope.value if outcome.source_scope else None,
-        citations=tuple(_to_transport_citation(c) for c in outcome.citations),
+        citations=tuple(outcome.citations),
+        run_intent=run_intent.value if run_intent is not None else None,
     )
+
+
+def planned_source_scope(prepared: PreparedRun) -> SourceScope:
+    """Rota kararının planlanan kaynak kapsamı (v2 ``mode_selected.source_scope``).
+
+    PROFILE niyeti daima profil kapsamıdır (web/makale yok); diğerlerinde
+    çekirdeğin ``_scope_for`` sırası izlenir — makale bağlamı worker'da referans
+    olarak taşındığından (K7) makale bağı ``article_id`` ile anlaşılır.
+    """
+
+    route = prepared.route
+    if route.intent is RunIntent.PROFILE:
+        return SourceScope.PROFILE
+    if route.needs_web:
+        return SourceScope.ARTICLE_AND_WEB
+    if route.source_scope is not None:
+        return route.source_scope
+    context = prepared.context
+    if context.article_snapshot is not None or context.article_id is not None:
+        return SourceScope.ARTICLE
+    return SourceScope.GENERAL
+
+
+def is_profile_bound(context: ExecutionContext, intent: RunIntent | None) -> bool:
+    """Profil (Who am I) korumaları uygulanır mı: açık who_am_i konusu veya PROFILE niyeti."""
+
+    return context.conversation_topic is ConversationTopic.WHO_AM_I or intent is RunIntent.PROFILE
+
+
+def audit_profile_outcome(
+    *,
+    wire_version: int,
+    context: ExecutionContext,
+    run_intent: RunIntent | None,
+    outcome: AgentOutcome,
+) -> str | None:
+    """Who am I kaynak denetimi (K5/K6 worker yarısı); ihlal metni veya None.
+
+    - v1 run'ı profile kaynağı taşıyamaz (legacy A9 yolu citation'sızdır;
+      provenance article/web'e daraltılmaz).
+    - Açık who_am_i konusu PROFILE dışı etkin niyetle tamamlanamaz.
+    - Profil kapsamı/niyeti: citation'lar yalnız profile türünde ve sonuç
+      snapshot'ı, run'a kabulde pinlenen ``context.profile_snapshot``'a eşit;
+      worker başka sürüme geçmez.
+    """
+
+    profile_citations = [c for c in outcome.citations if c.kind == "profile"]
+    if wire_version < WIRE_VERSION_V2:
+        if profile_citations:
+            return "v1 run'ı profile kaynağı taşıyamaz (legacy profil yolu citation üretmez)"
+        return None
+    if context.conversation_topic is ConversationTopic.WHO_AM_I and run_intent is not RunIntent.PROFILE:
+        return f"who_am_i konusu PROFILE dışı niyetle sonuçlanamaz (etkin niyet: {run_intent})"
+    profile_bound = run_intent is RunIntent.PROFILE or outcome.source_scope is SourceScope.PROFILE
+    if not profile_bound:
+        if profile_citations:
+            return "profile kaynağı yalnız profil kapsamlı sonuçta taşınabilir"
+        return None
+    if outcome.source_scope is not SourceScope.PROFILE:
+        return f"profil niyeti yalnız source_scope=profile ile sonuçlanabilir (gelen: {outcome.source_scope})"
+    foreign = sorted({c.kind for c in outcome.citations if c.kind != "profile"})
+    if foreign:
+        return f"profil sonucu profil dışı kaynak taşıyamaz: {', '.join(foreign)}"
+    pinned = context.profile_snapshot
+    result_snapshot = outcome.profile_snapshot
+    if result_snapshot is not None and (pinned is None or not pinned.same_as(result_snapshot)):
+        return "profil sonucu run'a pinlenmiş profil sürümüne ait değil"
+    for citation in profile_citations:
+        if pinned is None or not pinned.same_as(citation.profile_snapshot):
+            return "profile citation run'a pinlenmiş profil sürümüne ait değil"
+    return None
 
 
 class ExecutionWorker:
@@ -602,7 +759,10 @@ class ExecutionWorker:
                 await _release()
                 raise WorkerAborted("aborted_cancel", "aktif iptal niyeti var; yürütme başlatılmadı")
 
-            payload_model = AgentExecutionRequestedV1.model_validate(claimed.payload)
+            # İşin wire sürümünün DTO'suyla yeniden doğrulama (v1 işi v1, v2 işi v2;
+            # intake doğrulamasının savunma tekrarı). Bozuk kalıcı payload
+            # anlaşılır validation_error terminaliyle kapanır.
+            payload_model = self._validate_claimed_payload(claimed)
             # B8 stale komut guard'ı: makale üçlüsü taşıyan komutun snapshot
             # revizyonu, projection'ın bildiği kaldırma revizyonundan eskiyse
             # yürütme başlamaz (ne taze yol ne checkpoint resume).
@@ -618,7 +778,10 @@ class ExecutionWorker:
                 execution_attempt=claimed.execution_attempt,
                 publisher=self._publisher,
                 watch=watch,
+                # Açık who_am_i: koruma rota kararından ÖNCE açılır.
+                profile_guard=is_profile_bound(context, None),
             )
+            route_state: dict[str, Any] = {"intent": None}
 
             # A8: checkpoint varsa DEVAM (rota kararı checkpoint'ten okunur).
             # W6 F3: sürücüden gelen collab_input/validated_result devam
@@ -631,6 +794,7 @@ class ExecutionWorker:
                 cancel=cancel,
                 collab_input=collab_input,
                 validated_result=validated_result,
+                route_state=route_state,
             )
             if isinstance(resumed, CycleResult):
                 return resumed
@@ -646,9 +810,14 @@ class ExecutionWorker:
                     checkpoint=self._checkpoint,
                     execution_id=stable_execution_id(run_id),
                 )
+                route_state["intent"] = prepared.route.intent
+                if is_profile_bound(prepared.context, prepared.route.intent):
+                    # AUTO→PROFILE dahil: koruma rota kararından hemen sonra açılır.
+                    sink.enable_profile_guard()
                 if (
                     prepared.route.selected_mode is AgentMode.DEEP_RESEARCH
                     and claimed.queue_class != QUEUE_CLASS_RESEARCH
+                    and prepared.route.intent is not RunIntent.PROFILE
                 ):
                     # Kapasite ertelemesi: araştırma işi research kuyruğuna döner.
                     # Yürütme (model çağrısı) başlamadığı için deneme sayacı
@@ -672,6 +841,10 @@ class ExecutionWorker:
                         recovered=claimed.recovered,
                     )
 
+                # v2: rota kararı backend'e doğrulanabilir biçimde bildirilir
+                # (etkin niyet + planlanan kapsam + pinlenmiş snapshot).
+                await self._publish_mode_selected(claimed, prepared, guarded=sink.profile_guard)
+
                 outcome = await self._execute_prepared(
                     claimed,
                     prepared=prepared,
@@ -689,7 +862,13 @@ class ExecutionWorker:
                     "aborted_lease_lost", "lease kaybedildi; sonuç yazılmaz (yeni sahibin yolu açık)"
                 )
 
-            return await self._finish_outcome(claimed, outcome=outcome, metered=metered)
+            return await self._finish_outcome(
+                claimed,
+                outcome=outcome,
+                metered=metered,
+                context=context,
+                run_intent=outcome.run_intent or route_state["intent"],
+            )
         except PortError as error:
             if error.code is AgentErrorCode.CANCELLED:
                 if watch.lost:
@@ -707,6 +886,78 @@ class ExecutionWorker:
         finally:
             await watch.stop()
 
+    def _validate_claimed_payload(self, claimed: ClaimedJob) -> AgentExecutionRequestedV1:
+        """Kalıcı execute payload'ını İŞİN wire sürümünün DTO'suyla doğrular.
+
+        v2 eksik-alan kuralı (who_am_i → pinlenmiş snapshot zorunlu) doğrulayıcıda
+        olduğundan burada da uygulanır. İhlal ``PortError(validation_error)``:
+        ``_fail_now`` anlaşılır terminal üretir (sonsuz recovery döngüsü yok).
+        """
+
+        model = spec_for(claimed.wire_version, "agent.execute.requested").payload_model
+        try:
+            payload = model.model_validate(claimed.payload)
+        except ValidationError as error:
+            first = error.errors()[0]
+            raise PortError(
+                AgentErrorCode.VALIDATION_ERROR,
+                f"kalıcı execute payload'ı v{claimed.wire_version} sözleşmesine aykırı: "
+                f"{'.'.join(str(p) for p in first['loc'])}: {first['msg']}",
+                port="worker",
+            ) from None
+        if (
+            isinstance(payload, AgentExecutionRequestedV2)
+            and payload.conversation_topic.value == ConversationTopic.WHO_AM_I.value
+            and payload.profile_snapshot is None
+        ):
+            raise PortError(
+                AgentErrorCode.VALIDATION_ERROR,
+                "who_am_i işi pinlenmiş profile_snapshot taşımıyor",
+                port="worker",
+            )
+        return payload  # type: ignore[return-value]
+
+    async def _publish_mode_selected(
+        self, claimed: ClaimedJob, prepared: PreparedRun, *, guarded: bool
+    ) -> None:
+        """v2 ``agent.run.mode_selected``: etkin niyet, planlanan kapsam ve snapshot.
+
+        v1 run'ında yayınlanmaz (v1 davranışı korunur). PROFILE niyeti daima
+        ``requires_web_search=false`` + ``source_scope=profile`` + pinlenmiş
+        snapshot taşır; snapshot pinlenmemişse olay sözleşmeyle ifade edilemez
+        ve atlanır (çekirdek run'ı config_error ile kapatır — K1). Profil
+        korumasında gerekçe sabit metindir (ara olay serbest metin taşımaz).
+        Sözleşme ihlali yürütmeyi durdurmaz: loglanır, terminal denetimi geçerlidir.
+        """
+
+        if self._publisher is None or claimed.wire_version < WIRE_VERSION_V2:
+            return
+        route = prepared.route
+        intent = route.intent
+        snapshot = prepared.context.profile_snapshot if intent is RunIntent.PROFILE else None
+        if intent is RunIntent.PROFILE and snapshot is None:
+            logger.warning(
+                "mode_selected atlandı: run=%s PROFILE niyeti pinlenmiş profil sürümü taşımıyor", claimed.run_id
+            )
+            return
+        reason = "Yazar profili sorusu: yalnız onaylı profil kaynağı" if guarded else route.brief_reason[:2000]
+        try:
+            await self._publisher.publish_mode_selected(
+                run_id=claimed.run_id,
+                conversation_id=claimed.conversation_id,
+                correlation_id=claimed.envelope.correlation_id,
+                selected_mode=route.selected_mode.value,
+                requires_web_search=bool(route.needs_web and intent is not RunIntent.PROFILE),
+                reason=reason,
+                execution_attempt=claimed.execution_attempt,
+                causation_id=claimed.origin_message_id,
+                run_intent=intent.value,
+                source_scope=planned_source_scope(prepared).value,
+                profile_snapshot=snapshot,
+            )
+        except (EventPublishError, ValueError) as error:
+            logger.error("mode_selected yayınlanamadı: run=%s (%s)", claimed.run_id, error)
+
     async def _try_resume(
         self,
         claimed: ClaimedJob,
@@ -716,6 +967,7 @@ class ExecutionWorker:
         cancel: _WorkerCancel,
         collab_input: Any | None = None,
         validated_result: Any | None = None,
+        route_state: dict[str, Any] | None = None,
     ) -> "AgentOutcome | CycleResult | None":
         """Checkpoint'i arar; bulunursa A8 ``resume`` ile devam ettirir.
 
@@ -752,9 +1004,14 @@ class ExecutionWorker:
             ) from None
 
         stored = PreparedRun.model_validate_json(payload.decode("utf-8"))
+        if route_state is not None:
+            route_state["intent"] = stored.route.intent
+        if is_profile_bound(stored.context, stored.route.intent):
+            sink.enable_profile_guard()  # checkpoint'ten devamda da profil sınırları
         if (
             stored.route.selected_mode is AgentMode.DEEP_RESEARCH
             and claimed.queue_class != QUEUE_CLASS_RESEARCH
+            and stored.route.intent is not RunIntent.PROFILE
         ):
             moved = await self._store.requeue_job(
                 claimed.run_id,
@@ -799,10 +1056,12 @@ class ExecutionWorker:
             budget=self._deps.budget,
             progress=sink,
             cancel=cancel,
-            web_tools=self._deps.web_tools,
+            # Profil run'ına dış kaynak kapasitesi port düzeyinde verilmez (K5).
+            web_tools=None if sink.profile_guard else self._deps.web_tools,
             profile_repository=self._deps.profile_repository,
             project_repository=self._deps.project_repository,
             article_catalog=self._deps.article_catalog,
+            profile_knowledge=self._deps.profile_knowledge,
         )
         return outcome
 
@@ -825,17 +1084,20 @@ class ExecutionWorker:
             budget=self._deps.budget,
             progress=sink,
             cancel=cancel,
-            web_tools=self._deps.web_tools,
+            # Profil run'ına web/arama/kaynak okuyucu araçları HİÇ verilmez (K5):
+            # BudgetPolicy web limitini >=1'e çekebildiğinden limit yetmez.
+            web_tools=None if sink.profile_guard else self._deps.web_tools,
             profile_repository=self._deps.profile_repository,
             project_repository=self._deps.project_repository,
             article_catalog=self._deps.article_catalog,
             collab_input=collab_input,
             validated_result=validated_result,
+            profile_knowledge=self._deps.profile_knowledge,
         )
 
     # ------------------------------------------------- iptal terminali + guard
 
-    def _ensure_execution_allowed(self, payload: AgentExecutionRequestedV1) -> None:
+    def _ensure_execution_allowed(self, payload: AgentExecutionRequestedV1) -> None:  # v2 alt sınıfı dahil
         """B8 stale komut denetimi: bilinen kaldırma revizyonundan eski snapshot reddedilir.
 
         Denetim ``content_state.ensure_execution_allowed``'e (``ContentSyncState``)
@@ -895,11 +1157,32 @@ class ExecutionWorker:
     # ------------------------------------------------------- sonuç yazımı
 
     async def _finish_outcome(
-        self, claimed: ClaimedJob, *, outcome: AgentOutcome, metered: _MeteredModel
+        self,
+        claimed: ClaimedJob,
+        *,
+        outcome: AgentOutcome,
+        metered: _MeteredModel,
+        context: ExecutionContext | None = None,
+        run_intent: RunIntent | None = None,
     ) -> CycleResult:
-        """Domain sonucunu transport terminaline çevirip guard'la yazar."""
+        """Domain sonucunu run sürümünün transport terminaline çevirip guard'la yazar."""
 
         run_id = claimed.run_id
+        profile_run = (
+            claimed.wire_version >= WIRE_VERSION_V2
+            and context is not None
+            and is_profile_bound(context, run_intent)
+        )
+        if outcome.status is RunStatus.NEEDS_INPUT and profile_run:
+            # Who am I askıda iş oluşturmaz (K5): bilinmeyen/özel bilgi tamamlanmış
+            # kısa cevaptır; collaboration resume akışı bu iş için kullanılmaz.
+            return await self._fail_now(
+                claimed,
+                error_code="validation_error",
+                error_message="profil (Who am I) çalışması needs_input üretemez",
+                run_intent=run_intent,
+                profile_snapshot=context.profile_snapshot if context is not None else None,
+            )
         if outcome.status is RunStatus.NEEDS_INPUT:
             # needs_input terminal DEĞİLDİR: iş beklemeye döner (checkpoint
             # korunur); B5 needs_input olayı outbox'a yazılır.
@@ -940,6 +1223,7 @@ class ExecutionWorker:
         kind = kind_map[outcome.status]
 
         transport_outcome = _TransportOutcome(kind=kind, domain=outcome)
+        pinned = context.profile_snapshot if context is not None else None
 
         if kind in ("completed", "partially_completed"):
             # B5 yayın kuralının TEK kaynağına delegasyon: scope/citation
@@ -948,17 +1232,50 @@ class ExecutionWorker:
             # geldiğinde sessiz yayın yok).
             try:
                 AgentEventPublisher._check_source_scope(
-                    _to_transport_outcome_dataclass(kind, outcome)
+                    _to_transport_outcome_dataclass(kind, outcome, run_intent)
                 )
             except EventPublishError as error:
                 return await self._fail_now(
                     claimed,
                     error_code="validation_error",
                     error_message=f"terminal sonuç yayın kuralına aykırı: {error}",
+                    run_intent=run_intent,
+                    profile_snapshot=pinned,
                 )
+            if context is not None:
+                violation = audit_profile_outcome(
+                    wire_version=claimed.wire_version,
+                    context=context,
+                    run_intent=run_intent,
+                    outcome=outcome,
+                )
+                if violation is not None:
+                    return await self._fail_now(
+                        claimed,
+                        error_code="validation_error",
+                        error_message=f"profil kaynak denetimi: {violation}",
+                        run_intent=run_intent,
+                        profile_snapshot=pinned,
+                    )
 
-        terminal_envelope = self._terminal_envelope(claimed, transport_outcome)
-        result_json = self._result_json(claimed, transport_outcome, metered)
+        try:
+            terminal_envelope = self._terminal_envelope(
+                claimed, transport_outcome, run_intent=run_intent, pinned_snapshot=pinned
+            )
+        except (AgentContractError, ValidationError, WireVersionMismatch) as error:
+            # Sözleşmeye (run sürümünün DTO'su + tüketici çapraz kuralları) aykırı
+            # terminal YAYINLANMAZ; iş anlaşılır validation_error ile kapanır.
+            detail = (
+                f"{error.category.value}: {error.message}" if isinstance(error, AgentContractError) else str(error)
+            )
+            return await self._fail_now(
+                claimed,
+                error_code="validation_error",
+                error_message=f"terminal sonuç v{claimed.wire_version} sözleşmesine aykırı: {detail}"[:4000],
+                run_intent=run_intent,
+                profile_snapshot=pinned,
+            )
+        result_json = self._result_json(claimed, transport_outcome, metered, run_intent=run_intent)
 
         write = (
             await self._store.complete_job(
@@ -991,34 +1308,49 @@ class ExecutionWorker:
         )
 
     async def _fail_now(
-        self, claimed: ClaimedJob, *, error_code: str, error_message: str
+        self,
+        claimed: ClaimedJob,
+        *,
+        error_code: str,
+        error_message: str,
+        run_intent: RunIntent | None = None,
+        profile_snapshot: ProfileSnapshotRef | None = None,
     ) -> CycleResult:
-        """Yürütme başlamadan/orta yolda anlaşılır terminal failed üretir."""
+        """Yürütme başlamadan/orta yolda anlaşılır terminal failed üretir (run sürümüyle).
 
-        envelope = AgentEnvelope(
-            message_id=str(uuid.uuid4()),
+        v2'de bilinen etkin niyet ve pinlenmiş profil sürümü opsiyonel olarak taşınır.
+        """
+
+        envelope = compose_run_envelope(
+            schema_version=claimed.wire_version,
             message_type="agent.run.failed",
-            schema_version=SCHEMA_VERSION,
             run_id=claimed.run_id,
             conversation_id=claimed.conversation_id,
             correlation_id=claimed.envelope.correlation_id,
             causation_id=claimed.origin_message_id,
             occurred_at=_utcnow_str(),
-            producer=Producer.AGENT_PY,
-            payload=AgentRunFailedV1(
-                event_sequence=0,
-                execution_attempt=claimed.execution_attempt,
-                fencing_token=str(claimed.fencing_token),
-                error_code=error_code,
-                error_message=error_message,
-            ).model_dump(exclude_none=True),
+            payload=versioned_payload(
+                claimed.wire_version,
+                {
+                    "event_sequence": 0,
+                    "execution_attempt": claimed.execution_attempt,
+                    "fencing_token": str(claimed.fencing_token),
+                    "error_code": _code_value(error_code),
+                    "error_message": (error_message or "")[:4000] or None,
+                },
+                {
+                    "run_intent": run_intent.value if run_intent is not None else None,
+                    "profile_snapshot": to_transport_profile_snapshot(profile_snapshot),
+                },
+            ),
         )
         result_json = {
             "outcome": "failed",
-            "error_code": error_code,
+            "error_code": _code_value(error_code),
             "error_message": error_message,
             "execution_id": stable_execution_id(claimed.run_id),
             "execution_attempt": claimed.execution_attempt,
+            "wire_version": claimed.wire_version,
         }
         write = await self._store.fail_job(
             claimed.run_id, result_json, claimed.fencing_token, outbox_event=envelope
@@ -1047,13 +1379,18 @@ class ExecutionWorker:
     def _build_context(
         self, payload: AgentExecutionRequestedV1, claimed: ClaimedJob
     ) -> ExecutionContext:
-        """Execute payload'ını çekirdek ``ExecutionContext``'ine çevirir.
+        """Execute payload'ını (v1 veya v2) çekirdek ``ExecutionContext``'ine çevirir.
 
         Konuşma geçmişi backend snapshot'ından AYNEN taşınır (plan B6:
         "konuşma cevap geçmişini backend snapshot'ına göre koruma"); worker
         tur eklemez/çıkarmaz. ``article_snapshot`` bilinçli None'dur (K7):
         çekirdek yalnız referansla çalışır; içerik getirmesi B8 pgvector
         entegrasyonundan sonra retriever bağlanarak etkinleşir.
+
+        v2: ``conversation_topic`` ve kabulde pinlenen ``profile_snapshot`` taşınır;
+        v1: konu ``None`` (legacy A9 profil yolu). who_am_i konusunda bütçe
+        profilinin web/araç limitleri sıfırlanır (araçlar zaten port düzeyinde
+        verilmez). Bağlam kuralı ihlali ``PortError(validation_error)``.
         """
 
         profile = self._settings.budget_profile or BudgetProfile(
@@ -1068,95 +1405,128 @@ class ExecutionWorker:
             ConversationTurn(role=turn.role, content=turn.content, created_at=turn.created_at)
             for turn in payload.conversation_history
         ]
-        return ExecutionContext(
-            run_id=claimed.run_id,
-            conversation_id=claimed.conversation_id,
-            question=payload.question,
-            language=payload.language,
-            mode_preference=ModePreference(payload.mode_preference),
-            article_id=payload.article_id,
-            article_revision=payload.article_revision,
-            article_content_hash=payload.article_content_hash,
-            article_snapshot=None,
-            selected_text=payload.selected_text,
-            conversation_history=history,
-            budget_profile=profile,
-        )
+        topic: ConversationTopic | None = None
+        snapshot: ProfileSnapshotRef | None = None
+        if isinstance(payload, AgentExecutionRequestedV2):
+            topic = ConversationTopic(payload.conversation_topic.value)
+            if payload.profile_snapshot is not None:
+                snapshot = ProfileSnapshotRef(
+                    profile_id=payload.profile_snapshot.profile_id,
+                    revision=payload.profile_snapshot.revision,
+                    content_hash=payload.profile_snapshot.content_hash,
+                )
+        if topic is ConversationTopic.WHO_AM_I and (profile.max_web_search_calls or profile.max_tool_calls):
+            profile = profile.model_copy(update={"max_web_search_calls": 0, "max_tool_calls": 0})
+        try:
+            return ExecutionContext(
+                run_id=claimed.run_id,
+                conversation_id=claimed.conversation_id,
+                question=payload.question,
+                language=payload.language,
+                mode_preference=ModePreference(payload.mode_preference),
+                article_id=payload.article_id,
+                article_revision=payload.article_revision,
+                article_content_hash=payload.article_content_hash,
+                article_snapshot=None,
+                selected_text=payload.selected_text,
+                conversation_history=history,
+                budget_profile=profile,
+                conversation_topic=topic,
+                profile_snapshot=snapshot,
+            )
+        except ValidationError as error:
+            first = error.errors()[0]
+            raise PortError(
+                AgentErrorCode.VALIDATION_ERROR,
+                f"yürütme bağlamı kurulamadı: {first['msg']}",
+                port="worker",
+            ) from None
 
-    def _terminal_envelope(self, claimed: ClaimedJob, transport: "_TransportOutcome") -> AgentEnvelope:
-        """Terminal olay zarfını B1 payload modeliyle kurar (sıra DB'de tahsis edilir)."""
+    def _terminal_envelope(
+        self,
+        claimed: ClaimedJob,
+        transport: "_TransportOutcome",
+        *,
+        run_intent: RunIntent | None = None,
+        pinned_snapshot: ProfileSnapshotRef | None = None,
+    ) -> AgentEnvelope:
+        """Terminal olay zarfını run sürümünün payload modeliyle kurar (sıra DB'de tahsis edilir).
+
+        v2: ``run_intent`` (completed/partial'da zorunlu) ve ``profile_snapshot``
+        taşınır; PROFILE niyetinde citation'sız red/netleştirme cevabı da pinlenmiş
+        snapshot'ı taşır. Zarf tüketici doğrulayıcısından geçer
+        (``compose_run_envelope``); ihlal çağırana yükselir.
+        """
 
         domain = transport.domain
+        version = claimed.wire_version
         common: dict[str, Any] = {
             "event_sequence": 0,  # gerçek değer complete/fail transaction'ında yazılır
             "execution_attempt": claimed.execution_attempt,
             "fencing_token": str(claimed.fencing_token),
         }
         usage = _to_transport_usage(claimed.run_id, domain.usage)
-        citations = [_to_transport_citation(c) for c in domain.citations]
+        citations = [_to_transport_citation(c, version) for c in domain.citations]
+        intent = domain.run_intent or run_intent
+        snapshot = domain.profile_snapshot
+        if snapshot is None and intent is RunIntent.PROFILE:
+            snapshot = pinned_snapshot
+        v2_fields = {
+            "run_intent": intent.value if intent is not None else None,
+            "profile_snapshot": to_transport_profile_snapshot(snapshot),
+        }
         if transport.kind == "completed":
-            payload_model: Any = AgentRunCompletedV1(
-                **_clean(
-                    **common,
-                    selected_mode=domain.selected_mode.value,
-                    answer=domain.answer,
-                    report=domain.report,
-                    citations=citations,
-                    source_scope=domain.source_scope.value,
-                    unresolved_questions=list(domain.unresolved_questions),
-                    usage=usage,
-                    action_proposal=None,
-                )
-            )
+            fields: dict[str, Any] = {
+                **common,
+                "selected_mode": domain.selected_mode.value,
+                "answer": domain.answer,
+                "report": domain.report,
+                "citations": citations,
+                "source_scope": domain.source_scope.value,
+                "unresolved_questions": list(domain.unresolved_questions),
+                "usage": usage,
+            }
         elif transport.kind == "partially_completed":
-            payload_model = AgentRunPartiallyCompletedV1(
-                **_clean(
-                    **common,
-                    selected_mode=domain.selected_mode.value,
-                    answer=domain.answer,
-                    report=domain.report,
-                    citations=citations,
-                    source_scope=domain.source_scope.value,
-                    unresolved_questions=list(domain.unresolved_questions),
-                    usage=usage,
-                )
-            )
+            fields = {
+                **common,
+                "selected_mode": domain.selected_mode.value,
+                "answer": domain.answer,
+                "report": domain.report,
+                "citations": citations,
+                "source_scope": domain.source_scope.value,
+                "unresolved_questions": list(domain.unresolved_questions),
+                "usage": usage,
+            }
         else:
-            payload_model = AgentRunFailedV1(
-                **_clean(
-                    **common,
-                    error_code=domain.error_code.value if domain.error_code else "provider_error",
-                    error_message=domain.error_message,
-                    selected_mode=domain.selected_mode.value,
-                    usage=usage,
-                )
-            )
-        return AgentEnvelope(
-            message_id=str(uuid.uuid4()),
+            fields = {
+                **common,
+                "error_code": domain.error_code.value if domain.error_code else "provider_error",
+                "error_message": domain.error_message,
+                "selected_mode": domain.selected_mode.value,
+                "usage": usage,
+            }
+        return compose_run_envelope(
+            schema_version=version,
             message_type=f"agent.run.{transport.kind}",
-            schema_version=SCHEMA_VERSION,
             run_id=claimed.run_id,
             conversation_id=claimed.conversation_id,
             correlation_id=claimed.envelope.correlation_id,
             causation_id=claimed.origin_message_id,
             occurred_at=_utcnow_str(),
-            producer=Producer.AGENT_PY,
-            payload=payload_model.model_dump(exclude_none=True),
+            payload=versioned_payload(version, fields, v2_fields),
         )
 
     def _nonterminal_envelope(
         self, message_type: str, claimed: ClaimedJob, **payload_fields: Any
     ) -> AgentEnvelope:
-        return AgentEnvelope(
-            message_id=str(uuid.uuid4()),
+        return compose_run_envelope(
+            schema_version=claimed.wire_version,
             message_type=message_type,
-            schema_version=SCHEMA_VERSION,
             run_id=claimed.run_id,
             conversation_id=claimed.conversation_id,
             correlation_id=claimed.envelope.correlation_id,
             causation_id=claimed.origin_message_id,
             occurred_at=_utcnow_str(),
-            producer=Producer.AGENT_PY,
             payload={"event_sequence": 0, **_clean(**payload_fields)},
         )
 
@@ -1173,7 +1543,12 @@ class ExecutionWorker:
                 await self._store._write_outbox_with_sequence(conn, run_id, envelope)
 
     def _result_json(
-        self, claimed: ClaimedJob, transport: "_TransportOutcome", metered: _MeteredModel
+        self,
+        claimed: ClaimedJob,
+        transport: "_TransportOutcome",
+        metered: _MeteredModel,
+        *,
+        run_intent: RunIntent | None = None,
     ) -> dict[str, Any]:
         """Terminal özeti: kullanım + belirsiz dış maliyet işareti + kimlikler.
 
@@ -1193,6 +1568,11 @@ class ExecutionWorker:
             "execution_id": stable_execution_id(claimed.run_id),
             "execution_attempt": claimed.execution_attempt,
             "fencing_token": claimed.fencing_token,
+            "wire_version": claimed.wire_version,
+            "run_intent": (domain.run_intent or run_intent).value if (domain.run_intent or run_intent) else None,
+            "profile_snapshot": (
+                domain.profile_snapshot.model_dump(mode="json") if domain.profile_snapshot is not None else None
+            ),
             "usage": {
                 "model_calls": domain.usage.model_calls,
                 "prompt_tokens": domain.usage.prompt_tokens,
@@ -1230,6 +1610,12 @@ def _clean(**kwargs: Any) -> dict[str, Any]:
     """None değerli anahtarları atar: ``TransportModel`` açık null taşımaz."""
 
     return {key: value for key, value in kwargs.items() if value is not None}
+
+
+def _code_value(code: Any) -> str:
+    """``AgentErrorCode`` veya düz metin hata kodu → sözleşme değeri."""
+
+    return str(getattr(code, "value", code))
 
 
 def _utcnow_str() -> str:

@@ -33,6 +33,15 @@ adımlarında DURUR ve güncel ``PreparedRun`` (``collab_state`` dâhil) A8
 checkpoint zincirine yazılır; başarı yalnız doğrulanmış backend sonucuyla
 bildirilir — agent kayıt atmaz, e-posta göndermez.
 
+Who am I (additive, K5): v2 run'larda (``context.is_profile_rag_run``)
+``PROFILE`` niyeti pinlenmiş canonical profil üzerinde profil RAG runner'ına
+(``agent_core.profile.run_profile_rag``) gider; ``profile_knowledge``
+(``ProfileKnowledgeRepository``) bağlı değilse veya snapshot pinlenmemişse
+``failed/config_error`` döner (AUTO ziyaretçi-kimliği netleştirmesi hariç:
+korpus gerektirmez). v1 run'larda A9 ``run_guidance`` yolu aynen kalır.
+Her terminal sonuç ``run_intent = route.intent`` ile işaretlenir; profil RAG
+sonuçları pinlenmiş ``profile_snapshot``'ı taşır.
+
 Paket dış adaptör olmadan test girdisiyle çağrılabilir: tüm bağımlılıklar
 portlardan gelir ve ``agent_core.adapters.test_doubles`` ile koşulur.
 """
@@ -87,6 +96,9 @@ from .ports import (
 )
 from .ports.budget import BudgetKind
 from .ports.model import ModelRequest
+from .ports.profile import ProfileKnowledgeRepository
+from .profile.detection import is_visitor_identity_route
+from .profile.runner import run_profile_rag, visitor_identity_outcome
 from .qa.models import QaFlowConfig
 from .qa.runner import run_article_qa
 from .research.runner import run_deep_research
@@ -410,6 +422,25 @@ def _terminal_outcome(
     )
 
 
+def _stamp_outcome(prepared: PreparedRun, outcome: AgentOutcome) -> AgentOutcome:
+    """Terminal sonuca etkin niyeti (ve profil RAG'de pinlenmiş snapshot'ı) işler.
+
+    ``run_intent`` routing'in çözdüğü niyettir (v2 terminal olaylarında taşınır).
+    Profil RAG sonucunda snapshot runner tarafından zaten yazılır; burada yalnız
+    eksikse pinlenmiş bağlamdan tamamlanır (citation'sız red/netleştirme dahil).
+    """
+    update: dict[str, object] = {"run_intent": prepared.route.intent}
+    context = prepared.context
+    if (
+        prepared.route.intent is RunIntent.PROFILE
+        and context.is_profile_rag_run
+        and outcome.profile_snapshot is None
+        and context.profile_snapshot is not None
+    ):
+        update["profile_snapshot"] = context.profile_snapshot
+    return outcome.model_copy(update=update)
+
+
 async def execute_plan(
     prepared: PreparedRun,
     *,
@@ -429,6 +460,58 @@ async def execute_plan(
     checkpoint: CheckpointStore | None = None,
     collab_input: CollabResumeInput | None = None,
     validated_result: ValidatedActionResult | None = None,
+    profile_knowledge: ProfileKnowledgeRepository | None = None,
+) -> AgentOutcome:
+    """Hazırlanmış planı yürütür ve sonucu etkin niyetle işaretler.
+
+    Yürütme ``_dispatch_plan``'dadır; bu sarmalayıcı her terminal sonuca
+    ``run_intent`` (ve profil RAG'de ``profile_snapshot``) yazar.
+    ``profile_knowledge`` (Who am I): v2 PROFILE niyetinin canonical profil
+    deposu; v1 PROFILE yolu ``profile_repository`` ile A9 rehberliğinde kalır.
+    """
+    outcome = await _dispatch_plan(
+        prepared,
+        model=model,
+        retriever=retriever,
+        content=content,
+        budget=budget,
+        progress=progress,
+        cancel=cancel,
+        qa_config=qa_config,
+        analysis_config=analysis_config,
+        web_search=web_search,
+        web_tools=web_tools,
+        profile_repository=profile_repository,
+        project_repository=project_repository,
+        article_catalog=article_catalog,
+        checkpoint=checkpoint,
+        collab_input=collab_input,
+        validated_result=validated_result,
+        profile_knowledge=profile_knowledge,
+    )
+    return _stamp_outcome(prepared, outcome)
+
+
+async def _dispatch_plan(
+    prepared: PreparedRun,
+    *,
+    model: ModelProvider,
+    retriever=None,
+    content=None,
+    budget: BudgetStore | None = None,
+    progress: ProgressSink | None = None,
+    cancel: CancellationToken | None = None,
+    qa_config: QaFlowConfig | None = None,
+    analysis_config: AnalysisConfig | None = None,
+    web_search=None,
+    web_tools: dict[str, object] | None = None,
+    profile_repository=None,
+    project_repository=None,
+    article_catalog: list[ArticleCatalogEntry] | None = None,
+    checkpoint: CheckpointStore | None = None,
+    collab_input: CollabResumeInput | None = None,
+    validated_result: ValidatedActionResult | None = None,
+    profile_knowledge: ProfileKnowledgeRepository | None = None,
 ) -> AgentOutcome:
     """Hazırlanmış planı yürütür; rota kararını yeniden hesaplamaz.
 
@@ -483,9 +566,29 @@ async def execute_plan(
 
     route = prepared.route
 
+    # Who am I: AUTO ziyaretçi-kimliği belirsizliği korpus/model gerektirmez;
+    # kısa, tamamlanmış netleştirme cevabı (needs_input değil; v1 ve v2).
+    if is_visitor_identity_route(route):
+        return visitor_identity_outcome(prepared.context, route)
+
     # Plan A5: eksik bağlam/kişisel bilgi tahminle tamamlanmaz.
     if route.needs_clarification:
         return _clarification_outcome(prepared, started_at)
+
+    # Who am I (K5): v2 PROFILE niyeti pinlenmiş canonical profil üzerinde RAG
+    # ile yürür. Makale snapshot'ı/seçili metin bu akışa girmez; web aracı
+    # kurulmaz; generation_delta yayınlanmaz. v1 PROFILE aşağıdaki A9 yolunda.
+    if route.intent is RunIntent.PROFILE and prepared.context.is_profile_rag_run:
+        profile_result = await run_profile_rag(
+            prepared.context,
+            route,
+            model=model,
+            knowledge=profile_knowledge,
+            store=budget,
+            progress=progress,
+            cancel=cancel,
+        )
+        return profile_result.outcome
 
     # Plan A9 (additive): rehberlik niyetleri onaylı kayıtlardan deterministik
     # yürütülür; model çağrısı yapılmaz. Onaylı kaynak bağlı değilken akış
@@ -742,6 +845,7 @@ async def resume(
     profile_repository=None,
     project_repository=None,
     article_catalog: list[ArticleCatalogEntry] | None = None,
+    profile_knowledge: ProfileKnowledgeRepository | None = None,
 ) -> AgentOutcome:
     """Duraklatılmış çalışmayı checkpoint'ten sürdürür; rota kararı yeniden hesaplanmaz.
 
@@ -863,4 +967,5 @@ async def resume(
         checkpoint=checkpoint,
         collab_input=request.collab_input,
         validated_result=request.validated_result,
+        profile_knowledge=profile_knowledge,
     )

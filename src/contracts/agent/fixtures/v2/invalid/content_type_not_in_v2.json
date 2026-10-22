@@ -1,0 +1,9 @@
+{
+  "message_id": "55555555-5555-4555-8555-555555555599",
+  "message_type": "content.profile.changed",
+  "schema_version": 2,
+  "occurred_at": "2026-10-11T09:00:00Z",
+  "producer": "backend-net",
+  "correlation_id": "ccccccc1-0000-4000-8000-000000000003",
+  "payload": {}
+}

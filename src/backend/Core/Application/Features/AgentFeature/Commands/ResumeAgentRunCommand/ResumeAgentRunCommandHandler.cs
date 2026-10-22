@@ -12,6 +12,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using BlogApp.Core.Application.Features.AgentFeature.Services;
 
 namespace BlogApp.Core.Application.Features.AgentFeature.Commands.ResumeAgentRunCommand;
 
@@ -216,6 +217,8 @@ public sealed class ResumeAgentRunCommandHandler(
                 var correlationId = Guid.TryParseExact(callerCorrelation, "D", out var callerCorrelationId)
                     ? callerCorrelationId.ToString("D")
                     : Guid.NewGuid().ToString("D");
+                // K4: resume komutu run'ın wire sürümünü korur.
+                var wireVersion = AgentRunWireContext.Parse(run.ContextSnapshotJson).WireVersion;
                 var (envelopeJson, messageId) = AgentResumeEnvelopeComposer.ComposeResumeRequested(
                     request.RunId,
                     run.ConversationId,
@@ -223,7 +226,8 @@ public sealed class ResumeAgentRunCommandHandler(
                     requestedAt,
                     producer: messagingOptions.Value.ProducerName,
                     checkpointReference: pending.CheckpointReference,
-                    userRef: userRef);
+                    userRef: userRef,
+                    schemaVersion: wireVersion);
 
                 var contractResult = new AgentContractValidator(messagingOptions.Value).Validate(envelopeJson);
                 if (!contractResult.IsValid)
@@ -240,7 +244,7 @@ public sealed class ResumeAgentRunCommandHandler(
                     MessageId = messageId,
                     MessageType = AgentMessageTypes.ResumeRequested,
                     Exchange = AgentMessageTypeRegistry.CommandsExchange,
-                    RoutingKey = "agent.resume.requested.v1",
+                    RoutingKey = AgentMessageTypeRegistry.RoutingKeyFor(wireVersion, AgentMessageTypes.ResumeRequested),
                     CorrelationId = correlationId,
                     RunId = request.RunId,
                     EnvelopeJson = envelopeJson,

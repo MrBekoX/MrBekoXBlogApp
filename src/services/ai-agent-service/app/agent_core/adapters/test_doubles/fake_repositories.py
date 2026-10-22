@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ...errors import AgentErrorCode, PortError
-from ...models import ArticleSnapshot
+from ...models import ArticleSnapshot, ProfileSnapshotRef
 from ...ports import ProfileSummary, ProjectRecord
 
-__all__ = ["FakeContentRepository", "FakeProfileRepository", "FakeProjectRepository"]
+if TYPE_CHECKING:
+    from ...profile.source import ProfileDocument
+
+__all__ = [
+    "FakeContentRepository",
+    "FakeProfileKnowledgeRepository",
+    "FakeProfileRepository",
+    "FakeProjectRepository",
+]
 
 
 class FakeContentRepository:
@@ -52,3 +62,35 @@ class FakeProjectRepository:
 
     async def list_projects(self) -> list[ProjectRecord]:
         return list(self.projects)
+
+
+class FakeProfileKnowledgeRepository:
+    """Bellekte tutulan profil belgesi döndüren ``ProfileKnowledgeRepository`` double'ı.
+
+    ``document`` verilmezse her çağrı ``ProfileSourceError`` (``config_error``)
+    yükseltir; pinlenen sürüm belgeyle uyuşmazsa da aynı hata döner (gerçek
+    adaptörle aynı "başka sürüme geçme" sözleşmesi).
+    """
+
+    is_test_double = True
+
+    def __init__(self, document: "ProfileDocument | None" = None) -> None:
+        self.document = document
+        self.load_calls = 0
+
+    def active_snapshot(self) -> ProfileSnapshotRef:
+        from ...profile.source import ProfileSourceError
+
+        if self.document is None:
+            raise ProfileSourceError("test profil kaynağı yapılandırılmadı")
+        return self.document.snapshot
+
+    def load(self, snapshot: ProfileSnapshotRef) -> "ProfileDocument":
+        from ...profile.source import ProfileSourceError
+
+        self.load_calls += 1
+        if self.document is None:
+            raise ProfileSourceError("test profil kaynağı yapılandırılmadı")
+        if not self.document.snapshot.same_as(snapshot):
+            raise ProfileSourceError("pinlenen profil sürümü aktif değil")
+        return self.document

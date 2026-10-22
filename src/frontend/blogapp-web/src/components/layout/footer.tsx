@@ -14,7 +14,7 @@ export function Footer() {
   const navigationLinks = [
     { href: '/', label: 'Ana Sayfa' },
     { href: '/posts', label: 'Yazılar' },
-    { href: '/#about', label: 'Hakkımda' },
+    { href: '/about', label: 'Hakkımda' },
   ];
 
   // Kategoriler ve Etiketler sayfaları henüz hazır değil

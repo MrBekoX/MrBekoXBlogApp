@@ -212,8 +212,15 @@ CREATE TABLE agent.jobs (
     accepted_at timestamptz NOT NULL DEFAULT now(),
     deadline_at timestamptz NOT NULL,
     conversation_id uuid NOT NULL,
-    correlation_id uuid NOT NULL
+    correlation_id uuid NOT NULL,
+    origin_message_id uuid,
+    wire_version smallint NOT NULL DEFAULT 1 CHECK (wire_version IN (1, 2))
 );
+-- Migration 0005: claim/güncelleme izolasyonu scratch tabloya yeniden bağlanır
+-- (DROP TABLE tetikleyiciyi düşürür; fonksiyon migration'dan gelir). outbox
+-- sürüm tetikleyicisi jobs.wire_version'ı okuduğu için kolon zorunludur.
+CREATE TRIGGER trg_jobs_wire_claim_guard BEFORE UPDATE ON agent.jobs
+    FOR EACH ROW EXECUTE FUNCTION agent.jobs_wire_claim_guard();
 CREATE TABLE IF NOT EXISTS agent.cancel_intents (
     run_id uuid PRIMARY KEY,
     requested_at timestamptz NOT NULL DEFAULT now(),

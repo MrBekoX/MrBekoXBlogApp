@@ -238,7 +238,7 @@ def provision_vhost_and_users() -> None:
         {
             "configure": r".*",
             "write": r"blog\.(agent\.commands|content\.events)",
-            "read": r"backend\.agent\.events\.q(\.dlq)?|agent\.(execute|control|content)\.q",
+            "read": r"backend\.agent\.events\.q(\.dlq)?|agent\.(execute|control|content)(\.v2)?\.q",
         },
     )
     mgmt_request(
@@ -247,7 +247,7 @@ def provision_vhost_and_users() -> None:
         {
             "configure": "",
             "write": r"blog\.agent\.events",
-            "read": r"agent\.(execute|control|content)\.q(\.dlq)?",
+            "read": r"agent\.(execute|control|content)(\.v2)?\.q(\.dlq)?",
         },
     )
 
@@ -346,16 +346,22 @@ def make_run_ids() -> tuple[str, str, str]:
     return str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
 
 
-async def seed_accepted_job(pool: Any, run_id: str, conversation_id: str, correlation_id: str) -> None:
-    """Kabul edilmiş iş kaydını doğrudan yazar (B4 kabul transaction'ının sonucu)."""
+async def seed_accepted_job(
+    pool: Any, run_id: str, conversation_id: str, correlation_id: str, *, wire_version: int = 1
+) -> None:
+    """Kabul edilmiş iş kaydını doğrudan yazar (B4 kabul transaction'ının sonucu).
+
+    ``wire_version`` (K4, migration 0005): iş satırının run wire sürümü ve kabul
+    zarfının ``schema_version``'ı birlikte yazılır.
+    """
 
     deadline_dt = datetime.now(timezone.utc) + timedelta(minutes=10)
     deadline = deadline_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO agent.jobs (job_id, run_id, conversation_id, origin_message_id, "
-            "payload_hash, payload, envelope, status, deadline_at, accepted_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10)",
+            "payload_hash, payload, envelope, status, deadline_at, accepted_at, wire_version) "
+            "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11)",
             uuid.uuid4(),
             uuid.UUID(run_id),
             uuid.UUID(conversation_id),
@@ -366,7 +372,7 @@ async def seed_accepted_job(pool: Any, run_id: str, conversation_id: str, correl
                 {
                     "message_id": str(uuid.uuid4()),
                     "message_type": "agent.execute.requested",
-                    "schema_version": SCHEMA_VERSION,
+                    "schema_version": wire_version,
                     "run_id": run_id,
                     "conversation_id": conversation_id,
                     "correlation_id": correlation_id,
@@ -379,6 +385,7 @@ async def seed_accepted_job(pool: Any, run_id: str, conversation_id: str, correl
             "accepted",
             deadline_dt,
             datetime.now(timezone.utc),
+            wire_version,
         )
 
 

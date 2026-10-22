@@ -12,7 +12,8 @@ from pydantic import Field, NonNegativeInt, PositiveFloat, PositiveInt, model_va
 
 from .article import ArticleSnapshot, Revision
 from .base import BusinessModel, HashHex, Identifier, LanguageCode, NonEmptyText, UtcDatetime
-from .enums import ModePreference
+from .enums import ConversationTopic, ModePreference
+from .profile import ProfileSnapshotRef
 
 __all__ = ["BudgetProfile", "ConversationTurn", "ExecutionContext"]
 
@@ -60,6 +61,37 @@ class ExecutionContext(BusinessModel):
     selected_text: str | None = Field(default=None, max_length=20000)
     conversation_history: list[ConversationTurn] = []
     budget_profile: BudgetProfile
+
+    #: v2 sohbet konusu; ``None`` = v1 run (konu kavramı yok, legacy A9 profil yolu).
+    conversation_topic: ConversationTopic | None = None
+    #: Backend'in kabulde pinlediği canonical profil sürümü (gövdesiz referans).
+    #: v2'de PROFILE niyeti yalnız bu sürüme karşı yürür; yoksa profil kapasitesi
+    #: bu run için kullanılamaz (config_error), worker başka sürüme geçmez.
+    profile_snapshot: ProfileSnapshotRef | None = None
+
+    @property
+    def is_profile_rag_run(self) -> bool:
+        """v2 run mı (konu taşıyor): PROFILE niyeti yeni profil RAG runner'ına gider."""
+
+        return self.conversation_topic is not None
+
+    @model_validator(mode="after")
+    def _topic_binding(self) -> "ExecutionContext":
+        """who_am_i makale bağlamı taşımaz ve pinlenmiş profil sürümü ister."""
+
+        if self.conversation_topic is None and self.profile_snapshot is not None:
+            raise ValueError("profile_snapshot yalnız konu taşıyan (v2) run'larda kullanılabilir")
+        if self.conversation_topic is ConversationTopic.WHO_AM_I:
+            if self.profile_snapshot is None:
+                raise ValueError("who_am_i konusu pinlenmiş profile_snapshot ister")
+            article_fields = [
+                field
+                for field in ("article_id", "article_revision", "article_content_hash", "article_snapshot", "selected_text")
+                if getattr(self, field) is not None
+            ]
+            if article_fields:
+                raise ValueError(f"who_am_i konusu makale bağlamı taşımaz: {', '.join(article_fields)}")
+        return self
 
     @model_validator(mode="after")
     def _snapshot_binding(self) -> "ExecutionContext":

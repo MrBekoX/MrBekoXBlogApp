@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Options;
 using Xunit;
@@ -6,15 +7,30 @@ using Xunit;
 namespace BlogApp.Presentation.Api.Tests.Messaging;
 
 /// <summary>
-/// Ortak fixture setinin (.NET + Python aynı dosyalar) .NET doğrulayıcı üzerinden akışı:
-/// manifest'teki her case için beklenti (valid / kategori) kontrollü biçimde doğrulanır.
+/// Ortak fixture setlerinin (.NET + Python aynı dosyalar) .NET doğrulayıcı üzerinden akışı:
+/// v1 (fixtures/manifest.json) ve v2 (fixtures/v2/manifest.json) manifest'lerindeki her case için
+/// beklenti (valid / kategori) doğrulanır. schema_expect=skip case'leri yalnız doğrulayıcının
+/// çapraz kurallarıyla yakalanır (profile source_id/url, citation↔snapshot, v2'de olmayan tür).
 /// </summary>
 public sealed class AgentContractFixtureTests
 {
+    private const int UnsupportedVersionProbe = 99;
+
     public static TheoryData<string> FixtureCases()
     {
         var data = new TheoryData<string>();
-        foreach (var path in LoadManifest().Select(c => c.File))
+        foreach (var path in LoadManifest(1).Select(c => c.File))
+        {
+            data.Add(path);
+        }
+
+        return data;
+    }
+
+    public static TheoryData<string> V2FixtureCases()
+    {
+        var data = new TheoryData<string>();
+        foreach (var path in LoadManifest(2).Select(c => c.File))
         {
             data.Add(path);
         }
@@ -24,54 +40,61 @@ public sealed class AgentContractFixtureTests
 
     [Theory]
     [MemberData(nameof(FixtureCases))]
-    public void Fixture_Matches_Expectation(string relativePath)
+    public void Fixture_Matches_Expectation(string relativePath) => AssertFixture(1, relativePath);
+
+    [Theory]
+    [MemberData(nameof(V2FixtureCases))]
+    public void V2_Fixture_Matches_Expectation(string relativePath) => AssertFixture(2, relativePath);
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Manifest_Covers_Every_Message_Type_With_A_Valid_Fixture(int version)
     {
-        var manifestCase = ManifestCase(relativePath);
-        var json = File.ReadAllText(Path.Combine(ContractPaths.FixturesDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
-        var validator = new AgentContractValidator();
-        var result = validator.Validate(json);
-
-        if (manifestCase.Expect == "valid")
-        {
-            Assert.True(result.IsValid, $"{relativePath} geçerli beklenirken reddedildi: {result.Error}");
-            Assert.Equal(manifestCase.MessageType, result.Envelope!.MessageType);
-            Assert.NotNull(result.PayloadNode);
-            return;
-        }
-
-        Assert.False(result.IsValid, $"{relativePath} geçersiz beklenirken kabul edildi");
-        var expectedCategory = ParseCategory(manifestCase.Reason!);
-        Assert.True(result.Error is not null, $"{relativePath} için hata beklenirken boş döndü");
-        Assert.True(expectedCategory == result.Error!.Category,
-            $"{relativePath}: beklenen kategori {expectedCategory}, gelen {result.Error.Category} ({result.Error.Message})");
-    }
-
-    [Fact]
-    public void Manifest_Covers_Every_Message_Type_With_A_Valid_Fixture()
-    {
-        var validTypes = LoadManifest()
+        var validTypes = LoadManifest(version)
             .Where(c => c.Expect == "valid")
             .Select(c => c.MessageType!)
             .ToHashSet(StringComparer.Ordinal);
 
-        var missing = AgentMessageTypeRegistry.MessageTypes
+        var missing = AgentMessageTypeRegistry.MessageTypesFor(version)
             .Where(s => !validTypes.Contains(s.MessageType))
             .Select(s => s.MessageType)
             .ToList();
 
-        Assert.True(missing.Count == 0, $"Geçerli fixture'ı olmayan mesaj türleri: {string.Join(", ", missing)}");
+        Assert.True(missing.Count == 0, $"v{version} geçerli fixture'ı olmayan mesaj türleri: {string.Join(", ", missing)}");
     }
 
-    [Fact]
-    public void Registry_Covers_Every_Contract_Message_Type()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Registry_Covers_Every_Contract_Message_Type(int version)
     {
-        var contract = JsonDocument.Parse(File.ReadAllText(Path.Combine(ContractPaths.V1Directory, "contract.json")));
+        var contract = JsonDocument.Parse(File.ReadAllText(Path.Combine(ContractPaths.VersionDirectory(version), "contract.json")));
         var contractTypes = contract.RootElement.GetProperty("message_types").EnumerateObject().Select(p => p.Name).ToHashSet();
 
-        var registryTypes = AgentMessageTypeRegistry.MessageTypes.Select(s => s.MessageType).ToHashSet();
+        var registryTypes = AgentMessageTypeRegistry.MessageTypesFor(version).Select(s => s.MessageType).ToHashSet();
 
         Assert.True(contractTypes.SetEquals(registryTypes),
-            $"contract.json ile registry aynı tür kümesini kapsamalıdır; fark: {string.Join(", ", contractTypes.Except(registryTypes).Concat(registryTypes.Except(contractTypes)))}");
+            $"v{version} contract.json ile registry aynı tür kümesini kapsamalıdır; fark: {string.Join(", ", contractTypes.Except(registryTypes).Concat(registryTypes.Except(contractTypes)))}");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(99)]
+    [InlineData(int.MaxValue)]
+    public void Any_Unsupported_Version_Is_Classified_Unknown_Version(int version)
+    {
+        foreach (var file in (string[])["valid/agent.execute.requested.json", "valid/agent.run.completed.json"])
+        {
+            var node = JsonNode.Parse(File.ReadAllText(Path.Combine(ContractPaths.FixturesDirectory, file)))!.AsObject();
+            node["schema_version"] = version;
+
+            var result = new AgentContractValidator().Validate(node.ToJsonString());
+
+            Assert.False(result.IsValid);
+            Assert.Equal(AgentContractErrorCategory.UnknownVersion, result.Error!.Category);
+        }
     }
 
     [Fact]
@@ -87,6 +110,44 @@ public sealed class AgentContractFixtureTests
         Assert.Equal("my-blog-post", payload!.ArticleId);
         Assert.Equal(7, payload.ArticleRevision);
         Assert.Equal(2, payload.ConversationHistory!.Count);
+    }
+
+    [Fact]
+    public void Typed_Validation_Selects_V2_Dto_By_Version()
+    {
+        var json = File.ReadAllText(Path.Combine(ContractPaths.V2FixturesDirectory, "valid", "agent.execute.requested.who_am_i.json"));
+        var validator = new AgentContractValidator();
+
+        Assert.False(validator.TryValidateAs<AgentExecutionRequestedV1>(json, out _, out _, out var wrongDto));
+        Assert.Equal(AgentContractErrorCategory.WrongType, wrongDto!.Category);
+
+        var ok = validator.TryValidateAs<AgentExecutionRequestedV2>(json, out var envelope, out var payload, out var error);
+        Assert.True(ok, error?.ToString());
+        Assert.Equal(2, envelope!.SchemaVersion);
+        Assert.Equal("who_am_i", payload!.ConversationTopic);
+        Assert.Equal("berkay-kaplan", payload.ProfileSnapshot!.ProfileId);
+        Assert.Null(payload.ArticleId);
+    }
+
+    [Fact]
+    public void Typed_Validation_Materializes_V2_Profile_Citation()
+    {
+        var json = File.ReadAllText(Path.Combine(ContractPaths.V2FixturesDirectory, "valid", "agent.run.completed.profile.json"));
+
+        var ok = new AgentContractValidator().TryValidateAs<AgentRunCompletedV2>(json, out _, out var payload, out var error);
+
+        Assert.True(ok, error?.ToString());
+        Assert.Equal("profile", payload!.RunIntent);
+        var citation = Assert.Single(payload.Citations!);
+        Assert.Equal("profile", citation.Kind);
+        Assert.Equal("education", citation.SectionId);
+        Assert.Equal("/about#education", citation.Url);
+        Assert.True(payload.ProfileSnapshot!.SameAs(new AgentProfileSnapshotRef
+        {
+            ProfileId = citation.ProfileId!,
+            Revision = citation.ProfileRevision!.Value,
+            ContentHash = citation.ProfileContentHash!,
+        }));
     }
 
     [Fact]
@@ -113,9 +174,50 @@ public sealed class AgentContractFixtureTests
         Assert.Equal(AgentContractErrorCategory.Oversized, result.Error!.Category);
     }
 
-    private static List<ManifestEntry> LoadManifest()
+    // ------------------------------------------------------------------ yardımcılar
+
+    private static void AssertFixture(int version, string relativePath)
     {
-        var manifestPath = Path.Combine(ContractPaths.FixturesDirectory, "manifest.json");
+        var manifestCase = LoadManifest(version).Single(c => c.File == relativePath);
+        var json = File.ReadAllText(Path.Combine(
+            ContractPaths.FixturesDirectoryFor(version), relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        // unknown_version case'i geçiş döneminde desteklenen bir sürüm taşıyabilir (v1 manifest'teki
+        // eski "schema_version: 2" fixture'ı K3 ile 99'a çekilir). Sürüm artık destekleniyorsa
+        // case'in niyeti (desteklenmeyen sürüm) desteklenmeyen bir sürümle korunur.
+        if (manifestCase.Reason == "unknown_version")
+        {
+            var node = JsonNode.Parse(json)!.AsObject();
+            if (node["schema_version"] is JsonValue versionValue
+                && versionValue.TryGetValue<int>(out var fixtureVersion)
+                && AgentMessageTypeRegistry.IsSupportedVersion(fixtureVersion))
+            {
+                node["schema_version"] = UnsupportedVersionProbe;
+                json = node.ToJsonString();
+            }
+        }
+
+        var result = new AgentContractValidator().Validate(json);
+
+        if (manifestCase.Expect == "valid")
+        {
+            Assert.True(result.IsValid, $"v{version} {relativePath} geçerli beklenirken reddedildi: {result.Error}");
+            Assert.Equal(manifestCase.MessageType, result.Envelope!.MessageType);
+            Assert.Equal(version, result.Envelope.SchemaVersion);
+            Assert.NotNull(result.PayloadNode);
+            return;
+        }
+
+        Assert.False(result.IsValid, $"v{version} {relativePath} geçersiz beklenirken kabul edildi");
+        var expectedCategory = ParseCategory(manifestCase.Reason!);
+        Assert.True(result.Error is not null, $"v{version} {relativePath} için hata beklenirken boş döndü");
+        Assert.True(expectedCategory == result.Error!.Category,
+            $"v{version} {relativePath}: beklenen kategori {expectedCategory}, gelen {result.Error.Category} ({result.Error.Field}: {result.Error.Message})");
+    }
+
+    private static List<ManifestEntry> LoadManifest(int version)
+    {
+        var manifestPath = Path.Combine(ContractPaths.FixturesDirectoryFor(version), "manifest.json");
         using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
         return doc.RootElement.GetProperty("cases").EnumerateArray()
             .Select(e => new ManifestEntry(
@@ -125,9 +227,6 @@ public sealed class AgentContractFixtureTests
                 e.TryGetProperty("message_type", out var type) ? type.GetString() : null))
             .ToList();
     }
-
-    private static ManifestEntry ManifestCase(string relativePath) =>
-        LoadManifest().Single(c => c.File == relativePath);
 
     private static AgentContractErrorCategory ParseCategory(string reason) => reason switch
     {

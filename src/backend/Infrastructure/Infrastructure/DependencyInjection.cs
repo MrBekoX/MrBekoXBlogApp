@@ -2,6 +2,7 @@ using BlogApp.BuildingBlocks;
 using BlogApp.BuildingBlocks.Abstractions;
 using BlogApp.BuildingBlocks.Metrics;
 using BlogApp.BuildingBlocks.Options;
+using BlogApp.Core.Application.Common.AuthorProfile;
 using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Interfaces.Persistence;
 using BlogApp.Core.Application.Common.Interfaces.Persistence.BlogPostRepository;
@@ -21,6 +22,7 @@ using BlogApp.Infrastructure.Persistence.Repositories.EfCoreRefreshTokenReposito
 using BlogApp.Infrastructure.Persistence.Repositories.EfCoreTagRepository;
 using BlogApp.Infrastructure.Persistence.Repositories.EfCoreUserRepository;
 using BlogApp.Infrastructure.Services;
+using BlogApp.Infrastructure.Services.AuthorProfile;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
@@ -99,6 +101,11 @@ public static class DependencyInjection
         services.AddScoped<ITagService, TagService>();
 
         services.AddScoped<IIdempotencyService, IdempotencyService>();
+
+        // Canonical yazar profili (K2): tek onaylı, sürümlü public kaynak; /api/v1/profile,
+        // agent kabulü (snapshot pin) ve sunum denetimi aynı okuyucuyu paylaşır.
+        services.Configure<AuthorProfileSettings>(configuration.GetSection(AuthorProfileSettings.SectionName));
+        services.AddSingleton<IAuthorProfileSource, FileAuthorProfileSource>();
 
         services.AddScoped<DbSeeder>();
         services.AddHostedService<RefreshTokenCleanupService>();

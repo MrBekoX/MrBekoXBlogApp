@@ -43,6 +43,19 @@ _MISSING_INFO_TOKENS_EN: dict[MissingInfoField, frozenset[str]] = {
     MissingInfoField.AVAILABILITY: frozenset({"availability", "available", "freelance"}),
 }
 
+#: Deneyim SÜRESİ soruldu mu? Canonical profil eğitmenlik (2024'ten beri) ve
+#: staj deneyimini YAYIMLAR; bu yüzden "deneyimi var mı?" eksik bilgi değildir.
+#: Yalnız toplam/yıl cinsinden süre (profilde olmayan alan) eksik sayılır (A03/A13).
+_EXPERIENCE_DURATION_TOKENS_TR = frozenset({"kac", "toplam", "suresi", "sure"})
+_EXPERIENCE_DURATION_PREFIXES_TR = ("yil", "sene")
+_EXPERIENCE_DURATION_TOKENS_EN = frozenset({"years", "year", "many", "long", "total"})
+
+
+def _asks_experience_duration(tokens: set[str]) -> bool:
+    if tokens & _EXPERIENCE_DURATION_TOKENS_TR or tokens & _EXPERIENCE_DURATION_TOKENS_EN:
+        return True
+    return any(token.startswith(prefix) for token in tokens for prefix in _EXPERIENCE_DURATION_PREFIXES_TR)
+
 
 def is_turkish(language: str) -> bool:
     """Dil kodu Türkçe mi? (``tr`` / ``tr-TR`` biçimleri)."""
@@ -54,12 +67,19 @@ def detect_missing_info_fields(question: str) -> list[MissingInfoField]:
 
     Katlanmış belirteçler üzerinde: Türkçe kök önek eşleşmesi + İngilizce
     tam belirteç eşleşmesi (A3 ``tokenize`` katlaması).
+
+    ``EXPERIENCE`` yalnız deneyim SÜRESİ (kaç yıl / toplam / how many years)
+    sorulduğunda eksik sayılır: canonical profil eğitmenlik ve staj
+    deneyimini yayımlar; "Eğitmenlik deneyimi var mı?" otomatik "deneyim
+    yok/bilinmiyor" cevabı almaz (A03).
     """
     tokens = set(tokenize(question))
     detected: list[MissingInfoField] = []
     for field in MissingInfoField:
         tr_hit = any(token.startswith(prefix) for token in tokens for prefix in _MISSING_INFO_PREFIXES_TR[field])
         en_hit = bool(tokens & _MISSING_INFO_TOKENS_EN[field])
+        if field is MissingInfoField.EXPERIENCE and (tr_hit or en_hit) and not _asks_experience_duration(tokens):
+            continue
         if tr_hit or en_hit:
             detected.append(field)
     return detected

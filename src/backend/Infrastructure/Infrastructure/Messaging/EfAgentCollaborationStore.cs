@@ -4,6 +4,7 @@ using BlogApp.Core.Domain.Enums;
 using BlogApp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using BlogApp.Core.Application.Features.AgentFeature.Services;
 
 namespace BlogApp.Infrastructure.Messaging;
 
@@ -74,7 +75,13 @@ public sealed class EfAgentCollaborationStore(AppDbContext context) : IAgentColl
             return null;
         }
 
-        return new CollaborationRunState(run.Id, run.ConversationId, run.OwnerKey, run.Status.IsTerminal());
+        // K4: iş birliği komutları (resume/action_result) run'ın wire sürümünü korur.
+        return new CollaborationRunState(
+            run.Id,
+            run.ConversationId,
+            run.OwnerKey,
+            run.Status.IsTerminal(),
+            AgentRunWireContext.Parse(run.ContextSnapshotJson).WireVersion);
     }
 
     public async Task<AgentProposalSnapshot?> GetCurrentProposalAsync(

@@ -14,6 +14,10 @@ Kurallar (plan B4):
 - ACK, commit'ten SONRA gelir: ``handle_delivery`` ancak ``JobStore`` commit
   döndükten sonra normal döner; commit öncesi istisna teslimi ACK'sız bırakır
   ve broker tekrar teslim eder (yeniden teslimde inbox/job idempotency).
+- Sürüm (K4): her execute kuyruğu kendi sürümünü kabul eder (``accepted_versions``;
+  ``agent.execute.q`` → v1, ``agent.execute.v2.q`` → v2). Kuyruk/sürüm
+  uyuşmazlığı kalıcı politika ihlalidir (DLQ). Kabul edilen sürüm işin
+  ``wire_version``'ı olur.
 
 Kaynaklar: [RMQ-CONFIRMS#C2] ACK teslimin geldiği kanaldan ve işleme
 tamamlandıktan sonra; [RMQ-CONFIRMS#C1] consumer ACK publisher confirm'den
@@ -77,9 +81,12 @@ class IntakeService:
         consumer_name: str = "intake",
         graph_executor: Callable[[ParsedEnvelope], Any] | None = None,
         failure_injection: Callable[[str], None] | None = None,
+        accepted_versions: tuple[int, ...] | None = None,
     ) -> None:
         self._store = store
         self._consumer_name = consumer_name
+        # None: kuyruk/sürüm denetimi yok (geriye dönük kurulum; tüm desteklenen sürümler).
+        self._accepted_versions = accepted_versions
         # B6 bağlantı noktası: B4 kabul akışı bunu HİÇ çağırmaz; testler kayıt
         # tutan bir executor enjekte edip çağrılmadığını kanıtlar.
         self._graph_executor = graph_executor
@@ -146,6 +153,11 @@ class IntakeService:
         if spec.message_type != EXECUTE_COMMAND_TYPE:
             raise IntakePolicyError(
                 f"execute kuyruğu yalnız {EXECUTE_COMMAND_TYPE} kabul eder; gelen: {spec.message_type}"
+            )
+        if self._accepted_versions is not None and parsed.schema_version not in self._accepted_versions:
+            raise IntakePolicyError(
+                f"bu execute kuyruğu yalnız v{'/v'.join(str(v) for v in self._accepted_versions)} "
+                f"kabul eder; gelen: v{parsed.schema_version}"
             )
         if spec.direction is not Direction.BACKEND_TO_AGENT:
             raise IntakePolicyError(

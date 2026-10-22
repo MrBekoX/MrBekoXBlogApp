@@ -13,10 +13,12 @@ from enum import StrEnum
 __all__ = [
     "AgentErrorCode",
     "AgentMode",
+    "ConversationTopic",
     "Direction",
     "ModePreference",
     "Producer",
     "ProgressKind",
+    "RunIntent",
     "SourceScope",
 ]
 
@@ -98,3 +100,32 @@ class ProgressKind(StrEnum):
     ACTION_PROPOSED = "action_proposed"
     TOOL_ERROR = "tool_error"
     GENERATION_DELTA = "generation_delta"
+
+
+class ConversationTopic(StrEnum):
+    """v2 sohbet konusu (``conversation_topic``); A1 ``ConversationTopic`` ile aynı küme.
+
+    Çalışma derinliğinden (``ModePreference``) bağımsızdır; v1 sözleşmesinde yoktur.
+    """
+
+    AUTO = "auto"
+    WHO_AM_I = "who_am_i"
+
+
+class RunIntent(StrEnum):
+    """v2 etkin niyet (``run_intent``); A1 ``RunIntent`` ile aynı kapalı küme.
+
+    Routing'in çözdüğü niyet, istenen konudan (``ConversationTopic``) ayrı taşınır;
+    ``profile`` niyeti profil kapsamı, web'siz çalışma ve pinlenmiş snapshot ister.
+    """
+
+    ARTICLE_QA = "article_qa"
+    SUMMARIZE = "summarize"
+    EXPLAIN = "explain"
+    COMPARE = "compare"
+    RESEARCH = "research"
+    GENERAL = "general"
+    PROFILE = "profile"
+    PROJECTS = "projects"
+    CONTENT_SUGGESTION = "content_suggestion"
+    COLLABORATION = "collaboration"

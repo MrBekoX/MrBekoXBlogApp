@@ -12,6 +12,7 @@ public static class RegisterEndpointsExtensions
         app.RegisterTagsEndpoints();
         app.RegisterMediaEndpoints();
         app.RegisterCsrfEndpoints();
+        app.RegisterProfileEndpoints();
 
         app.RegisterSeoEndpoints();
 

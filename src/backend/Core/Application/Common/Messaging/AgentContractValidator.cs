@@ -80,7 +80,7 @@ public sealed class AgentContractValidator
             return false;
         }
 
-        if (!AgentMessageTypeRegistry.TryGet(result.Envelope!.MessageType, out var spec)
+        if (!AgentMessageTypeRegistry.TryGet(result.Envelope!.SchemaVersion, result.Envelope.MessageType, out var spec)
             || spec.PayloadDtoType != typeof(TPayload))
         {
             envelope = null;
@@ -163,19 +163,26 @@ public sealed class AgentContractValidator
             return AgentContractValidationResult.Fail(envelopeError);
         }
 
-        if (envelopeObject["schema_version"]!.GetValue<int>() != AgentMessageTypeRegistry.SchemaVersion)
+        // Sürüm önce okunur (K3): kayıt (sürüm, tür) anahtarlıdır; desteklenmeyen sürüm türden
+        // bağımsız olarak unknown_version, sürümde olmayan tür (ör. v2'de content.*) unknown_type.
+        // schema_version alanı Integer kuralından geçti; int aralığı dışı değer de bilinmeyen sürümdür.
+        var schemaVersionNode = (JsonValue)envelopeObject["schema_version"]!;
+        if (!schemaVersionNode.TryGetValue<int>(out var schemaVersion)
+            || !AgentMessageTypeRegistry.IsSupportedVersion(schemaVersion))
         {
             return AgentContractValidationResult.Fail(new AgentContractError(
                 AgentContractErrorCategory.UnknownVersion,
                 "schema_version",
-                $"bilinmeyen sözleşme sürümü: {envelopeObject["schema_version"]!.GetValue<int>()}"));
+                $"bilinmeyen sözleşme sürümü: {schemaVersionNode.ToJsonString()}"));
         }
 
         var messageType = envelopeObject["message_type"]!.GetValue<string>();
-        if (!AgentMessageTypeRegistry.TryGet(messageType, out var spec))
+        if (!AgentMessageTypeRegistry.TryGet(schemaVersion, messageType, out var spec))
         {
             return AgentContractValidationResult.Fail(new AgentContractError(
-                AgentContractErrorCategory.UnknownType, "message_type", $"bilinmeyen mesaj türü: {messageType}"));
+                AgentContractErrorCategory.UnknownType,
+                "message_type",
+                $"sözleşme v{schemaVersion} içinde bilinmeyen mesaj türü: {messageType}"));
         }
 
         var runId = envelopeObject["run_id"]?.GetValue<string>();
@@ -226,7 +233,7 @@ public sealed class AgentContractValidator
         {
             MessageId = envelopeObject["message_id"]!.GetValue<string>(),
             MessageType = messageType,
-            SchemaVersion = envelopeObject["schema_version"]!.GetValue<int>(),
+            SchemaVersion = schemaVersion,
             RunId = runId,
             ConversationId = conversationId,
             CorrelationId = envelopeObject["correlation_id"]!.GetValue<string>(),
@@ -333,6 +340,10 @@ public sealed class AgentContractValidator
                         BadFormat(path, "geçersiz dil kodu"),
                     AgentFieldFormat.TraceParent when !AgentContractFormats.IsValidTraceParent(text) =>
                         BadFormat(path, "W3C traceparent bekleniyor"),
+                    AgentFieldFormat.ProfileId when !AgentContractFormats.IsValidProfileId(text) =>
+                        BadFormat(path, "profil kimliği ^[a-z0-9][a-z0-9-]{0,63}$ biçiminde olmalıdır"),
+                    AgentFieldFormat.SectionId when !AgentContractFormats.IsValidSectionId(text) =>
+                        BadFormat(path, "bölüm kimliği ^[a-z0-9][a-z0-9-]{0,127}$ biçiminde olmalıdır"),
                     _ => null
                 };
 
@@ -444,6 +455,19 @@ public sealed class AgentContractValidator
 
     private static AgentContractError? ValidateCrossRules(AgentEnvelope envelope, JsonObject payload)
     {
+        var common = ValidateCommonCrossRules(envelope, payload);
+        if (common is not null || envelope.SchemaVersion < AgentMessageTypeRegistry.V2)
+        {
+            return common;
+        }
+
+        return ValidateV2CrossRules(envelope, payload);
+    }
+
+    /// <summary>v1 ve v2'de ortak (şekli aynı alanlar üzerindeki) çapraz kurallar; v1 davranışı
+    /// birebir korunur.</summary>
+    private static AgentContractError? ValidateCommonCrossRules(AgentEnvelope envelope, JsonObject payload)
+    {
         switch (envelope.MessageType)
         {
             case AgentMessageTypes.ExecutionRequested:
@@ -518,6 +542,199 @@ public sealed class AgentContractValidator
             default:
                 return null;
         }
+    }
+
+    private static readonly string[] ArticleTrioAndSelection =
+        ["article_id", "article_revision", "article_content_hash", "selected_text"];
+
+    private static readonly string[] ProfileReferenceFields =
+        ["profile_id", "profile_revision", "profile_content_hash", "section_id"];
+
+    /// <summary>
+    /// v2 çapraz kuralları (src/contracts/agent/v2: şemanın allOf if/then dalları + şemanın ifade
+    /// edemediği kurallar, K3): who_am_i execute makale üçlüsü/selected_text taşımaz ve
+    /// profile_snapshot zorunludur; run_intent=profile → source_scope=profile, web yok, snapshot
+    /// zorunlu, yalnız profile kaynakları, action_proposal yok; source_reference tür bazlı
+    /// zorunlu/yasak alanlar; profile kaynak kimliği/URL'si ve citation↔profile_snapshot tutarlılığı
+    /// (reason bad_format).
+    /// </summary>
+    private static AgentContractError? ValidateV2CrossRules(AgentEnvelope envelope, JsonObject payload)
+    {
+        switch (envelope.MessageType)
+        {
+            case AgentMessageTypes.ExecutionRequested:
+                if (payload["conversation_topic"]!.GetValue<string>() != "who_am_i")
+                {
+                    return null;
+                }
+
+                if (payload["profile_snapshot"] is null)
+                {
+                    return Missing("payload.profile_snapshot", "who_am_i konusu pinlenmiş profile_snapshot gerektirir");
+                }
+
+                var forbidden = ArticleTrioAndSelection.FirstOrDefault(payload.ContainsKey);
+                return forbidden is not null
+                    ? WrongType("payload." + forbidden, $"who_am_i konusu {forbidden} taşıyamaz")
+                    : null;
+
+            case AgentMessageTypes.RunModeSelected:
+                if (payload["run_intent"]!.GetValue<string>() != "profile")
+                {
+                    return null;
+                }
+
+                if (payload["source_scope"]!.GetValue<string>() != "profile")
+                {
+                    return WrongType("payload.source_scope", "run_intent=profile yalnız source_scope=profile ile seçilebilir");
+                }
+
+                if (payload["requires_web_search"]!.GetValue<bool>())
+                {
+                    return WrongType("payload.requires_web_search", "run_intent=profile web araması gerektiremez");
+                }
+
+                return payload["profile_snapshot"] is null
+                    ? Missing("payload.profile_snapshot", "run_intent=profile pinlenmiş profile_snapshot gerektirir")
+                    : null;
+
+            case AgentMessageTypes.RunCompleted:
+            case AgentMessageTypes.RunPartiallyCompleted:
+                return ValidateV2Result(payload);
+
+            default:
+                return null;
+        }
+    }
+
+    private static AgentContractError? ValidateV2Result(JsonObject payload)
+    {
+        var isProfileIntent = payload["run_intent"]!.GetValue<string>() == "profile";
+        var snapshot = payload["profile_snapshot"] as JsonObject;
+
+        if (isProfileIntent)
+        {
+            if (snapshot is null)
+            {
+                return Missing("payload.profile_snapshot", "run_intent=profile sonucu profile_snapshot gerektirir");
+            }
+
+            if (payload["source_scope"]!.GetValue<string>() != "profile")
+            {
+                return WrongType("payload.source_scope", "run_intent=profile sonucu yalnız source_scope=profile taşır");
+            }
+
+            if (payload.ContainsKey("action_proposal"))
+            {
+                return WrongType("payload.action_proposal", "run_intent=profile sonucu action_proposal taşıyamaz");
+            }
+        }
+
+        if (payload["citations"] is not JsonArray citations)
+        {
+            return null;
+        }
+
+        foreach (var node in citations)
+        {
+            var citation = node!.AsObject();
+            var kind = citation["kind"]!.GetValue<string>();
+            if (isProfileIntent && kind != "profile")
+            {
+                return WrongType("payload.citations[].kind", "run_intent=profile sonucu yalnız profile kaynakları taşır");
+            }
+
+            var kindError = ValidateSourceReferenceKindV2(citation, kind);
+            if (kindError is not null)
+            {
+                return kindError;
+            }
+
+            if (kind != "profile")
+            {
+                continue;
+            }
+
+            if (snapshot is null)
+            {
+                return BadFormat("payload.citations[].profile_id", "profile kaynağı payload profile_snapshot ile eşleşmelidir; snapshot yok");
+            }
+
+            if (citation["profile_id"]!.GetValue<string>() != snapshot["profile_id"]!.GetValue<string>()
+                || citation["profile_revision"]!.GetValue<long>() != snapshot["revision"]!.GetValue<long>()
+                || citation["profile_content_hash"]!.GetValue<string>() != snapshot["content_hash"]!.GetValue<string>())
+            {
+                return BadFormat("payload.citations[].profile_content_hash",
+                    "profile kaynağının {profile_id, revision, content_hash} değeri profile_snapshot ile aynı olmalıdır");
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>v2 source_reference tür bazlı zorunlu/yasak alanları + profile biçim kuralları.</summary>
+    private static AgentContractError? ValidateSourceReferenceKindV2(JsonObject citation, string kind)
+    {
+        const string prefix = "payload.citations[].";
+        string[] required;
+        string[] forbidden;
+        switch (kind)
+        {
+            case "article":
+                required = ["article_id", "article_revision", "chunk_index"];
+                forbidden = ["url", "accessed_at", .. ProfileReferenceFields];
+                break;
+            case "web":
+                required = ["url", "accessed_at"];
+                forbidden = ["article_id", "article_revision", "chunk_index", .. ProfileReferenceFields];
+                break;
+            case "profile":
+                required = ["source_id", "title", .. ProfileReferenceFields, "chunk_index", "url"];
+                forbidden = ["article_id", "article_revision", "accessed_at"];
+                break;
+            default:
+                return WrongType(prefix + "kind", $"bilinmeyen kaynak türü: {kind}");
+        }
+
+        var missing = required.FirstOrDefault(f => !citation.ContainsKey(f));
+        if (missing is not null)
+        {
+            return Missing(prefix + missing, $"{kind} kaynağı için {missing} zorunludur");
+        }
+
+        var extra = forbidden.FirstOrDefault(citation.ContainsKey);
+        if (extra is not null)
+        {
+            return WrongType(prefix + extra, $"{kind} kaynağı {extra} taşıyamaz");
+        }
+
+        if (kind != "profile")
+        {
+            return null;
+        }
+
+        var url = citation["url"]!.GetValue<string>();
+        if (!AgentContractFormats.IsValidProfileUrl(url))
+        {
+            return BadFormat(prefix + "url", "profile kaynağı URL'si yalnız /about#{section_id} olabilir");
+        }
+
+        var sectionId = citation["section_id"]!.GetValue<string>();
+        if (url != AgentContractFormats.ComposeProfileUrl(sectionId))
+        {
+            return BadFormat(prefix + "url", "profile kaynağı URL'si /about#{section_id} ile eşleşmelidir");
+        }
+
+        var expectedSourceId = AgentContractFormats.ComposeProfileSourceId(
+            citation["profile_id"]!.GetValue<string>(),
+            citation["profile_revision"]!.GetValue<long>(),
+            citation["profile_content_hash"]!.GetValue<string>(),
+            sectionId,
+            citation["chunk_index"]!.GetValue<long>());
+        return citation["source_id"]!.GetValue<string>() != expectedSourceId
+            ? BadFormat(prefix + "source_id",
+                "profile kaynak kimliği profile:{profile_id}:{revision}:{content_hash}:{section_id}:{chunk_index} olmalıdır")
+            : null;
     }
 
     private static AgentContractError? UsageRunIdMismatch(JsonObject payload, string runId)

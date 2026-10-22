@@ -32,6 +32,13 @@ modelleriyle kurulur ve ``event_sequence`` B5'in ``run_event_sequences``
 tablosundan atomik tahsis edilir (aynı tablo, aynı desen). Outbox kaydı ile
 durum değişikliği AYNI transaction'dadır (B5 kuralının devamı).
 
+Wire sürümü (K4, migration 0005): üretilen her terminal olay (cancel finalize,
+``mark_cancelled_if_running``, deadline/reaper kapanışı, rollback drain'i) işin
+``wire_version``'ıyla kurulur — sürüm iş satırından, satır kilidi/koşullu UPDATE
+ile AYNI transaction'da okunur (komutun sürümünden değil). Eski worker'ın
+(``agent.worker_wire_max`` bildirmeyen) havuzu v2 satırını güncelleyemez:
+tetikleyici güncellemeyi atlar ve koşullu yollar "dokunulmadı" döner.
+
 Kaynaklar: [PG-ISOLATION#C2] Read Committed'ta koşullu UPDATE'in atomikliği;
 [ENG-OUTBOX#C1] durum değişikliği ile olayın tek transaction'da yazımı.
 """
@@ -47,12 +54,10 @@ from typing import Any, Callable
 import asyncpg
 
 from .contracts import (
-    SCHEMA_VERSION,
+    WIRE_VERSION_V2,
     AgentEnvelope,
-    AgentRunCancelledV1,
-    MESSAGE_TYPE_REGISTRY,
-    Producer,
 )
+from .wire import compose_run_envelope, normalize_wire_version, outbox_route, versioned_payload
 
 __all__ = [
     "ControlStore",
@@ -62,6 +67,9 @@ __all__ = [
     "TERMINAL_JOB_STATUSES",
     "ACTIVE_JOB_STATUSES",
     "PENDING_JOB_STATUSES",
+    "WIRE_DRAIN_REASON",
+    "WIRE_DRAIN_REQUESTED_BY",
+    "WireIsolationError",
 ]
 
 logger = logging.getLogger(__name__)
@@ -79,6 +87,14 @@ ACTIVE_JOB_STATUSES: tuple[str, ...] = ("accepted", "queued", "running")
 #: terminal yapar (execute-öncesi engel). 'queued' ortak sözleşmenin, 'accepted'
 #: B4 kabulünün bekleyen karşılığıdır; üretimde kabul 'accepted' yazar.
 PENDING_JOB_STATUSES: tuple[str, ...] = ("accepted", "queued")
+
+#: v2 geri dönüş drain'inin iptal gerekçesi ve niyet sahibi (``wire_drain --cancel``).
+WIRE_DRAIN_REASON = "wire_v2_rollback"
+WIRE_DRAIN_REQUESTED_BY = "wire-drain"
+
+
+class WireIsolationError(RuntimeError):
+    """İş satırı sürüm izolasyonu nedeniyle güncellenemedi (migration 0005 tetikleyicisi)."""
 
 
 class CancelIntentOutcome:
@@ -172,7 +188,7 @@ class ControlStore:
                 )
 
                 job = await conn.fetchrow(
-                    f"SELECT status, execution_attempt FROM {self._schema}.jobs "
+                    f"SELECT status, execution_attempt, wire_version FROM {self._schema}.jobs "
                     "WHERE run_id = $1 FOR UPDATE",
                     uuid.UUID(run_id),
                 )
@@ -192,6 +208,7 @@ class ControlStore:
                 if job["status"] in PENDING_JOB_STATUSES:
                     message_id = await self._finalize_cancelled(
                         conn,
+                        wire_version=normalize_wire_version(job["wire_version"]),
                         run_id=run_id,
                         conversation_id=conversation_id,
                         correlation_id=correlation_id,
@@ -240,13 +257,14 @@ class ControlStore:
                     f"UPDATE {self._schema}.jobs SET status = 'cancelled' "
                     "WHERE run_id = $1 AND status = 'running' "
                     f"AND EXISTS (SELECT 1 FROM {self._schema}.cancel_intents WHERE run_id = $1) "
-                    "RETURNING execution_attempt",
+                    "RETURNING execution_attempt, wire_version",
                     uuid.UUID(run_id),
                 )
                 if updated is None:
                     return "untouched"
                 message_id = await self._finalize_cancelled(
                     conn,
+                    wire_version=normalize_wire_version(updated["wire_version"]),
                     run_id=run_id,
                     conversation_id=conversation_id,
                     correlation_id=correlation_id,
@@ -300,11 +318,11 @@ class ControlStore:
     # -------------------------------------------------------------- gözlem
 
     async def job_state(self, run_id: str) -> dict[str, Any] | None:
-        """Durum + payload_hash + deadline (DLQ replay guard'ının sözleşmesi)."""
+        """Durum + payload_hash + deadline + wire sürümü (DLQ replay guard'ının sözleşmesi)."""
 
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT status, payload_hash, deadline_at, execution_attempt "
+                f"SELECT status, payload_hash, deadline_at, execution_attempt, wire_version "
                 f"FROM {self._schema}.jobs WHERE run_id = $1",
                 uuid.UUID(run_id),
             )
@@ -315,6 +333,7 @@ class ControlStore:
             "payload_hash": str(row["payload_hash"]),
             "deadline_at": row["deadline_at"],
             "execution_attempt": int(row["execution_attempt"] or 0),
+            "wire_version": normalize_wire_version(row["wire_version"]),
         }
 
     async def backpressure(self) -> BackpressureSnapshot:
@@ -340,12 +359,99 @@ class ControlStore:
             oldest_active_run_id=str(row["oldest_run"]) if row["oldest_run"] is not None else None,
         )
 
+    # ------------------------------------------------- v2 rollback drain (K4)
+
+    async def active_jobs_by_wire_version(self) -> dict[int, int]:
+        """Terminal olmayan işlerin wire sürümü dağılımı (``wire_drain --check``)."""
+
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT wire_version, count(*) AS n FROM {self._schema}.jobs "
+                "WHERE status = ANY($1::text[]) GROUP BY wire_version ORDER BY wire_version",
+                list(ACTIVE_JOB_STATUSES),
+            )
+        return {int(row["wire_version"]): int(row["n"]) for row in rows}
+
+    async def active_jobs_for_wire_version(self, wire_version: int, *, limit: int = 100) -> list[asyncpg.Record]:
+        """Belirli sürümün terminal olmayan işleri (drain adayları; kabul sırasıyla)."""
+
+        async with self._pool.acquire() as conn:
+            return await conn.fetch(
+                f"SELECT run_id, conversation_id, envelope->>'correlation_id' AS correlation_id, "
+                f"origin_message_id, status, execution_attempt, wire_version "
+                f"FROM {self._schema}.jobs "
+                "WHERE status = ANY($1::text[]) AND wire_version = $2 "
+                "ORDER BY accepted_at LIMIT $3",
+                list(ACTIVE_JOB_STATUSES),
+                int(wire_version),
+                int(limit),
+            )
+
+    async def finalize_cancelled_for_drain(
+        self,
+        run_id: str,
+        *,
+        reason: str = WIRE_DRAIN_REASON,
+        requested_by: str = WIRE_DRAIN_REQUESTED_BY,
+        expected_wire_version: int = WIRE_VERSION_V2,
+        occurred_at: datetime | None = None,
+        new_message_id: Callable[[], uuid.UUID] | None = None,
+    ) -> bool:
+        """Rollback drain'i: aktif işi run sürümünün ``agent.run.cancelled`` olayıyla kapatır.
+
+        Niyet kaydı + durum geçişi + terminal olay TEK transaction'dadır. Çalışan
+        (running) bir yürütme varsa onun complete/fail'i guard'da 'not_running'
+        ile reddedilir (terminal-öncelik: drain kazanır). İş bu arada terminale
+        geçtiyse veya sürümü beklenenden farklıysa dokunulmaz (False).
+        Not: havuz ``agent.worker_wire_max >= wire_version`` bildirmelidir;
+        aksi halde tetikleyici güncellemeyi atlar ve outbox insert'ü sürüm
+        tetikleyicisine takılır (eski kodla drain yapılamaz — bilinçli).
+        """
+
+        uuid_fn = new_message_id or uuid.uuid4
+        at = occurred_at or datetime.now(timezone.utc)
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                job = await conn.fetchrow(
+                    f"SELECT status, execution_attempt, wire_version, conversation_id, "
+                    f"origin_message_id, envelope->>'correlation_id' AS correlation_id "
+                    f"FROM {self._schema}.jobs WHERE run_id = $1 FOR UPDATE",
+                    uuid.UUID(run_id),
+                )
+                if job is None or job["status"] not in ACTIVE_JOB_STATUSES:
+                    return False
+                version = normalize_wire_version(job["wire_version"])
+                if version != expected_wire_version:
+                    return False
+                await conn.execute(
+                    f"INSERT INTO {self._schema}.cancel_intents (run_id, requested_at, requested_by) "
+                    "VALUES ($1, $2, $3) ON CONFLICT (run_id) DO NOTHING",
+                    uuid.UUID(run_id),
+                    at,
+                    requested_by,
+                )
+                await self._finalize_cancelled(
+                    conn,
+                    wire_version=version,
+                    run_id=run_id,
+                    conversation_id=str(job["conversation_id"]),
+                    correlation_id=str(job["correlation_id"]),
+                    causation_id=str(job["origin_message_id"]) if job["origin_message_id"] else None,
+                    reason=reason,
+                    execution_attempt=int(job["execution_attempt"] or 0) or None,
+                    occurred_at=at,
+                    new_message_id=uuid_fn,
+                )
+        logger.warning("v2 rollback drain: run iptal edildi run_id=%s gerekçe=%s", run_id, reason)
+        return True
+
     # ---------------------------------------------------------- iç adımlar
 
     async def _finalize_cancelled(
         self,
         conn: asyncpg.Connection,
         *,
+        wire_version: int,
         run_id: str,
         conversation_id: str,
         correlation_id: str,
@@ -355,28 +461,39 @@ class ControlStore:
         occurred_at: datetime,
         new_message_id: Callable[[], uuid.UUID],
     ) -> str:
-        """İşi cancelled yapar (satır kilidi çağırandadır) + terminal olayı yazar."""
+        """İşi cancelled yapar (satır kilidi çağırandadır) + terminal olayı run sürümüyle yazar.
 
-        await conn.execute(
-            f"UPDATE {self._schema}.jobs SET status = 'cancelled' WHERE run_id = $1",
+        Güncelleme satır döndürmezse (sürüm izolasyonu tetikleyicisi atladı: havuz
+        ``agent.worker_wire_max`` bildirmiyor) olay YAZILMAZ; transaction geri alınır —
+        durumu değişmemiş işe terminal olay üretilmez.
+        """
+
+        updated = await conn.fetchval(
+            f"UPDATE {self._schema}.jobs SET status = 'cancelled' WHERE run_id = $1 RETURNING run_id",
             uuid.UUID(run_id),
         )
-        sequence = await self._allocate_sequence(conn, run_id)
-        payload_model = AgentRunCancelledV1(
-            **_clean(
-                event_sequence=sequence,
-                execution_attempt=execution_attempt,
-                reason=reason,
+        if updated is None:
+            raise WireIsolationError(
+                f"run {run_id} güncellenemedi: iş bu oturumun yürütebildiğinden yüksek wire "
+                "sürümünde (agent.worker_wire_max); terminal olay üretilmedi"
             )
-        )
+        sequence = await self._allocate_sequence(conn, run_id)
         envelope = self._envelope(
+            wire_version=wire_version,
             message_type="agent.run.cancelled",
             run_id=run_id,
             conversation_id=conversation_id,
             correlation_id=correlation_id,
             causation_id=causation_id,
             occurred_at=occurred_at,
-            payload=payload_model.model_dump(exclude_none=True),
+            payload=versioned_payload(
+                wire_version,
+                {
+                    "event_sequence": sequence,
+                    "execution_attempt": execution_attempt,
+                    "reason": reason,
+                },
+            ),
             new_message_id=new_message_id,
         )
         await self._insert_outbox(conn, envelope=envelope, created_at=occurred_at)
@@ -398,7 +515,8 @@ class ControlStore:
 
         ``reaper.py`` kullanır; koşul aktif durum kümesidir ('accepted' |
         'queued' | 'running') — bu arada worker tamamladıysa UPDATE satır
-        bulamaz ve False döner (terminal kazanır, olay üretilmez).
+        bulamaz ve False döner (terminal kazanır, olay üretilmez). Olay işin
+        ``wire_version``'ıyla kurulur (UPDATE ... RETURNING ile aynı transaction).
         """
 
         if terminal_status not in TERMINAL_JOB_STATUSES:
@@ -410,7 +528,7 @@ class ControlStore:
                 updated = await conn.fetchrow(
                     f"UPDATE {self._schema}.jobs SET status = $2 "
                     "WHERE run_id = $1 AND status = ANY($3::text[]) "
-                    "RETURNING execution_attempt",
+                    "RETURNING execution_attempt, wire_version",
                     uuid.UUID(run_id),
                     terminal_status,
                     list(ACTIVE_JOB_STATUSES),
@@ -422,6 +540,7 @@ class ControlStore:
                 payload["event_sequence"] = sequence
                 message_type = f"agent.run.{terminal_status}"
                 envelope = self._envelope(
+                    wire_version=normalize_wire_version(updated["wire_version"]),
                     message_type=message_type,
                     run_id=run_id,
                     conversation_id=conversation_id,
@@ -445,7 +564,7 @@ class ControlStore:
         async with self._pool.acquire() as conn:
             return await conn.fetch(
                 f"SELECT run_id, conversation_id, envelope->>'correlation_id' AS correlation_id, "
-                f"status, deadline_at, execution_attempt "
+                f"status, deadline_at, execution_attempt, wire_version "
                 f"FROM {self._schema}.jobs "
                 "WHERE status = ANY($1::text[]) AND deadline_at < now() "
                 "ORDER BY deadline_at LIMIT $2",
@@ -490,6 +609,7 @@ class ControlStore:
     def _envelope(
         self,
         *,
+        wire_version: int,
         message_type: str,
         run_id: str,
         conversation_id: str,
@@ -499,28 +619,24 @@ class ControlStore:
         payload: dict[str, Any],
         new_message_id: Callable[[], uuid.UUID],
     ) -> AgentEnvelope:
-        spec_entry = MESSAGE_TYPE_REGISTRY[message_type]  # sözleşme dışı tür reddedilir
-        # Payload B1 modeliyle doğrulanır: şema dışı terminal olay üretilemez.
-        validated = spec_entry.payload_model.model_validate(payload)
-        return AgentEnvelope(
-            **_clean(
-                message_id=str(new_message_id()),
-                message_type=message_type,
-                schema_version=SCHEMA_VERSION,
-                run_id=run_id,
-                conversation_id=conversation_id,
-                correlation_id=correlation_id,
-                causation_id=causation_id,
-                occurred_at=_utc(occurred_at),
-                producer=Producer.AGENT_PY,
-                payload=validated.model_dump(exclude_none=True),
-            )
+        # (sürüm, tür) kaydı + sürüm DTO'su + tüketici doğrulayıcısı: sözleşme
+        # dışı tür veya şema dışı terminal olay üretilemez (K4: run'ın sürümü).
+        return compose_run_envelope(
+            schema_version=wire_version,
+            message_type=message_type,
+            run_id=run_id,
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+            occurred_at=_utc(occurred_at),
+            payload=payload,
+            new_message_id=new_message_id,
         )
 
     async def _insert_outbox(
         self, conn: asyncpg.Connection, *, envelope: AgentEnvelope, created_at: datetime
     ) -> uuid.UUID:
-        spec_entry = MESSAGE_TYPE_REGISTRY[envelope.message_type]
+        exchange, routing_key = outbox_route(envelope)
         outbox_id = uuid.uuid4()
         await conn.execute(
             f"INSERT INTO {self._schema}.outbox_events "
@@ -529,18 +645,12 @@ class ControlStore:
             outbox_id,
             uuid.UUID(envelope.message_id),
             envelope.message_type,
-            spec_entry.exchange,
-            spec_entry.routing_key,
+            exchange,
+            routing_key,
             envelope.model_dump_json(exclude_none=True),
             created_at,
         )
         return outbox_id
-
-
-def _clean(**kwargs: Any) -> dict[str, Any]:
-    """None değerli anahtarları atar (TransportModel null taşınmaz kuralı)."""
-
-    return {key: value for key, value in kwargs.items() if value is not None}
 
 
 def _utc(dt: datetime) -> str:

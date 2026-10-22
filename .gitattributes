@@ -1,1 +1,4 @@
 docs/ai-agent-plan/source/** text eol=lf
+
+# Canonical yazar profili: content_hash ham byte uzerinden hesaplanir; satir sonu donusumu yapma.
+src/content/author-profile/** -text

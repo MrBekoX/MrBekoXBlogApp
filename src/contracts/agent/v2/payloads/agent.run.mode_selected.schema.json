@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v2:payload:agent.run.mode_selected",
+  "title": "AgentRunModeSelectedPayloadV2",
+  "description": "Router kararının bildirimi (A1 RouteDecision). requires_web_search yalnız deep_research modunda true olabilir.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_sequence",
+    "selected_mode",
+    "requires_web_search",
+    "reason",
+    "run_intent",
+    "source_scope"
+  ],
+  "properties": {
+    "event_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "execution_attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fencing_token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "selected_mode": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/agent_mode"
+    },
+    "requires_web_search": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "run_intent": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/run_intent"
+    },
+    "source_scope": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/source_scope"
+    },
+    "profile_snapshot": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/profile_snapshot_ref"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "requires_web_search": {
+            "const": true
+          }
+        },
+        "required": [
+          "requires_web_search"
+        ]
+      },
+      "then": {
+        "properties": {
+          "selected_mode": {
+            "const": "deep_research"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "run_intent": {
+            "const": "profile"
+          }
+        },
+        "required": [
+          "run_intent"
+        ]
+      },
+      "then": {
+        "required": [
+          "profile_snapshot"
+        ],
+        "properties": {
+          "source_scope": {
+            "const": "profile"
+          },
+          "requires_web_search": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

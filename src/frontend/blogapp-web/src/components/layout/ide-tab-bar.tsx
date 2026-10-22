@@ -2,16 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { FileText, Terminal } from 'lucide-react';
-
-function getTabLabel(pathname: string): string {
-  if (pathname === '/') return 'how-to-center.md';
-  if (pathname === '/posts') return 'posts-list.md';
-  if (pathname.startsWith('/posts/')) {
-    const slug = pathname.replace('/posts/', '').split('/')[0];
-    return `${slug}.md`;
-  }
-  return 'index.md';
-}
+import { getTabLabel } from '@/lib/ide-tab-label';
 
 interface IdeTabBarProps {
   isTerminalOpen?: boolean;

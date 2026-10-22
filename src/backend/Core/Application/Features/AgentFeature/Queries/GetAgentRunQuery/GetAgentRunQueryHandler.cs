@@ -2,6 +2,7 @@ using System.Text.Json;
 using BlogApp.Core.Application.Common.Errors;
 using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Interfaces.Services;
+using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Models;
 using BlogApp.Core.Application.Features.AgentFeature.Services;
 using BlogApp.Core.Domain.Enums;
@@ -30,10 +31,21 @@ public sealed record AgentRunResultDto
 
     public string? UnresolvedQuestion { get; init; }
 
-    /// <summary>Sunum denetimi sonucu sunumu engellediyse kullanıcıya gösterilen gerekçe.</summary>
+    /// <summary>v2 sonucun etkin niyeti (run_intent; örn. profile); v1 sonuçlarında null.</summary>
+    public string? RunIntent { get; init; }
+
+    /// <summary>Sunum denetimi sonucu sunumu engellediyse gerekçe: profil maskesinde
+    /// <c>profile_updated</c> | <c>profile_unavailable</c> | <c>legacy_profile_unavailable</c> kodu,
+    /// makale maskesinde açıklama cümlesi.</summary>
     public string? UnavailableReason { get; init; }
+
+    /// <summary>Maskelemenin kullanıcıya gösterilecek açıklaması + yeni sorgu önerisi.</summary>
+    public string? UnavailableMessage { get; init; }
 }
 
+/// <summary>Sonuç kaynağı. kind=profile kaynaklarında profile alanları dolar ve
+/// <see cref="Url"/> yalnız canonical <c>/about#{sectionId}</c> olabilir (yeniden doğrulanır;
+/// biçimi bozuk profile kaynağı düşürülür).</summary>
 public sealed record AgentRunCitationDto(
     string Kind,
     string? Title,
@@ -41,7 +53,11 @@ public sealed record AgentRunCitationDto(
     Guid? ArticleId,
     long? ArticleRevision,
     int? ChunkIndex,
-    string? SourceId);
+    string? SourceId,
+    string? ProfileId = null,
+    long? ProfileRevision = null,
+    string? ProfileContentHash = null,
+    string? SectionId = null);
 
 /// <summary>
 /// GET /api/v1/agent/runs/{runId} karşılığı (B10; plan tablosu: "Sahiplik
@@ -87,6 +103,8 @@ public sealed class GetAgentRunQueryHandler(
             result = await BuildResultAsync(run, cancellationToken);
         }
 
+        var wire = AgentRunWireContext.Parse(run.ContextSnapshotJson);
+
         return Result<AgentRunStatusDto>.Success(new AgentRunStatusDto
         {
             RunId = run.Id,
@@ -99,6 +117,8 @@ public sealed class GetAgentRunQueryHandler(
             Question = run.Question,
             Language = run.Language,
             ArticleId = run.ArticleId,
+            ConversationTopic = wire.ConversationTopic,
+            WireVersion = wire.WireVersion,
             AcceptedAt = new DateTimeOffset(run.AcceptedAt, TimeSpan.Zero),
             DeadlineAt = new DateTimeOffset(run.DeadlineAt, TimeSpan.Zero),
             TerminalAt = run.TerminalAt is { } terminal
@@ -111,7 +131,7 @@ public sealed class GetAgentRunQueryHandler(
 
     private async Task<AgentRunResultDto> BuildResultAsync(Core.Domain.Entities.AgentRun run, CancellationToken cancellationToken)
     {
-        var context = new AgentRunResultContext(run.Id, run.ArticleId, run.ResultJson);
+        var context = new AgentRunResultContext(run.Id, run.ArticleId, run.ResultJson, run.ContextSnapshotJson);
         var presentation = await presentationGuard.CheckAsync(context, cancellationToken);
 
         if (!presentation.IsPresentable)
@@ -124,18 +144,20 @@ public sealed class GetAgentRunQueryHandler(
                 SelectedMode = run.SelectedMode,
                 SourceScope = run.SourceScope,
                 UnavailableReason = presentation.UnavailableReason,
+                UnavailableMessage = presentation.UnavailableMessage,
             };
         }
 
         return ParseResult(run, presentation.AvailableArticleIds);
     }
 
-    private static AgentRunResultDto ParseResult(
+    public static AgentRunResultDto ParseResult(
         Core.Domain.Entities.AgentRun run, IReadOnlyList<Guid> availableArticleIds)
     {
         string? answer = null;
         string? report = null;
         string? unresolved = null;
+        string? runIntent = null;
         var citations = new List<AgentRunCitationDto>();
 
         try
@@ -152,6 +174,11 @@ public sealed class GetAgentRunQueryHandler(
                 if (root.TryGetProperty("report", out var reportElement) && reportElement.ValueKind == JsonValueKind.String)
                 {
                     report = reportElement.GetString();
+                }
+
+                if (root.TryGetProperty("run_intent", out var intentElement) && intentElement.ValueKind == JsonValueKind.String)
+                {
+                    runIntent = intentElement.GetString();
                 }
 
                 if (root.TryGetProperty("unresolved_questions", out var unresolvedElement)
@@ -189,6 +216,18 @@ public sealed class GetAgentRunQueryHandler(
                             continue;
                         }
 
+                        if (kind == "profile")
+                        {
+                            // Profil kaynağı: URL modelden güvenilmez; canonical /about#{section_id}
+                            // biçimi ve tutarlılığı yeniden doğrulanır, bozuk kaynak düşürülür.
+                            if (ToProfileCitation(citation) is { } profileCitation)
+                            {
+                                citations.Add(profileCitation);
+                            }
+
+                            continue;
+                        }
+
                         citations.Add(new AgentRunCitationDto(
                             kind ?? "web",
                             citation.TryGetProperty("title", out var titleElement) ? titleElement.GetString() : null,
@@ -221,6 +260,51 @@ public sealed class GetAgentRunQueryHandler(
             Report = report,
             Citations = citations,
             UnresolvedQuestion = unresolved,
+            RunIntent = runIntent,
         };
+    }
+
+    /// <summary>kind=profile kaynağını DTO'ya eşler; bölüm kimliği, canonical URL ve kaynak
+    /// kimliği biçimi tutmazsa null (kaynak sunulmaz).</summary>
+    public static AgentRunCitationDto? ToProfileCitation(JsonElement citation)
+    {
+        static string? Text(JsonElement element, string name) =>
+            element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+        static long? Long(JsonElement element, string name) =>
+            element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number)
+                ? number
+                : null;
+
+        var profileId = Text(citation, "profile_id");
+        var revision = Long(citation, "profile_revision");
+        var hash = Text(citation, "profile_content_hash");
+        var sectionId = Text(citation, "section_id");
+        var chunk = Long(citation, "chunk_index");
+        var url = Text(citation, "url");
+        var sourceId = Text(citation, "source_id");
+        if (profileId is null || revision is null || hash is null || sectionId is null || chunk is null
+            || chunk.Value is < 0 or > int.MaxValue
+            || !AgentContractFormats.IsValidProfileId(profileId)
+            || !AgentContractFormats.IsValidHashHex(hash)
+            || !AgentContractFormats.IsValidSectionId(sectionId)
+            || url != AgentContractFormats.ComposeProfileUrl(sectionId)
+            || sourceId != AgentContractFormats.ComposeProfileSourceId(profileId, revision.Value, hash, sectionId, chunk.Value))
+        {
+            return null;
+        }
+
+        return new AgentRunCitationDto(
+            "profile",
+            Text(citation, "title"),
+            AgentContractFormats.ComposeProfileUrl(sectionId),
+            ArticleId: null,
+            ArticleRevision: null,
+            ChunkIndex: (int)chunk.Value,
+            SourceId: sourceId,
+            ProfileId: profileId,
+            ProfileRevision: revision,
+            ProfileContentHash: hash,
+            SectionId: sectionId);
     }
 }

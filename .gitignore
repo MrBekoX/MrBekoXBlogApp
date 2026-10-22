@@ -199,3 +199,6 @@ htmlcov/
 
 # AI agent canli worker checkpoint_store calisma zamani cikti (K7/B6)
 src/services/ai-agent-service/.agent_checkpoints/
+
+# Who am I ozellik calisma dosyalari (prompt/analiz/rapor; kisisel veri icerir, repoya girmez)
+feature-prompts/who-am-i/

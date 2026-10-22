@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { fetchPosts } from '@/lib/server-api';
-import { FileText, Lock, ExternalLink } from 'lucide-react';
+import { FileText, Lock, ExternalLink, UserRound } from 'lucide-react';
 import { IdeUserFooter } from './ide-user-footer';
 
 function PostIcon({ index }: { index: number }) {
@@ -42,6 +42,16 @@ export async function IdeSidebarLeft() {
             >
               <FileText className="w-3 h-3 text-yellow-500 mr-2 shrink-0" />
               <span className="truncate">how-to-center.md</span>
+            </Link>
+
+            {/* Who am I: yayımlanmış yazar profili + profil asistanı */}
+            <Link
+              href="/about"
+              className="flex items-center py-1 px-4 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors font-mono"
+            >
+              <UserRound className="w-3 h-3 text-ide-primary mr-2 shrink-0" />
+              <span className="truncate">about.md</span>
+              <span className="sr-only"> — Who am I · Sample Author</span>
             </Link>
 
             {/* Post links */}

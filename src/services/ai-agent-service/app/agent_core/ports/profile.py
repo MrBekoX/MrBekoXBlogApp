@@ -1,21 +1,31 @@
-"""ProfileRepository portu ve veri tipi.
+"""ProfileRepository ve ProfileKnowledgeRepository portları.
 
-Veri: sahibin tanıtım verisi (ad, unvan, açıklama, sosyal linkler,
-yetkinlikler) — A0 §5. Bugün doldurulabilir veri kaynağı yoktur; kaynak kararı
-açık sorudur (W0 §6, açık soru 2). Port sözleşmesi A1'de sabittir.
+``ProfileRepository`` (A1/A9): sahibin kısa tanıtım özeti (ad, açıklama,
+sosyal linkler, yetkinlikler) — legacy v1 PROFILE yolu bunu bütün olarak
+yazdırır. Who am I'dan itibaren üretim adaptörü bu özeti canonical profil
+kaynağından (``src/content/author-profile``) türetir.
+
+``ProfileKnowledgeRepository`` (Who am I, K5): pinlenebilir canonical profil
+belgesine erişim. ``active_snapshot`` aktif sürüm kimliğini, ``load`` pinlenmiş
+sürümün doğrulanmış belgesini verir; pinlenen sürüm aktif değilse veya kaynak
+bozuksa ``ProfileSourceError`` (``config_error``) yükselir — başka sürüme
+sessizce geçilmez. Uygulama: ``agent_core.profile.CanonicalProfileRepository``.
 
 Hata türleri: ``not_found``, ``config_error``, ``provider_error``, ``timeout``.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from pydantic import Field
 
-from ..models import BusinessModel, Identifier, UtcDatetime
+from ..models import BusinessModel, Identifier, ProfileSnapshotRef, UtcDatetime
 
-__all__ = ["ProfileRepository", "ProfileSummary"]
+if TYPE_CHECKING:  # döngüsel import yok: belge tipi yalnız tip denetiminde
+    from ..profile.source import ProfileDocument
+
+__all__ = ["ProfileKnowledgeRepository", "ProfileRepository", "ProfileSummary"]
 
 
 class ProfileSummary(BusinessModel):
@@ -39,5 +49,26 @@ class ProfileRepository(Protocol):
         Raises:
             PortError: ``not_found`` — profil verisi yapılandırılmamış;
                 ``config_error``/``provider_error``/``timeout``.
+        """
+        ...
+
+
+@runtime_checkable
+class ProfileKnowledgeRepository(Protocol):
+    """Pinlenebilir canonical profil belgesine erişen port (Who am I RAG)."""
+
+    def active_snapshot(self) -> ProfileSnapshotRef:
+        """Aktif, doğrulanmış profil sürümünün gövdesiz kimliği.
+
+        Raises:
+            ProfileSourceError: kaynak eksik/bozuk/hash uyumsuz/public değil (``config_error``).
+        """
+        ...
+
+    def load(self, snapshot: ProfileSnapshotRef) -> "ProfileDocument":
+        """Pinlenmiş sürümün doğrulanmış belgesi.
+
+        Raises:
+            ProfileSourceError: kaynak kullanılamıyor veya pinlenen sürüm artık aktif değil.
         """
         ...

@@ -37,15 +37,17 @@ public static class AgentCollaborationEnvelopeComposer
         DateTimeOffset occurredAt,
         string producer,
         string checkpointReference,
-        string userRef)
+        string userRef,
+        int schemaVersion = AgentMessageTypeRegistry.V1)
     {
+        AgentMessageTypeRegistry.Get(schemaVersion, AgentMessageTypes.ResumeRequested);
         var messageId = Guid.NewGuid().ToString("D");
 
         var envelope = new AgentEnvelope
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.ResumeRequested,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = schemaVersion,
             RunId = runId.ToString("D"),
             ConversationId = conversationId.ToString("D"),
             CorrelationId = correlationId,
@@ -75,15 +77,17 @@ public static class AgentCollaborationEnvelopeComposer
         string? reason,
         long? appliedArticleRevision,
         DateTimeOffset validatedAt,
-        string? deterministicMessageId = null)
+        string? deterministicMessageId = null,
+        int schemaVersion = AgentMessageTypeRegistry.V1)
     {
+        AgentMessageTypeRegistry.Get(schemaVersion, AgentMessageTypes.ActionResult);
         var messageId = deterministicMessageId ?? Guid.NewGuid().ToString("D");
 
         var envelope = new AgentEnvelope
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.ActionResult,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = schemaVersion,
             RunId = runId.ToString("D"),
             ConversationId = conversationId.ToString("D"),
             CorrelationId = correlationId,

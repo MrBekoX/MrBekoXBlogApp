@@ -17,6 +17,8 @@ public static class AgentResumeEnvelopeComposer
     /// message_id outbox kaydına yazılır ve tekrar yayınlarda korunur (plan satır 301).
     /// checkpoint_reference backend'in doğruladığı devam kaydından gelir (B9 sözleşmesi);
     /// user_ref oturum sahipliğini doğrulayan backend kimliğidir, yetki KAYNAĞI değildir.</summary>
+    /// <param name="schemaVersion">Run'ın kabulde kararlaşan wire sürümü (K4); kontrol komutları
+    /// run'ın sürümünü korur (v1 run → v1, v2 run → v2).</param>
     public static (string EnvelopeJson, string MessageId) ComposeResumeRequested(
         Guid runId,
         Guid conversationId,
@@ -24,15 +26,17 @@ public static class AgentResumeEnvelopeComposer
         DateTimeOffset occurredAt,
         string producer,
         string checkpointReference,
-        string userRef)
+        string userRef,
+        int schemaVersion = AgentMessageTypeRegistry.V1)
     {
+        AgentMessageTypeRegistry.Get(schemaVersion, AgentMessageTypes.ResumeRequested);
         var messageId = Guid.NewGuid().ToString("D");
 
         var envelope = new AgentEnvelope
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.ResumeRequested,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = schemaVersion,
             RunId = runId.ToString("D"),
             ConversationId = conversationId.ToString("D"),
             CorrelationId = correlationId,

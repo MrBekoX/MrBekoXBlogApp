@@ -1,0 +1,268 @@
+{
+  "contract_version": 2,
+  "description": "v2 ortak dogrulama fixture'lari (dotnet + python ayni dosyalari okur). schema_expect=skip: capraz kurallar (profile source_id/url bicimi, citation ile profile_snapshot tutarliligi, v2'de olmayan content turleri) yalniz dogrulayicilarda uygulanir.",
+  "categories": [
+    "missing_field",
+    "unknown_version",
+    "unknown_type",
+    "oversized",
+    "wrong_type",
+    "bad_format",
+    "extra_field",
+    "producer_mismatch"
+  ],
+  "cases": [
+    {
+      "file": "valid/agent.action.proposed.json",
+      "expect": "valid",
+      "message_type": "agent.action.proposed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.action.result.accepted.json",
+      "expect": "valid",
+      "message_type": "agent.action.result",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.action.result.rejected.json",
+      "expect": "valid",
+      "message_type": "agent.action.result",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.cancel.requested.json",
+      "expect": "valid",
+      "message_type": "agent.cancel.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.execute.requested.json",
+      "expect": "valid",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.execute.requested.with_article.json",
+      "expect": "valid",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.resume.requested.json",
+      "expect": "valid",
+      "message_type": "agent.resume.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.accepted.json",
+      "expect": "valid",
+      "message_type": "agent.run.accepted",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.cancelled.json",
+      "expect": "valid",
+      "message_type": "agent.run.cancelled",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.completed.json",
+      "expect": "valid",
+      "message_type": "agent.run.completed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.failed.json",
+      "expect": "valid",
+      "message_type": "agent.run.failed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.mode_selected.json",
+      "expect": "valid",
+      "message_type": "agent.run.mode_selected",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.needs_input.json",
+      "expect": "valid",
+      "message_type": "agent.run.needs_input",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.partially_completed.json",
+      "expect": "valid",
+      "message_type": "agent.run.partially_completed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.progressed.json",
+      "expect": "valid",
+      "message_type": "agent.run.progressed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.execute.requested.who_am_i.json",
+      "expect": "valid",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.execute.requested.auto_with_profile_snapshot.json",
+      "expect": "valid",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.mode_selected.profile.json",
+      "expect": "valid",
+      "message_type": "agent.run.mode_selected",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.completed.profile.json",
+      "expect": "valid",
+      "message_type": "agent.run.completed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.completed.profile_refusal_no_citations.json",
+      "expect": "valid",
+      "message_type": "agent.run.completed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "valid/agent.run.failed.profile_config_error.json",
+      "expect": "valid",
+      "message_type": "agent.run.failed",
+      "schema_expect": "pass"
+    },
+    {
+      "file": "invalid/v1_payload_shape_under_v2_missing_topic.json",
+      "expect": "invalid",
+      "reason": "missing_field",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/bad_conversation_topic.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/who_am_i_missing_profile_snapshot.json",
+      "expect": "invalid",
+      "reason": "missing_field",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/who_am_i_with_article_context.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/who_am_i_with_selected_text.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/profile_snapshot_bad_hash.json",
+      "expect": "invalid",
+      "reason": "bad_format",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/completed_missing_run_intent.json",
+      "expect": "invalid",
+      "reason": "missing_field",
+      "message_type": "agent.run.completed",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/profile_completed_missing_snapshot.json",
+      "expect": "invalid",
+      "reason": "missing_field",
+      "message_type": "agent.run.completed",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/profile_completed_with_web_citation.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "message_type": "agent.run.completed",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/profile_intent_wrong_scope.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "message_type": "agent.run.completed",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/profile_citation_with_article_id.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "message_type": "agent.run.completed",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/profile_citation_external_url.json",
+      "expect": "invalid",
+      "reason": "bad_format",
+      "message_type": "agent.run.completed",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/profile_citation_source_id_mismatch.json",
+      "expect": "invalid",
+      "reason": "bad_format",
+      "message_type": "agent.run.completed",
+      "schema_expect": "skip"
+    },
+    {
+      "file": "invalid/profile_citation_anchor_mismatch.json",
+      "expect": "invalid",
+      "reason": "bad_format",
+      "message_type": "agent.run.completed",
+      "schema_expect": "skip"
+    },
+    {
+      "file": "invalid/profile_citation_snapshot_mismatch.json",
+      "expect": "invalid",
+      "reason": "bad_format",
+      "message_type": "agent.run.completed",
+      "schema_expect": "skip"
+    },
+    {
+      "file": "invalid/profile_mode_selected_requires_web.json",
+      "expect": "invalid",
+      "reason": "wrong_type",
+      "message_type": "agent.run.mode_selected",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/unknown_schema_version_3.json",
+      "expect": "invalid",
+      "reason": "unknown_version",
+      "message_type": "agent.execute.requested",
+      "schema_expect": "fail"
+    },
+    {
+      "file": "invalid/content_type_not_in_v2.json",
+      "expect": "invalid",
+      "reason": "unknown_type",
+      "message_type": "content.profile.changed",
+      "schema_expect": "skip"
+    }
+  ]
+}

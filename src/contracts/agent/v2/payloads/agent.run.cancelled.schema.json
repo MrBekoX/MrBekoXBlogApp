@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v2:payload:agent.run.cancelled",
+  "title": "AgentRunCancelledPayloadV2",
+  "description": "Terminal iptal olayı; iptal politikası backend/worker tarafında uygulanır, bu olay sonucun bildirimidir.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_sequence"
+  ],
+  "properties": {
+    "event_sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "execution_attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fencing_token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "usage": {
+      "$ref": "urn:blog-agent:v2:common#/$defs/usage_record"
+    }
+  }
+}

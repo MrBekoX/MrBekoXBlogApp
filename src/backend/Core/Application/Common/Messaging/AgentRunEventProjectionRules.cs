@@ -12,7 +12,12 @@ public enum AgentEventDecision
     Duplicate,
 
     /// <summary>Sıra gerilemesi / terminal sonrası eski olay: inbox stale işaretlenir, projection değişmez.</summary>
-    Stale
+    Stale,
+
+    /// <summary>Run bağlamıyla çelişen olay (sürüm/profil snapshot/konu; K4/K6): uygulanmaz, inbox
+    /// rejected; run terminal değilse güvenli Failed kapanışı. Saf <see cref="AgentRunEventProjectionRules.Decide"/>
+    /// bu değeri üretmez; handler <see cref="AgentRunEventWireRules"/> ile karar verir.</summary>
+    Rejected
 }
 
 /// <summary>

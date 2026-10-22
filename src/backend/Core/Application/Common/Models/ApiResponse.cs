@@ -19,6 +19,10 @@ public class ApiResponse<T>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyDictionary<string, string[]>? FieldErrors { get; set; }
 
+    /// <summary>Machine-readable error code from <see cref="Error.Code"/> (e.g. capability_unavailable).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Code { get; set; }
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PaginationMeta? Pagination { get; set; }
 
@@ -68,7 +72,8 @@ public class ApiResponse<T>
             Success = false,
             Errors = errors,
             Category = errorDetail?.Category,
-            FieldErrors = errorDetail?.FieldErrors
+            FieldErrors = errorDetail?.FieldErrors,
+            Code = errorDetail?.Code
         };
     }
 

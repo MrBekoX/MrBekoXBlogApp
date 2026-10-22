@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract": "blog.agent.messaging",
+  "version": 2,
+  "description": "v2 run mesaj sozlesmesi: v1'in run kapsamli 13 turu + konu (conversation_topic), etkin niyet (run_intent), profil snapshot referansi ve profile kaynak turu. content.* turleri v1'de kalir. Uretici: _generate_v2.py.",
+  "content_type": "application/json",
+  "max_payload_bytes": 262144,
+  "producers": [
+    "backend-net",
+    "agent-py",
+    "test-executor"
+  ],
+  "exchanges": {
+    "commands": "blog.agent.commands",
+    "events": "blog.agent.events",
+    "content": "blog.content.events"
+  },
+  "message_types": {
+    "agent.execute.requested": {
+      "payload_schema": "payloads/agent.execute.requested.schema.json",
+      "direction": "backend_to_agent",
+      "exchange": "blog.agent.commands",
+      "routing_key": "agent.execute.requested.v2",
+      "allowed_producers": [
+        "backend-net",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": true
+    },
+    "agent.cancel.requested": {
+      "payload_schema": "payloads/agent.cancel.requested.schema.json",
+      "direction": "backend_to_agent",
+      "exchange": "blog.agent.commands",
+      "routing_key": "agent.cancel.requested.v2",
+      "allowed_producers": [
+        "backend-net",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.resume.requested": {
+      "payload_schema": "payloads/agent.resume.requested.schema.json",
+      "direction": "backend_to_agent",
+      "exchange": "blog.agent.commands",
+      "routing_key": "agent.resume.requested.v2",
+      "allowed_producers": [
+        "backend-net",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.action.result": {
+      "payload_schema": "payloads/agent.action.result.schema.json",
+      "direction": "backend_to_agent",
+      "exchange": "blog.agent.commands",
+      "routing_key": "agent.action.result.v2",
+      "allowed_producers": [
+        "backend-net",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.run.accepted": {
+      "payload_schema": "payloads/agent.run.accepted.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.run.accepted.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.run.mode_selected": {
+      "payload_schema": "payloads/agent.run.mode_selected.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.run.mode_selected.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.run.progressed": {
+      "payload_schema": "payloads/agent.run.progressed.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.run.progressed.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.run.needs_input": {
+      "payload_schema": "payloads/agent.run.needs_input.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.run.needs_input.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.run.completed": {
+      "payload_schema": "payloads/agent.run.completed.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.run.completed.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.run.partially_completed": {
+      "payload_schema": "payloads/agent.run.partially_completed.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.run.partially_completed.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.run.failed": {
+      "payload_schema": "payloads/agent.run.failed.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.run.failed.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.run.cancelled": {
+      "payload_schema": "payloads/agent.run.cancelled.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.run.cancelled.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    },
+    "agent.action.proposed": {
+      "payload_schema": "payloads/agent.action.proposed.schema.json",
+      "direction": "agent_to_backend",
+      "exchange": "blog.agent.events",
+      "routing_key": "agent.action.proposed.v2",
+      "allowed_producers": [
+        "agent-py",
+        "test-executor"
+      ],
+      "requires_run_identity": true,
+      "requires_deadline": false
+    }
+  }
+}

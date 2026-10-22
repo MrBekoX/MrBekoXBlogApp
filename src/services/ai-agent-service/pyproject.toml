@@ -24,7 +24,16 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
+    # Sözleşme testleri fixture'ları gerçek JSON Schema dosyalarına (Draft 2020-12,
+    # v1 + v2) karşı da doğrular; referencing kayıt sınıfı 4.18+ ile gelir.
+    "jsonschema>=4.18",
 ]
+
+[tool.setuptools]
+# agent_core.adapters.config üst seviye ``env_file`` modülünü import eder;
+# kurulu pakette de bulunması için tek-dosya modül olarak paketlenir.
+package-dir = {"" = "app"}
+py-modules = ["env_file"]
 
 [tool.setuptools.packages.find]
 where = ["app"]

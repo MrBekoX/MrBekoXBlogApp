@@ -33,7 +33,8 @@ public sealed record CollaborationRunState(
     Guid RunId,
     Guid ConversationId,
     string OwnerKey,
-    bool IsTerminal);
+    bool IsTerminal,
+    int WireVersion = 1);
 
 /// <summary>Proposal'ın güncel (en yüksek sürümlü) kaydının okuma görünümü.</summary>
 public sealed record AgentProposalSnapshot(

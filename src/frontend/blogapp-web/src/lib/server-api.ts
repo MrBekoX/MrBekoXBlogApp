@@ -9,7 +9,10 @@ import type {
   Tag,
 } from '@/types';
 
+import type { AuthorProfile } from '@/types/profile';
+
 import { SERVER_API_URL } from '@/lib/env.server';
+import { normalizeAuthorProfile } from '@/lib/author-profile';
 
 const API_BASE_URL = SERVER_API_URL;
 
@@ -98,4 +101,15 @@ export async function fetchTags(includeEmpty?: boolean): Promise<Tag[] | null> {
 
 export async function fetchTagById(id: string): Promise<Tag | null> {
   return serverFetch<Tag>(`/tags/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Yayımlanmış yazar profili (/about). Backend aktif + public + hash doğrulanmış
+ * profili döner; kullanılamıyorsa (503/ağ/şema) null → sayfa biyografi gövdesi
+ * göstermez. serverFetch `cache: 'no-store'` kullanır: eski profil gövdesi
+ * önbellekten sunulmaz (A37).
+ */
+export async function fetchAuthorProfile(): Promise<AuthorProfile | null> {
+  const raw = await serverFetch<unknown>('/profile');
+  return normalizeAuthorProfile(raw);
 }

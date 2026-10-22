@@ -11,7 +11,12 @@ Kod incelemesi kuralı: bu paketten hiçbir isim üretim koduna import edilemez.
 
 from .fake_embedding import FakeEmbeddingProvider
 from .fake_model import ExplodingModelProvider, FakeModelProvider
-from .fake_repositories import FakeContentRepository, FakeProfileRepository, FakeProjectRepository
+from .fake_repositories import (
+    FakeContentRepository,
+    FakeProfileKnowledgeRepository,
+    FakeProfileRepository,
+    FakeProjectRepository,
+)
 from .fake_signals import PreCancelledToken, RecordingProgressSink, StubCancellationToken
 from .fake_state import FakeBudgetStore, FakeCheckpointStore
 from .fake_web import FakeSourceReader, FakeWebSearchProvider
@@ -23,6 +28,7 @@ __all__ = [
     "FakeContentRepository",
     "FakeEmbeddingProvider",
     "FakeModelProvider",
+    "FakeProfileKnowledgeRepository",
     "FakeProfileRepository",
     "FakeProjectRepository",
     "FakeSourceReader",

@@ -45,7 +45,9 @@ load_env_file()
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Programatik upgrade (testler, aynı süreç) uygulama logger'larını
+    # (ör. env_file) susturmasın: varsayılan disable_existing_loggers=True'dur.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 AGENT_SCHEMA = config.attributes.get("agent_schema") or os.environ.get("AGENT_DB_SCHEMA", "agent")
 

@@ -1,12 +1,8 @@
-"""Onaylı statik kayıt testleri (A9 gerçek veri kararı).
+"""Onaylı kayıt testleri (A9 gerçek veri kararı + Who am I canonical kaynak).
 
-Kayıtlar yalnız repo içi GERÇEK kaynaklardan derlenir ve bu testler kaynak
-değerlerini sabitler:
+Profil özeti tek canonical kaynaktan (``src/content/author-profile``)
+türetilir; proje kayıtları repo içi GERÇEK kaynaklardan derlenir:
 
-- ``src/frontend/blogapp-web/src/lib/site-config.ts`` — AUTHOR_NAME,
-  AUTHOR_JOB_TITLE, AUTHOR_DESCRIPTION, SITE_URL, GITHUB_URL, TWITTER_URL,
-  LINKEDIN_URL, SITE_KEYWORDS.
-- ``src/backend/Presentation/API/Seo/SeoDocuments.cs`` — SiteName, AuthorName.
 - ``README.md`` — platform tanımı ve teknoloji yığını.
 
 Uydurma yasağı: deneyim/ücret/müsaitlik kayıtlarda TUTULMAZ; makale
@@ -41,25 +37,46 @@ def test_static_adapters_are_not_test_doubles() -> None:
     assert StaticProjectRepository.is_test_double is False
 
 
-def test_profile_record_matches_real_site_config_values() -> None:
+def test_profile_record_is_derived_from_canonical_profile_source() -> None:
+    # Who am I (K2): legacy ProfileSummary canonical kaynaktan türetilir;
+    # elle yazılmış ikinci biyografi kopyası ve SEO anahtar kelimesi yoktur.
     from agent_core.adapters import APPROVED_PROFILE
+    from agent_core.profile import CanonicalProfileRepository, resolve_profile_dir
 
-    assert APPROVED_PROFILE.name == "Sample Author"  # site-config AUTHOR_NAME
-    assert APPROVED_PROFILE.job_title == "Software Developer"  # AUTHOR_JOB_TITLE
-    # AUTHOR_DESCRIPTION birebir; ek cümle SiteDescription'dan (SeoDocuments.cs).
-    assert APPROVED_PROFILE.description.startswith(
-        "Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine "
-        "uzmanlaşmış yazılım geliştirici."
-    )
+    document = CanonicalProfileRepository(resolve_profile_dir()).current_document()
+    assert APPROVED_PROFILE.name == document.owner.name == "Sample Author"
+    assert APPROVED_PROFILE.job_title is None  # canonical kaynakta unvan alanı yok; uydurulmaz
+    assert len(APPROVED_PROFILE.description) <= 4000
+    # Açıklama FAQ'taki üçüncü şahıs cevaplarından gelir (agent kendini Sample sanmaz).
+    # Kalın FAQ soru satırları özete girmez; yalnız cevap metni.
+    assert APPROVED_PROFILE.description.startswith("Örnekşehir'da yaşayan, .NET/C# ağırlıklı")
+    assert "**" not in APPROVED_PROFILE.description and "kimdir?" not in APPROVED_PROFILE.description
+    assert "Demo University" in APPROVED_PROFILE.description
+    assert "Ben Sample Author" not in APPROVED_PROFILE.description
     links = APPROVED_PROFILE.links
-    assert links["site"] == "https://mrbekox.dev"  # SITE_URL
-    assert links["github"] == "https://example.invalid/author"  # GITHUB_URL
-    assert links["x"] == "https://example.invalid/social"  # TWITTER_URL
-    assert links["linkedin"] == "https://example.invalid/author"  # LINKEDIN_URL
-    # SITE_KEYWORDS'ten gerçek yetkinlikler (örnekler kaynakla sabitlenir).
-    assert "clean architecture" in APPROVED_PROFILE.skills
-    assert "AI agent" in APPROVED_PROFILE.skills
-    assert "ASP.NET Core" in APPROVED_PROFILE.skills
+    assert links["site"] == "https://mrbekox.dev"
+    assert links["github"] == "https://example.invalid/author"
+    assert links["x"] == "https://example.invalid/social"
+    assert links["linkedin"] == "https://example.invalid/author"
+    assert set(links.values()) == {channel.url for channel in document.privacy.contact_channels}
+    # Yetkinlikler skills bölümünün maddeleridir; niteleyici ("inceledim") korunur.
+    assert any(skill.startswith("Diller: C#") for skill in APPROVED_PROFILE.skills)
+    assert any("NestJS'i de inceledim" in skill for skill in APPROVED_PROFILE.skills)
+    # Eski SEO anahtar kelimeleri yetkinliğe dönüştürülmez.
+    for seo_keyword in ("machine learning", "domain driven design", "mikroservis", "AI agent"):
+        assert seo_keyword not in APPROVED_PROFILE.skills
+
+
+def test_static_profile_repository_reads_explicit_canonical_directory(tmp_path) -> None:
+    import asyncio
+    import shutil
+
+    from agent_core.profile import resolve_profile_dir
+
+    target = tmp_path / "author-profile"
+    shutil.copytree(resolve_profile_dir(), target)
+    profile = asyncio.run(StaticProfileRepository(directory=target).get_profile())
+    assert profile.name == "Sample Author"
 
 
 def test_profile_record_contains_no_invented_missing_info() -> None:

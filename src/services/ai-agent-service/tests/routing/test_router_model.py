@@ -223,3 +223,18 @@ def test_prepared_run_checkpoint_roundtrips_a5_route_fields() -> None:
     assert restored.route == prepared.route
     assert restored.route.budget_profile_id == "router-profile"
     assert restored.route.intent.value == "summarize"  # kural kararı: özet sınıfı soru
+
+
+# --- Who am I: ziyaretçi-kimliği netleştirmesi router modeliyle ezilmez ---
+
+
+@pytest.mark.parametrize("question", ["Ben kimim?", "Who am I?"])
+def test_router_model_is_not_consulted_for_visitor_identity_clarification(question: str) -> None:
+    from agent_core.profile import is_visitor_identity_route
+
+    exploding = ExplodingRouterModel()
+    decision = run(route_for_context(make_context(question=question, article_id=None), router_model=exploding))
+
+    assert exploding.call_count == 0
+    assert decision.intent is RunIntent.GENERAL
+    assert is_visitor_identity_route(decision)

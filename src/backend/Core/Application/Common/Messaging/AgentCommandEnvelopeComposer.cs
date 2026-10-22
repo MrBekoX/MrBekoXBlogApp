@@ -22,7 +22,8 @@ public static class AgentCommandEnvelopeComposer
     /// kaydına yazılır ve tekrar yayınlarda korunur (plan satır 301). Makale bağlamı
     /// article_id/article_revision/article_content_hash ÜÇLÜSÜ halinde taşınır (B1 sözleşme
     /// all-or-none kuralı; W5 bulgusu 4i): biri varsa üçü birden yazılır, hiçbiri yoksa alan
-    /// yazılmaz (makalesiz genel sorular).</summary>
+    /// yazılmaz (makalesiz genel sorular). <paramref name="schemaVersion"/> run'ın kabulde kararlaşan
+    /// wire sürümüdür (K4): v1 donuk şekli, v2 konu + pinlenmiş profil + tamamlanmış geçmişi taşır.</summary>
     public static (string EnvelopeJson, string MessageId) ComposeExecutionRequested(
         Guid runId,
         Guid conversationId,
@@ -39,7 +40,11 @@ public static class AgentCommandEnvelopeComposer
         string? selectedText,
         string? articleId = null,
         long? articleRevision = null,
-        string? articleContentHash = null)
+        string? articleContentHash = null,
+        int schemaVersion = AgentMessageTypeRegistry.V1,
+        string? conversationTopic = null,
+        AgentProfileSnapshotRef? profileSnapshot = null,
+        IReadOnlyList<AgentConversationTurn>? conversationHistory = null)
     {
         var hasAny = articleId is not null || articleRevision is not null || articleContentHash is not null;
         var hasAll = articleId is not null && articleRevision is not null && articleContentHash is not null;
@@ -49,13 +54,61 @@ public static class AgentCommandEnvelopeComposer
                 "Makale referansı article_id/article_revision/article_content_hash üçlüsü halinde taşınır (B1 all-or-none); eksik üçlü komut üretmez.");
         }
 
+        // Sürüm kaydı yoksa üretici hatasıdır (registry dışı (sürüm, tür) komut üretmez).
+        AgentMessageTypeRegistry.Get(schemaVersion, AgentMessageTypes.ExecutionRequested);
+
+        object payload;
+        if (schemaVersion == AgentMessageTypeRegistry.V1)
+        {
+            // v1 donuk sözleşme: konu/profil/geçmiş alanı YOKTUR; v1 run'ları eski şekliyle üretilir.
+            if (conversationTopic is not null || profileSnapshot is not null || conversationHistory is { Count: > 0 })
+            {
+                throw new ArgumentException(
+                    "v1 execute komutu conversation_topic/profile_snapshot/conversation_history taşımaz (v1 donuk sözleşme).");
+            }
+
+            payload = new AgentExecutionRequestedV1
+            {
+                UserRef = userRef,
+                Question = question,
+                Language = language,
+                ModePreference = modePreference,
+                BudgetProfile = budgetProfile,
+                ContextSnapshotReference = contextSnapshotReference,
+                SelectedText = selectedText,
+                ArticleId = articleId,
+                ArticleRevision = articleRevision,
+                ArticleContentHash = articleContentHash,
+            };
+        }
+        else
+        {
+            payload = new AgentExecutionRequestedV2
+            {
+                UserRef = userRef,
+                Question = question,
+                Language = language,
+                ModePreference = modePreference,
+                BudgetProfile = budgetProfile,
+                ContextSnapshotReference = contextSnapshotReference,
+                SelectedText = selectedText,
+                ArticleId = articleId,
+                ArticleRevision = articleRevision,
+                ArticleContentHash = articleContentHash,
+                ConversationHistory = conversationHistory is { Count: > 0 } ? [.. conversationHistory] : null,
+                ConversationTopic = conversationTopic
+                    ?? throw new ArgumentException("v2 execute komutu conversation_topic gerektirir.", nameof(conversationTopic)),
+                ProfileSnapshot = profileSnapshot,
+            };
+        }
+
         var messageId = Guid.NewGuid().ToString("D");
 
         var envelope = new AgentEnvelope
         {
             MessageId = messageId,
             MessageType = AgentMessageTypes.ExecutionRequested,
-            SchemaVersion = AgentMessageTypeRegistry.SchemaVersion,
+            SchemaVersion = schemaVersion,
             RunId = runId.ToString("D"),
             ConversationId = conversationId.ToString("D"),
             CorrelationId = correlationId,
@@ -63,21 +116,7 @@ public static class AgentCommandEnvelopeComposer
             DeadlineAt = FormatUtc(deadlineAt),
             Producer = producer,
             DeliveryAttempt = 0,
-            Payload = JsonSerializer.SerializeToElement(
-                new AgentExecutionRequestedV1
-                {
-                    UserRef = userRef,
-                    Question = question,
-                    Language = language,
-                    ModePreference = modePreference,
-                    BudgetProfile = budgetProfile,
-                    ContextSnapshotReference = contextSnapshotReference,
-                    SelectedText = selectedText,
-                    ArticleId = articleId,
-                    ArticleRevision = articleRevision,
-                    ArticleContentHash = articleContentHash,
-                },
-                SerializerOptions),
+            Payload = JsonSerializer.SerializeToElement(payload, payload.GetType(), SerializerOptions),
         };
 
         return (JsonSerializer.Serialize(envelope, SerializerOptions), messageId);

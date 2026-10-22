@@ -87,6 +87,7 @@ dotnet ef database update \
 | `CategoryFeature` | CreateCategory, UpdateCategory, DeleteCategory | GetAllCategory, GetByIdCategory |
 | `TagFeature` | CreateTag, DeleteTag | GetAllTag, GetByIdTag |
 | `MediaFeature` | UploadImage, UploadImages, DeleteMedia | — |
+| `ProfileFeature` | — | GetAuthorProfile, GetAuthorProfileSnapshot (canonical `src/content/author-profile`, `IAuthorProfileSource`; `GET /api/v1/profile` no-store, 503 if unavailable) |
 
 > **Not:** SEO endpoint'leri (`/sitemap.xml`, `/rss`) MediatR kullanmaz — `SeoEndpoints.cs` `IApplicationDbContext`'i direkt kullanir, eski `SeoFeature` klasoru kaldirildi (dead code).
 
@@ -223,6 +224,6 @@ Migration auto-run: prod (`Database__RunMigrationsOnStartup=true`). Seed: dev on
 8. **`SwrRefreshContext`** — SWR background refresh re-entry koruyucusu (`AsyncLocal` flag). Cache invalidation pipeline'inda bypass yapar; dokunmadan once ne yaptigini oku (memory: `swr_cache_bug.md`).
 9. **2 HostedService:** `IdempotencyCleanupService` + `RefreshTokenCleanupService` — DI'da `Singleton` register, kapatma yok.
 10. **SeoEndpoints `IApplicationDbContext` direkt enjekte ediyor** — diger 6 endpoint dosyasi MediatR `ISender` kullanir. Yeni endpoint yazarken ISender tercih.
-11. **Layered error handling (post 2026-05-01 refactor):** Domain invariant ihlalinde throw, Application handler `Result<TInner>.Failure(Error.X(...))` doner — wrapper response tipleri **kaldirildi**. `IRequestHandler<TReq, Result<TInner>>` standart. Void operation icin `Result<Unit>` (MediatR `Unit.Value`). Endpoint `response.ToHttpResult()` ile category-driven HTTP status. `Error` factory'leri: `NotFound/Conflict/Forbidden/Unauthorized/Validation/Domain` (`Application/Common/Errors/`). ValidationBehavior throw etmez — Result.Failure doner. Detay: `.claude/rules/backend.md` "Layered error handling".
+11. **Layered error handling (post 2026-05-01 refactor):** Domain invariant ihlalinde throw, Application handler `Result<TInner>.Failure(Error.X(...))` doner — wrapper response tipleri **kaldirildi**. `IRequestHandler<TReq, Result<TInner>>` standart. Void operation icin `Result<Unit>` (MediatR `Unit.Value`). Endpoint `response.ToHttpResult()` ile category-driven HTTP status. `Error` factory'leri: `NotFound/Conflict/Forbidden/Unauthorized/Validation/Domain/Unavailable` (`Application/Common/Errors/`; `Unavailable` → 503 + `ApiResponse.code`, örn. `capability_unavailable`). ValidationBehavior throw etmez — Result.Failure doner. Detay: `.claude/rules/backend.md` "Layered error handling".
 12. **Archive endpoint = Unpublish handler:** `/api/v1/posts/{id}/archive` aslinda `UnpublishPostCommandRequest` gonderir (alias). Eskiden ayri `ArchivePostCommand` klasoru vardi, kaldirildi.
 13. **Test infrastructure not:** `tests/BlogApp.Presentation.Api.Tests` icindeki 3 eski test dosyasi `*.cs.disabled` rename edildi (kaldirilmis Messaging modulune referans veriyordu). FluentAssertions 6.12.2 + xUnit 2.9.3 ile yeni testler yaziliyor.

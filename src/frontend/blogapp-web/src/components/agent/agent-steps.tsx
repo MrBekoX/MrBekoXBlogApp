@@ -11,6 +11,7 @@
  * Paralel worker olayları geldiği sırayla TEK listede akar.
  */
 
+import { useId } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { agentStepKindLabels, agentTexts, type AgentLang } from '@/lib/agent-i18n';
 import {
@@ -35,6 +36,8 @@ interface AgentStepsPanelProps {
 }
 
 export function AgentStepsPanel({ steps, runActive, lang, open, onToggle, now }: AgentStepsPanelProps) {
+  // Birden fazla panel aynı sayfada olabilir: sabit DOM id yerine useId.
+  const listId = useId();
   if (steps.length === 0) return null;
 
   const t = agentTexts[lang];
@@ -49,7 +52,7 @@ export function AgentStepsPanel({ steps, runActive, lang, open, onToggle, now }:
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        aria-controls="agent-steps-list"
+        aria-controls={listId}
         className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-gray-300 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-ide-primary"
       >
         <span className="flex items-center gap-2">
@@ -69,7 +72,7 @@ export function AgentStepsPanel({ steps, runActive, lang, open, onToggle, now }:
       </button>
 
       {open && (
-        <ol id="agent-steps-list" className="space-y-1 border-t border-ide-border px-3 py-2">
+        <ol id={listId} className="space-y-1 border-t border-ide-border px-3 py-2">
           {steps.map((step, index) => {
             const isRunning = index === steps.length - 1 && lastIsRunning;
             const label = kindLabels[step.kind] ?? step.kind;

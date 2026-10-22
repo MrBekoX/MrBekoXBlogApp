@@ -1,7 +1,7 @@
 using System.Data;
-using System.Security.Cryptography;
-using System.Text;
+using System.Globalization;
 using System.Text.Json;
+using BlogApp.Core.Application.Common.AuthorProfile;
 using BlogApp.Core.Application.Common.Errors;
 using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Interfaces.Messaging;
@@ -27,11 +27,18 @@ namespace BlogApp.Core.Application.Features.AgentFeature.Commands.AcceptAgentRun
 /// 2. Makale erişimi — yalnız yayımlanmış makaleler sorulabilir; erişim kararı backend'dedir.
 /// 3. Limit — sahip başına eşzamanlı (çözümlenmemiş) iş üst sınırı (K5).
 /// 4. Idempotency — aynı anahtar + aynı payload → mevcut run geri döner; farklı payload → çakışma.
-/// 5. run_id + turn_sequence + immutable bağlam snapshot'ı üretimi.
-/// 6. AgentRun + OutboxMessage TEK transaction'da; zarf commit öncesi B1 sözleşme doğrulayıcısından
+///    who_am_i konusu özete girer (A28).
+/// 5. run_id + turn_sequence + immutable bağlam snapshot'ı üretimi (wire sürümü, konu ve pinlenmiş
+///    profil snapshot'ı dahil; K6).
+/// 6. AgentRun + OutboxMessage TEK transaction'da; zarf commit öncesi sözleşme doğrulayıcısından
 ///    geçer — rollback durumunda hayalet komut oluşmaz (kabul ölçütü, satır 307).
 /// 7. Commit sonrası accepted run_id döner. Kabul durumu ile Python'ın accepted olayı AYRI
 ///    anlamlardır (satır 305).
+/// Wire sürümü (K4): <see cref="IAgentWireVersionSelector"/> v2'yi yalnız AgentWireV2 açık ve broker
+/// bariyeri hazırken seçer; aksi halde auto → v1 (eski akış birebir), who_am_i → 503
+/// capability_unavailable (modele sessiz düşüş yok). v2 run'da profil hazırsa snapshot pinlenir;
+/// değilse auto için profile_capability=unavailable kaydedilir, who_am_i 503 alır.
+/// Opsiyonel bağımlılıklar verilmezse (eski test kurulumları) davranış v1 ile birebir aynıdır.
 /// </summary>
 public sealed class AcceptAgentRunCommandHandler(
     IUnitOfWork unitOfWork,
@@ -40,8 +47,20 @@ public sealed class AcceptAgentRunCommandHandler(
     IOutboxWriter outboxWriter,
     IOptions<AgentAcceptanceSettings> acceptanceOptions,
     IOptions<AgentMessagingSettings> messagingOptions,
-    ILogger<AcceptAgentRunCommandHandler> logger) : IRequestHandler<AcceptAgentRunCommandRequest, Result<AgentRunAcceptedDto>>
+    ILogger<AcceptAgentRunCommandHandler> logger,
+    IAgentWireVersionSelector? wireVersionSelector = null,
+    IAuthorProfileSource? profileSource = null,
+    IAgentConversationHistoryComposer? historyComposer = null) : IRequestHandler<AcceptAgentRunCommandRequest, Result<AgentRunAcceptedDto>>
 {
+    public const string WhoAmIDisabledMessage =
+        "Who am I konusu şu an kullanılamıyor (özellik kapalı veya agent hazır değil). Lütfen daha sonra tekrar deneyin ya da Otomatik konuyu kullanın.";
+
+    public const string ProfileUnavailableMessage =
+        "Who am I konusu şu an kullanılamıyor: onaylı profil kaynağı doğrulanamadı. Lütfen daha sonra tekrar deneyin.";
+
+    public const string ConversationTopicChangedMessage =
+        "Bu sohbet farklı bir konuyla başladı; konu değiştiğinde yeni bir sohbet başlatın (conversationId göndermeyin).";
+
     public async Task<Result<AgentRunAcceptedDto>> Handle(AcceptAgentRunCommandRequest request, CancellationToken cancellationToken)
     {
         var settings = acceptanceOptions.Value;
@@ -61,6 +80,17 @@ public sealed class AcceptAgentRunCommandHandler(
 
         var ownerKey = userId is not null ? $"u:{userId.Value:D}" : $"g:{guestSessionId}";
 
+        // Konu (K1/K6): doğrulayıcı pipeline'da çalışır; handler doğrudan çağrıldığında da
+        // who_am_i ile uyumsuz istemci alanları açıklamalı validation_error alır.
+        var topic = AgentConversationTopics.Normalize(request.ConversationTopic);
+        var topicError = ValidateTopic(request, topic);
+        if (topicError is not null)
+        {
+            return Result<AgentRunAcceptedDto>.Failure(topicError);
+        }
+
+        var isWhoAmI = topic == AgentConversationTopics.WhoAmI;
+
         // 2) Makale erişimi: yalnız yayımlanmış makale kabul edilir (silinmişler query filter ile dışarıda).
         BlogPost? article = null;
         if (request.ArticleId is { } articleId)
@@ -79,7 +109,37 @@ public sealed class AcceptAgentRunCommandHandler(
             }
         }
 
-        var payloadHash = ComputePayloadHash(request);
+        // Wire sürümü + profil pini (K4/K6). Kapasite hatası idempotent replay'den SONRA döner:
+        // önceden kabul edilmiş aynı istek, anahtar kapatılsa bile mevcut run'ı geri alır.
+        var wireVersion = wireVersionSelector is null
+            ? AgentMessageTypeRegistry.V1
+            : await wireVersionSelector.SelectAsync(cancellationToken);
+        AuthorProfileSnapshot? pinnedProfile = null;
+        string? profileCapability = null;
+        Error? capabilityError = null;
+        if (wireVersion >= AgentMessageTypeRegistry.V2)
+        {
+            var profileState = profileSource?.GetCurrent();
+            if (profileState is { IsAvailable: true })
+            {
+                pinnedProfile = profileState.ActiveSnapshot;
+                profileCapability = AgentRunContextKeys.CapabilityAvailable;
+            }
+            else
+            {
+                profileCapability = AgentRunContextKeys.CapabilityUnavailable;
+                if (isWhoAmI)
+                {
+                    capabilityError = Error.Unavailable(ProfileUnavailableMessage);
+                }
+            }
+        }
+        else if (isWhoAmI)
+        {
+            capabilityError = Error.Unavailable(WhoAmIDisabledMessage);
+        }
+
+        var payloadHash = AgentRunIdempotencyHash.Compute(request, topic);
         var occurredAt = DateTimeOffset.UtcNow;
         var conversationId = request.ConversationId ?? Guid.NewGuid();
         var correlationId = Guid.NewGuid().ToString("D");
@@ -105,13 +165,7 @@ public sealed class AcceptAgentRunCommandHandler(
 
                     logger.LogInformation(
                         "[AgentAccept] idempotent replay: run {RunId} key {Key}", existing.Id, request.IdempotencyKey);
-                    return Result<AgentRunAcceptedDto>.Success(new AgentRunAcceptedDto(
-                        existing.Id,
-                        existing.ConversationId,
-                        existing.TurnSequence,
-                        existing.AcceptedAt,
-                        existing.DeadlineAt,
-                        Replay: true));
+                    return Result<AgentRunAcceptedDto>.Success(ReplayDto(existing));
                 }
 
                 // 4b) Konuşma sahipliği: mevcut konuşma başka sahibe aitse kabul edilmez.
@@ -121,6 +175,28 @@ public sealed class AcceptAgentRunCommandHandler(
                 if (foreignConversation)
                 {
                     return Result<AgentRunAcceptedDto>.Failure(Error.Forbidden("Konuşma başka bir oturuma ait."));
+                }
+
+                // 4c) Konu sohbet için sabittir (K6): farklı konulu önceki run'ı olan konuşma reddedilir.
+                var previousContext = await dbContext.AgentRuns
+                    .AsNoTracking()
+                    .Where(r => r.ConversationId == conversationId)
+                    .OrderByDescending(r => r.TurnSequence)
+                    .Select(r => r.ContextSnapshotJson)
+                    .FirstOrDefaultAsync(ct);
+                if (!AgentConversationTopicRules.IsCompatible(previousContext, topic))
+                {
+                    return Result<AgentRunAcceptedDto>.Failure(Error.Validation(new Dictionary<string, string[]>
+                    {
+                        ["ConversationTopic"] = [ConversationTopicChangedMessage],
+                    }));
+                }
+
+                if (capabilityError is not null)
+                {
+                    logger.LogInformation(
+                        "[AgentAccept] who_am_i kapasitesi kullanılamıyor (wire v{Wire}); iş kabul edilmedi", wireVersion);
+                    return Result<AgentRunAcceptedDto>.Failure(capabilityError);
                 }
 
                 // 3) Limit: sahip başına eşzamanlı (çözümlenmemiş) iş üst sınırı
@@ -150,34 +226,63 @@ public sealed class AcceptAgentRunCommandHandler(
                     .MaxAsync(r => (long?)r.TurnSequence, ct);
                 var turnSequence = (lastTurn ?? 0) + 1;
 
+                // v2: aynı sahip + konuşma + konu için sunum denetiminden geçen tamamlanmış turlar (K6).
+                IReadOnlyList<AgentConversationTurn> history = [];
+                if (wireVersion >= AgentMessageTypeRegistry.V2 && historyComposer is not null && lastTurn is not null)
+                {
+                    history = await historyComposer.ComposeAsync(ownerKey, conversationId, topic, ct);
+                }
+
                 var runId = Guid.NewGuid();
                 var deadlineAt = occurredAt.AddMinutes(DeadlineMinutesFor(settings, request.ModePreference));
-                var (snapshotJson, contentHash, snapshotReference, articleRevision) =
-                    BuildContextSnapshot(runId, turnSequence, request, article);
+                var (snapshotJson, contentHash, snapshotReference, articleRevision) = BuildContextSnapshot(
+                    runId, turnSequence, request, article, wireVersion, topic, pinnedProfile, profileCapability);
 
                 // 5) Immutable zarf üretimi ve commit öncesi sözleşme doğrulaması.
                 //    Makale bağlamı üçlü halinde taşınır (B1 all-or-none; W5 bulgusu 4i):
-                //    worker stale komut guard'ı (B8) bu üçlüyle çalışır.
+                //    worker stale komut guard'ı (B8) bu üçlüyle çalışır. v2'de geçmiş zarf üst
+                //    sınırını aşarsa en eski soru/cevap çiftlerinden kırpılır.
                 var userRef = userId is not null ? $"u:{userId.Value:D}" : $"g:{guestSessionId}";
-                var (envelopeJson, messageId) = AgentCommandEnvelopeComposer.ComposeExecutionRequested(
-                    runId,
-                    conversationId,
-                    correlationId,
-                    occurredAt,
-                    deadlineAt,
-                    producer: messagingOptions.Value.ProducerName,
-                    userRef: userRef,
-                    question: request.Question,
-                    language: request.Language,
-                    modePreference: request.ModePreference,
-                    budgetProfile: request.BudgetProfile,
-                    contextSnapshotReference: snapshotReference,
-                    selectedText: request.SelectedText,
-                    articleId: article?.Id.ToString("D"),
-                    articleRevision: articleRevision,
-                    articleContentHash: article is null ? null : contentHash);
+                var validator = new AgentContractValidator(messagingOptions.Value);
+                string envelopeJson;
+                string messageId;
+                AgentContractValidationResult contractResult;
+                while (true)
+                {
+                    (envelopeJson, messageId) = AgentCommandEnvelopeComposer.ComposeExecutionRequested(
+                        runId,
+                        conversationId,
+                        correlationId,
+                        occurredAt,
+                        deadlineAt,
+                        producer: messagingOptions.Value.ProducerName,
+                        userRef: userRef,
+                        question: request.Question,
+                        language: request.Language,
+                        modePreference: request.ModePreference,
+                        budgetProfile: request.BudgetProfile,
+                        contextSnapshotReference: snapshotReference,
+                        selectedText: request.SelectedText,
+                        articleId: article?.Id.ToString("D"),
+                        articleRevision: articleRevision,
+                        articleContentHash: article is null ? null : contentHash,
+                        schemaVersion: wireVersion,
+                        conversationTopic: wireVersion >= AgentMessageTypeRegistry.V2 ? topic : null,
+                        profileSnapshot: wireVersion >= AgentMessageTypeRegistry.V2 ? pinnedProfile?.ToRef() : null,
+                        conversationHistory: wireVersion >= AgentMessageTypeRegistry.V2 ? history : null);
 
-                var contractResult = new AgentContractValidator(messagingOptions.Value).Validate(envelopeJson);
+                    contractResult = validator.Validate(envelopeJson);
+                    if (!contractResult.IsValid
+                        && contractResult.Error!.Category == AgentContractErrorCategory.Oversized
+                        && history.Count > 0)
+                    {
+                        history = history.Skip(Math.Min(2, history.Count)).ToList();
+                        continue;
+                    }
+
+                    break;
+                }
+
                 if (!contractResult.IsValid)
                 {
                     logger.LogWarning(
@@ -215,7 +320,7 @@ public sealed class AcceptAgentRunCommandHandler(
                     MessageId = messageId,
                     MessageType = AgentMessageTypes.ExecutionRequested,
                     Exchange = AgentMessageTypeRegistry.CommandsExchange,
-                    RoutingKey = "agent.execute.requested.v1",
+                    RoutingKey = AgentMessageTypeRegistry.RoutingKeyFor(wireVersion, AgentMessageTypes.ExecutionRequested),
                     CorrelationId = correlationId,
                     RunId = runId,
                     EnvelopeJson = envelopeJson,
@@ -228,8 +333,8 @@ public sealed class AcceptAgentRunCommandHandler(
                 await transaction.CommitAsync(ct);
 
                 logger.LogInformation(
-                    "[AgentAccept] run {RunId} accepted (turn {Turn}, outbox {MessageId})",
-                    runId, turnSequence, messageId);
+                    "[AgentAccept] run {RunId} accepted (turn {Turn}, wire v{Wire}, topic {Topic}, outbox {MessageId})",
+                    runId, turnSequence, wireVersion, topic, messageId);
 
                 return Result<AgentRunAcceptedDto>.Success(new AgentRunAcceptedDto(
                     runId,
@@ -237,7 +342,9 @@ public sealed class AcceptAgentRunCommandHandler(
                     turnSequence,
                     run.AcceptedAt,
                     run.DeadlineAt,
-                    Replay: false));
+                    Replay: false,
+                    ConversationTopic: topic,
+                    WireVersion: wireVersion));
             }, cancellationToken);
         }
         catch (DbUpdateException exception)
@@ -249,9 +356,7 @@ public sealed class AcceptAgentRunCommandHandler(
             if (existing is not null)
             {
                 return existing.IdempotencyPayloadHash == payloadHash
-                    ? Result<AgentRunAcceptedDto>.Success(new AgentRunAcceptedDto(
-                        existing.Id, existing.ConversationId, existing.TurnSequence,
-                        existing.AcceptedAt, existing.DeadlineAt, Replay: true))
+                    ? Result<AgentRunAcceptedDto>.Success(ReplayDto(existing))
                     : Result<AgentRunAcceptedDto>.Failure(Error.Conflict(
                         "Bu idempotency anahtarı farklı bir istek için kullanılmış."));
             }
@@ -260,6 +365,56 @@ public sealed class AcceptAgentRunCommandHandler(
             return Result<AgentRunAcceptedDto>.Failure(Error.Conflict(
                 "Aynı konuşmada eşzamanlı istek çakışması; isteği tekrarlayın."));
         }
+    }
+
+    /// <summary>who_am_i ile uyumsuz istemci alanları (doğrulayıcıyla aynı kurallar; handler doğrudan
+    /// çağrıldığında da uygulanır).</summary>
+    private static Error? ValidateTopic(AcceptAgentRunCommandRequest request, string topic)
+    {
+        if (!AgentConversationTopics.IsKnown(topic))
+        {
+            return Error.Validation(new Dictionary<string, string[]>
+            {
+                ["ConversationTopic"] = ["conversationTopic auto veya who_am_i olmalıdır."],
+            });
+        }
+
+        if (topic != AgentConversationTopics.WhoAmI)
+        {
+            return null;
+        }
+
+        var errors = new Dictionary<string, string[]>();
+        if (request.ArticleId is not null)
+        {
+            errors["ArticleId"] = [AcceptAgentRunCommandValidator.WhoAmIArticleMessage];
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SelectedText))
+        {
+            errors["SelectedText"] = [AcceptAgentRunCommandValidator.WhoAmISelectedTextMessage];
+        }
+
+        if (request.IsResearchRequest)
+        {
+            errors["IsResearchRequest"] = [AcceptAgentRunCommandValidator.WhoAmIResearchMessage];
+        }
+
+        return errors.Count == 0 ? null : Error.Validation(errors);
+    }
+
+    private static AgentRunAcceptedDto ReplayDto(AgentRun existing)
+    {
+        var wire = AgentRunWireContext.Parse(existing.ContextSnapshotJson);
+        return new AgentRunAcceptedDto(
+            existing.Id,
+            existing.ConversationId,
+            existing.TurnSequence,
+            existing.AcceptedAt,
+            existing.DeadlineAt,
+            Replay: true,
+            ConversationTopic: wire.ConversationTopic,
+            WireVersion: wire.WireVersion);
     }
 
     private static int DeadlineMinutesFor(AgentAcceptanceSettings settings, string modePreference) =>
@@ -275,9 +430,19 @@ public sealed class AcceptAgentRunCommandHandler(
     /// içerik mesaja gömülmez; snapshot hash referansı taşır). content_hash = UTF-8 SHA-256 (D008);
     /// BlogPost.Version kullanılmaz (L004). article_revision kabul anındaki backend-atandı
     /// monoton yayımlanmış içerik anıdır (BlogPost.ContentRevision); komut üçlüsünün
-    /// article_revision kaynağı budur (W5 bulgusu 4i).</summary>
-    private static (string SnapshotJson, string? ContentHash, string SnapshotReference, long? ArticleRevision)
-        BuildContextSnapshot(Guid runId, long turnSequence, AcceptAgentRunCommandRequest request, BlogPost? article)
+    /// article_revision kaynağı budur (W5 bulgusu 4i). K6 anahtarları: wire_version,
+    /// conversation_topic ve (v2) profile_id/profile_revision/profile_content_hash/profile_capability —
+    /// profil GÖVDESİ saklanmaz, yalnız pinlenen sürüm referansı.</summary>
+    public static (string SnapshotJson, string? ContentHash, string SnapshotReference, long? ArticleRevision)
+        BuildContextSnapshot(
+            Guid runId,
+            long turnSequence,
+            AcceptAgentRunCommandRequest request,
+            BlogPost? article,
+            int wireVersion = AgentMessageTypeRegistry.V1,
+            string conversationTopic = AgentConversationTopics.Auto,
+            AuthorProfileSnapshot? pinnedProfile = null,
+            string? profileCapability = null)
     {
         string? contentHash = null;
         string? publishedAt = null;
@@ -297,28 +462,31 @@ public sealed class AcceptAgentRunCommandHandler(
             ["title"] = article?.Title,
             ["slug"] = article?.Slug,
             ["content_hash"] = contentHash,
-            ["article_revision"] = articleRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["article_revision"] = articleRevision?.ToString(CultureInfo.InvariantCulture),
             ["published_at"] = publishedAt,
             ["question"] = request.Question,
             ["language"] = request.Language,
             ["mode_preference"] = request.ModePreference,
             ["selected_text"] = request.SelectedText,
+            [AgentRunContextKeys.WireVersion] = wireVersion.ToString(CultureInfo.InvariantCulture),
+            [AgentRunContextKeys.ConversationTopic] = conversationTopic,
+            [AgentRunContextKeys.ProfileId] = pinnedProfile?.ProfileId,
+            [AgentRunContextKeys.ProfileRevision] = pinnedProfile?.Revision.ToString(CultureInfo.InvariantCulture),
+            [AgentRunContextKeys.ProfileContentHash] = pinnedProfile?.ContentHash,
+            [AgentRunContextKeys.ProfileCapability] = profileCapability,
         };
 
         var snapshotJson = JsonSerializer.Serialize(snapshot, AgentCommandEnvelopeComposer.SerializerOptions);
         var snapshotReference = $"agent-run/{runId:D}/turn/{turnSequence}";
         return (snapshotJson, contentHash, snapshotReference, articleRevision);
     }
+}
 
-    private static string ComputePayloadHash(AcceptAgentRunCommandRequest request)
-    {
-        var canonical = string.Join('\n',
-            request.Question,
-            request.Language,
-            request.ModePreference,
-            request.BudgetProfile,
-            request.ArticleId?.ToString("D") ?? string.Empty,
-            request.SelectedText ?? string.Empty);
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
-    }
+/// <summary>Konu sabitliği kuralı (K6): konuşmanın önceki run'ının konusu (eksikse auto) istenen
+/// konuyla aynı olmalıdır; ilk tur her konuyla başlayabilir.</summary>
+public static class AgentConversationTopicRules
+{
+    public static bool IsCompatible(string? previousContextSnapshotJson, string requestedTopic) =>
+        previousContextSnapshotJson is null
+        || AgentRunWireContext.Parse(previousContextSnapshotJson).ConversationTopic == requestedTopic;
 }

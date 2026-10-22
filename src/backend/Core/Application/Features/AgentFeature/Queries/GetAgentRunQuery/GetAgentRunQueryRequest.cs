@@ -38,6 +38,13 @@ public sealed record AgentRunStatusDto
 
     public Guid? ArticleId { get; init; }
 
+    /// <summary>Kabulde normalize edilen konu: <c>auto</c> | <c>who_am_i</c> (eski kayıtlar auto).
+    /// İstemci reload/reconnect sonrası konuyu buradan doğrular (K7).</summary>
+    public string ConversationTopic { get; init; } = "auto";
+
+    /// <summary>Run'ın kabulde kararlaşan wire sürümü (1 | 2); run boyunca değişmez (K4).</summary>
+    public int WireVersion { get; init; } = 1;
+
     public DateTimeOffset AcceptedAt { get; init; }
 
     public DateTimeOffset DeadlineAt { get; init; }

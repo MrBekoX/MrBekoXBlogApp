@@ -7,6 +7,12 @@ ortamında ``AGENT_DB_PASSWORD`` verilir).
 
 Sürücü: asyncpg 0.32.0 (resmî PyPI kaydı, Python >=3.9). Migration aracı:
 Alembic 1.20.0 (resmî belge, SQLAlchemy 2.0+ gerekir) — ``migrations/`` altında.
+
+Wire sürüm izolasyonu (K4, migration 0005): havuzun her bağlantısı başlangıçta
+``agent.worker_wire_max`` oturum ayarını bildirir (asyncpg ``server_settings``).
+``agent.jobs`` tetikleyicisi bu değerden büyük sürümlü satırların güncellenmesini
+atlar: bu kod v1+v2 yürütebildiği için varsayılan ``WORKER_WIRE_MAX`` (2)'dir;
+ayarı bildirmeyen eski worker v2 işine dokunamaz.
 """
 
 from __future__ import annotations
@@ -18,6 +24,8 @@ from urllib.parse import quote
 import asyncpg
 
 from env_file import env_float, env_int
+
+from .wire import WORKER_WIRE_MAX, WORKER_WIRE_MAX_SETTING
 
 __all__ = ["AgentDbSettings", "connect_pool", "AgentDbError"]
 
@@ -40,6 +48,13 @@ class AgentDbSettings:
     min_size: int = 1
     max_size: int = 4
     command_timeout_seconds: float = 10.0
+    #: Bu süreçte yürütülebilen en yüksek run wire sürümü (``agent.worker_wire_max``).
+    worker_wire_max: int = WORKER_WIRE_MAX
+
+    def server_settings(self) -> dict[str, str]:
+        """Bağlantı başlangıcında bildirilen oturum ayarları (claim izolasyon GUC'u)."""
+
+        return {WORKER_WIRE_MAX_SETTING: str(int(self.worker_wire_max))}
 
     def dsn(self) -> str:
         """asyncpg DSN'i üretir; parola URL-encode edilir, loglamaya uygun değildir."""
@@ -88,6 +103,7 @@ async def connect_pool(settings: AgentDbSettings) -> asyncpg.Pool:
             min_size=settings.min_size,
             max_size=settings.max_size,
             command_timeout=settings.command_timeout_seconds,
+            server_settings=settings.server_settings(),
         )
     except (OSError, asyncpg.PostgresError) as exc:
         raise AgentDbError(

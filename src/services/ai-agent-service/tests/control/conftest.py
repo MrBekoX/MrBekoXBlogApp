@@ -221,8 +221,15 @@ CREATE TABLE agent.jobs (
     accepted_at timestamptz NOT NULL DEFAULT now(),
     deadline_at timestamptz NOT NULL,
     conversation_id uuid NOT NULL,
-    correlation_id uuid NOT NULL
+    correlation_id uuid NOT NULL,
+    origin_message_id uuid,
+    wire_version smallint NOT NULL DEFAULT 1 CHECK (wire_version IN (1, 2))
 );
+-- Migration 0005: claim/güncelleme izolasyonu scratch tabloya yeniden bağlanır
+-- (DROP TABLE tetikleyiciyi düşürür; fonksiyon migration'dan gelir). outbox
+-- sürüm tetikleyicisi jobs.wire_version'ı okuduğu için kolon zorunludur.
+CREATE TRIGGER trg_jobs_wire_claim_guard BEFORE UPDATE ON agent.jobs
+    FOR EACH ROW EXECUTE FUNCTION agent.jobs_wire_claim_guard();
 CREATE TABLE IF NOT EXISTS agent.cancel_intents (
     run_id uuid PRIMARY KEY,
     requested_at timestamptz NOT NULL DEFAULT now(),
@@ -303,7 +310,7 @@ def provision_vhost_and_users() -> None:
         {
             "configure": r".*",
             "write": r"blog\.(agent\.commands|content\.events)",
-            "read": r"backend\.agent\.events\.q(\.dlq)?|agent\.(execute|control|content)\.q",
+            "read": r"backend\.agent\.events\.q(\.dlq)?|agent\.(execute|control|content)(\.v2)?\.q",
         },
     )
     mgmt_request(
@@ -312,7 +319,7 @@ def provision_vhost_and_users() -> None:
         {
             "configure": "",
             "write": r"blog\.(agent\.events|agent\.retry\.[0-9]+s)",
-            "read": r"agent\.(execute|control|content)\.q(\.dlq)?",
+            "read": r"agent\.(execute|control|content)(\.v2)?\.q(\.dlq)?",
         },
     )
 
@@ -529,6 +536,7 @@ async def seed_job(
     payload_hash: str = "seed-hash",
     fencing_token: str | None = None,
     created_age_seconds: float = 0.0,
+    wire_version: int = 1,
 ) -> str:
     """B6 sözleşme şeklinde iş satırı ekler; conversation/correlation türetir.
 
@@ -546,7 +554,7 @@ async def seed_job(
         {
             "message_id": str(uuid.uuid4()),
             "message_type": "agent.execute.requested",
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": wire_version,
             "run_id": run_id,
             "conversation_id": conversation_id,
             "correlation_id": correlation_id,
@@ -559,9 +567,9 @@ async def seed_job(
     async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO agent.jobs (run_id, status, payload_hash, queue_class, execution_attempt, "
-            "fencing_token, deadline_at, accepted_at, conversation_id, correlation_id, envelope) "
+            "fencing_token, deadline_at, accepted_at, conversation_id, correlation_id, envelope, wire_version) "
             "VALUES ($1, $2, $3, $4, $5, $6, now() + make_interval(secs => $7), "
-            "now() - make_interval(secs => $8), $9, $10, $11::jsonb) "
+            "now() - make_interval(secs => $8), $9, $10, $11::jsonb, $12) "
             "ON CONFLICT (run_id) DO UPDATE SET status = EXCLUDED.status, "
             "execution_attempt = EXCLUDED.execution_attempt, "
             "fencing_token = EXCLUDED.fencing_token, "
@@ -577,6 +585,7 @@ async def seed_job(
             uuid.UUID(conversation_id),
             uuid.UUID(correlation_id),
             envelope_json,
+            wire_version,
         )
     return conversation_id
 

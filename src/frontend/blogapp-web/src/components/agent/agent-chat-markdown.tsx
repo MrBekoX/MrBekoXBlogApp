@@ -4,7 +4,9 @@
  * Agent sohbet yanıtı markdown görünümü. Makale sayfasıyla AYNI zincir:
  * react-markdown + remark-gfm + rehype-highlight (package.json bağımlıları;
  * yeni paket eklenmedi). Raw HTML kaçırılır (rehype-raw YOK); react-markdown'ın
- * varsayılan URL transformu javascript:/data: şemalarını eler.
+ * varsayılan URL transformu javascript:/data: şemalarını eler. Linkler ayrıca
+ * safeChatLinkHref ile daraltılır: yalnız http(s), kök-göreli ("/…") ve "#…";
+ * dış link yeni sekmede rel="noopener noreferrer nofollow"; diğerleri düz metin.
  * hljs-* token renkleri için küçük, bileşenle sınırlı koyu tema — site tasarım
  * diliyle (IDE paleti: amber primary, slate gri tonları) uyumlu; globals.css'e
  * dokunulmaz.
@@ -13,6 +15,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import { safeChatLinkHref } from '@/lib/safe-url';
 
 /** Bileşen-sınırlı highlight.js token renkleri (koyu; One Dark ailesiyle uyumlu). */
 const AGENT_HLJS_CSS = `
@@ -60,6 +63,24 @@ export function AgentChatMarkdown({ content }: AgentChatMarkdownProps) {
             <th className="border border-ide-border bg-black/40 px-2 py-1 text-left font-medium text-gray-200">{children}</th>
           ),
           td: ({ children }) => <td className="border border-ide-border px-2 py-1 text-gray-300">{children}</td>,
+          a: ({ href, children }) => {
+            const safe = safeChatLinkHref(href);
+            if (!safe) return <span>{children}</span>;
+            return safe.external ? (
+              <a
+                href={safe.href}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="text-ide-primary underline underline-offset-2 hover:opacity-80"
+              >
+                {children}
+              </a>
+            ) : (
+              <a href={safe.href} className="text-ide-primary underline underline-offset-2 hover:opacity-80">
+                {children}
+              </a>
+            );
+          },
         }}
       >
         {content}

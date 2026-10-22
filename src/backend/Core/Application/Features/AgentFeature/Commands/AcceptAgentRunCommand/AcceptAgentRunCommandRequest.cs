@@ -35,4 +35,13 @@ public sealed record AcceptAgentRunCommandRequest : IRequest<Result<AgentRunAcce
     /// <summary>Sunucu tarafı misafir oturum kimliği (K5: Presentation HttpOnly cookie üretir);
     /// kimliği doğrulanmış kullanıcıda yok sayılır.</summary>
     public string? GuestSessionId { get; init; }
+
+    /// <summary>Konu (K1): <c>auto</c> (varsayılan) | <c>who_am_i</c>. Endpoint trim + küçük harf
+    /// normalize eder; konu bir sohbet için sabittir. who_am_i makale bağlamı ve selected_text
+    /// taşıyamaz; /research uç noktasıyla kullanılamaz.</summary>
+    public string ConversationTopic { get; init; } = "auto";
+
+    /// <summary>İstek /research (açık derin araştırma) uç noktasından geldiyse true; who_am_i ile
+    /// birlikte reddedilir (profil konusu web araştırması başlatamaz).</summary>
+    public bool IsResearchRequest { get; init; }
 }

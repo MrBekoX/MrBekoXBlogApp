@@ -1,0 +1,22 @@
+{
+  "message_id": "11111111-1111-4111-8111-111111111111",
+  "message_type": "agent.execute.requested",
+  "schema_version": 2,
+  "occurred_at": "2026-10-11T09:00:00Z",
+  "producer": "backend-net",
+  "payload": {
+    "user_ref": "user-42",
+    "question": "Bu makaledeki ana fikir nedir?",
+    "language": "tr",
+    "mode_preference": "auto",
+    "budget_profile": "fast-default",
+    "conversation_topic": "visitor_identity"
+  },
+  "correlation_id": "ccccccc1-0000-4000-8000-000000000003",
+  "run_id": "aaaaaaa1-0000-4000-8000-000000000001",
+  "conversation_id": "bbbbbbb1-0000-4000-8000-000000000002",
+  "causation_id": "ddddddd1-0000-4000-8000-000000000004",
+  "deadline_at": "2026-10-11T09:05:00Z",
+  "trace_context": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  "delivery_attempt": 0
+}

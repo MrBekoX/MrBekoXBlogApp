@@ -1,80 +1,83 @@
-"""Onaylı statik profil/proje kayıtları — A9 gerçek veri kararı.
+"""Onaylı profil/proje kayıtları — A9 gerçek veri kararı + Who am I canonical kaynak.
 
-GERÇEK VERİ KAYNAKLARI (repoda doğrulanmış statik içerik; UYDURMA YOK):
+PROFİL (Who am I, K2): legacy A9 ``ProfileSummary`` artık elle yazılmış ikinci
+bir biyografi kopyası DEĞİLDİR; tek onaylı, sürümlü public profil kaynağından
+(``src/content/author-profile``; ``agent_core.profile``) türetilir:
 
-- ``src/frontend/blogapp-web/src/lib/site-config.ts`` — ``AUTHOR_NAME``
-  ("Sample Author"), ``AUTHOR_JOB_TITLE`` ("Software Developer"),
-  ``AUTHOR_DESCRIPTION``, ``SITE_URL`` (https://mrbekox.dev),
-  ``GITHUB_URL``, ``TWITTER_URL``, ``LINKEDIN_URL``, ``SITE_KEYWORDS``.
-- ``src/backend/Presentation/API/Seo/SeoDocuments.cs`` — ``SiteName`` ("MrBekoX"),
-  ``AuthorName``, ``SiteDescription``.
-- ``README.md`` — platform tanım cümlesi ve teknoloji yığını (§Architecture,
-  §Tech Stack).
-- ``docs/ai-agent-plan/main-prompt.md`` — repo ve site URL'leri
-  (github.com/MrBekoX/MrBekoXBlogApp, mrbekox.dev).
+- açıklama: FAQ'taki üçüncü şahıs cevapları + eğitim satırı (≤4000 karakter);
+- yetkinlikler: ``skills`` bölümünün maddeleri (niteleyiciler korunur,
+  ör. "NestJS'i de inceledim"); SEO anahtar kelimeleri yetkinliğe
+  DÖNÜŞTÜRÜLMEZ;
+- bağlantılar: yayımlanmış ``contact_channels``.
+
+Türetme tembeldir: kaynak eksik/bozuksa modül import'u ÇÖKMEZ; profil isteği
+``ProfileSourceError`` (``config_error``) ile dürüstçe başarısız olur.
+
+PROJE ve KATALOG kayıtları (değişmedi) repo içi gerçek kaynaklardan derlenir:
+
+- ``README.md`` — platform tanım cümlesi ve teknoloji yığını.
+- ``docs/ai-agent-plan/main-prompt.md`` — repo ve site URL'leri.
 - ``docs/ai-agent-plan/decisions.md`` (D012) ve faz raporları — BuildingBlocks
   Messaging ve ai-agent-service açıklamaları.
 
-Bilinçli EKSIKLER (uydurma yasağı): deneyim süresi, ücret/fiyat, müsaitlik
-repoda hiçbir kaynakta bulunmadığı için bu kayıtlarda TUTULMAZ; böyle bir
-soru ``needs_input`` ile karşılanır (``guidance.detect_missing_info_fields``).
-
-Proje rehberi MrBekoXBlogApp'in kendisi ve repo içi gerçek projelerle
-sınırlıdır. Makale önerisi kataloğu repoda gerçek yayınlanmış makale
-listesi bulunmadığından BOŞTUR — öneri yalnız B8 içerik senkronundan
-bağlanan onaylı katalogla üretilebilir; boş kataloğa karşı dürüst
-"kullanılamaz" sonucu döner.
+Bilinçli EKSIKLER (uydurma yasağı): toplam deneyim süresi, ücret/fiyat,
+müsaitlik kaynakta bulunmaz; böyle bir soru legacy yolda ``needs_input`` ile
+karşılanır (``guidance.detect_missing_info_fields``). Makale önerisi kataloğu
+repoda gerçek yayınlanmış makale listesi bulunmadığından BOŞTUR.
 """
 
 from __future__ import annotations
 
+import threading
+from pathlib import Path
+
 from ..guidance.models import ArticleCatalogEntry
 from ..ports import ProfileSummary, ProjectRecord
+from ..profile import CanonicalProfileRepository, resolve_profile_dir
 
 __all__ = [
     "APPROVED_ARTICLE_CATALOG",
+    "APPROVED_PROJECTS",
     "StaticProfileRepository",
     "StaticProjectRepository",
+    "approved_profile",
 ]
 
-#: Onaylı profil kaydı — yukarıdaki kaynaklardan birebir derlenmiştir.
-APPROVED_PROFILE = ProfileSummary(
-    name="Sample Author",
-    job_title="Software Developer",
-    description=(
-        "Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine "
-        "uzmanlaşmış yazılım geliştirici. Yazılım geliştirme yolculuğunda "
-        "öğrendiklerini, teknik notları ve proje deneyimlerini mrbekox.dev'de paylaşıyor."
-    ),
-    links={
-        "site": "https://mrbekox.dev",
-        "github": "https://example.invalid/author",
-        "x": "https://example.invalid/social",
-        "linkedin": "https://example.invalid/author",
-    },
-    skills=[
-        # site-config.ts SITE_KEYWORDS (gerçek SEO anahtar kelimeleri)
-        "backend development",
-        "yazılım mimarisi",
-        "software architecture",
-        "AI agent",
-        "artificial intelligence",
-        "mikroservis",
-        "microservices",
-        "sistem tasarımı",
-        "system design",
-        "machine learning",
-        ".NET",
-        "ASP.NET Core",
-        "C#",
-        "Python",
-        "onion architecture",
-        "clean architecture",
-        "CQRS",
-        "domain driven design",
-    ],
-    updated_at=None,
-)
+_default_repository: CanonicalProfileRepository | None = None
+_default_lock = threading.Lock()
+
+
+def _canonical_repository() -> CanonicalProfileRepository:
+    """Süreç genelinde paylaşılan canonical depo (yol bir kez çözülür).
+
+    Raises:
+        ProfileSourceError: canonical kaynak bulunamadı (``config_error``).
+    """
+    global _default_repository
+    with _default_lock:
+        if _default_repository is None:
+            _default_repository = CanonicalProfileRepository(resolve_profile_dir())
+        return _default_repository
+
+
+def approved_profile() -> ProfileSummary:
+    """Canonical kaynaktan türetilmiş onaylı profil özeti (legacy A9).
+
+    Raises:
+        ProfileSourceError: canonical kaynak eksik/bozuk/hash uyumsuz/public değil.
+    """
+    from ..profile import profile_summary_from_document
+
+    return profile_summary_from_document(_canonical_repository().current_document())
+
+
+def __getattr__(name: str):
+    # Geriye dönük ad: ``APPROVED_PROFILE`` artık import anında değil, erişimde
+    # canonical kaynaktan türetilir (bozuk kaynak import'u çökertmez).
+    if name == "APPROVED_PROFILE":
+        return approved_profile()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 #: Onaylı proje kayıtları — MrBekoXBlogApp + repo içi gerçek projeler.
 APPROVED_PROJECTS: list[ProjectRecord] = [
@@ -144,20 +147,29 @@ APPROVED_ARTICLE_CATALOG: list[ArticleCatalogEntry] = []
 
 
 class StaticProfileRepository:
-    """Onaylı statik profil kaydını okuyan gerçek adaptör (``ProfileRepository``).
+    """Onaylı profil özetini okuyan gerçek adaptör (``ProfileRepository``).
 
-    Kayıtlar modül docstring'inde listelenen repo içi gerçek kaynaklardan
-    derlenmiştir; test double DEĞİLDİR. ``get_profile`` kaydın kopyasını
-    döndürür; çağıran kaydı değiştiremez.
+    Varsayılan kaynak canonical profil kaynağıdır (``approved_profile``);
+    test double DEĞİLDİR. ``profile`` verilirse o kayıt (kopyası) döner.
+    ``directory`` verilirse o canonical dizin okunur. ``get_profile`` kaydın
+    kopyasını döndürür; çağıran kaydı değiştiremez.
+
+    Raises (``get_profile``):
+        ProfileSourceError: canonical kaynak kullanılamıyor (``config_error``).
     """
 
     is_test_double = False
 
-    def __init__(self, profile: ProfileSummary | None = None) -> None:
-        self._profile = profile if profile is not None else APPROVED_PROFILE
+    def __init__(self, profile: ProfileSummary | None = None, *, directory: Path | None = None) -> None:
+        self._profile = profile
+        self._repository = CanonicalProfileRepository(directory) if directory is not None else None
 
     async def get_profile(self) -> ProfileSummary:
-        return self._profile.model_copy(deep=True)
+        if self._profile is not None:
+            return self._profile.model_copy(deep=True)
+        if self._repository is not None:
+            return await self._repository.get_profile()
+        return approved_profile()
 
 
 class StaticProjectRepository:

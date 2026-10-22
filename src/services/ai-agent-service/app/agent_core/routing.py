@@ -28,6 +28,22 @@ uygulama; doğrulanmış politika profiline eşle."
   akışlarıyladır (``guidance``/``collab`` paketleri). Kişisel bağlam
   sinyali ("benim projem") bu sınıflamanın ÖNÜNDE kalır — eksik kişisel
   bilgi yine tahminle tamamlanmaz.
+- Who am I (v2 konu farkındalığı, additive):
+
+  * ``conversation_topic == WHO_AM_I`` → diğer bütün sinyallerden bağımsız
+    ``intent=PROFILE``, ``source_scope=PROFILE``, ``needs_web=False``; mod AUTO
+    tercihte FAST, açık tercihte o tercih (yalnız profil corpus'u içinde
+    retrieval derinliğini değiştirir). Router modeline danışılmaz.
+  * AUTO konu (ve v1 ``None``): blog sahibi göndermesi + biyografi/proje
+    terimi (``profile.detection``) "açıkla/explain/özetle" ve araştırma
+    sinyallerinin ÖNÜNDE profil niyetidir ("Sample'ın eğitimini açıkla" →
+    PROFILE); "CQRS nedir?" gibi sahip göndermesiz teknik sorular etkilenmez.
+    Açık makale göndermesi ("bu makalede ...") ve kişisel bağlam sinyali bu
+    sınıflamayı ezer; makaleye bağlı bağlamda zayıf takma adlar ("yazar")
+    sayılmaz. v1'de A9 PROJECTS/CONTENT_SUGGESTION sınıflaması korunur.
+  * AUTO ziyaretçi-kimliği belirsizliği ("Ben kimim?", "Who am I?") →
+    PROFILE + ``VISITOR_IDENTITY_ROUTE_REASON`` gerekçe işareti: korpus
+    gerektirmeyen kısa, tamamlanmış netleştirme (``needs_input`` DEĞİL).
 """
 
 from __future__ import annotations
@@ -45,6 +61,7 @@ from .errors import AgentErrorCode, PortError
 from .models import (
     AgentMode,
     BusinessModel,
+    ConversationTopic,
     ExecutionContext,
     ModePreference,
     RouteDecision,
@@ -53,6 +70,12 @@ from .models import (
 )
 from .ports import CancellationToken
 from .ports.model import ModelProvider, ModelRequest
+from .profile.detection import (
+    VISITOR_IDENTITY_ROUTE_REASON,
+    is_owner_profile_question,
+    is_visitor_identity_question,
+    is_visitor_identity_route,
+)
 
 __all__ = [
     "RouterSuggestion",
@@ -60,15 +83,24 @@ __all__ = [
     "DEEP_RESEARCH_QUESTION_THRESHOLD",
     "GUIDANCE_INTENTS",
     "MAX_ANSWER_HEADINGS",
+    "OWNER_PROFILE_REASON",
+    "VISITOR_IDENTITY_ROUTE_REASON",
+    "WHO_AM_I_REASON",
     "build_router_request",
     "classify_guidance_intent",
     "clarification_question_for",
     "decide_mode",
     "is_multi_part_question",
+    "is_visitor_identity_route",
     "parse_router_suggestion",
+    "profile_route_signal",
     "route_for_context",
     "split_answer_headings",
 ]
+
+#: Who am I gerekçeleri (deterministik; router modeli sorulmaz).
+WHO_AM_I_REASON = "who_am_i konusu: yalnız onaylı public profil kaynağı (web yok)"
+OWNER_PROFILE_REASON = "blog sahibi sorusu: onaylı public profil kaynağından cevap (web yok)"
 
 #: Soru uzunluğu bu eşiği AŞAN ve çok bölümlü sorular araştırmaya yönlendirilir.
 #: A1'den kalan eşik; A5'te tek başına uzunluk yetmez, çok bölümlülük de aranır
@@ -489,8 +521,69 @@ def parse_router_suggestion(text: str) -> RouterSuggestion | None:
         return None
 
 
+def profile_route_signal(context: ExecutionContext) -> str | None:
+    """Who am I profil rotasının gerekçesi; profil rotası değilse ``None``.
+
+    Sıra: açık ``who_am_i`` konusu (koşulsuz) → kişisel bağlam / açık makale
+    göndermesi (profil sınıflamasını ezer) → AUTO ziyaretçi-kimliği
+    belirsizliği → blog sahibi + biyografi/proje terimi. İş birliği sinyali
+    A9 akışında kalır; v1 run'larda A9 proje/öneri sınıflaması korunur.
+    """
+    if context.conversation_topic is ConversationTopic.WHO_AM_I:
+        return WHO_AM_I_REASON
+    question = context.question
+    if references_personal_context(question) or references_article(question):
+        return None
+    if is_visitor_identity_question(question):
+        return VISITOR_IDENTITY_ROUTE_REASON
+    article_bound = bool(context.article_id or context.article_snapshot)
+    if not is_owner_profile_question(question, article_bound=article_bound):
+        return None
+    legacy = classify_guidance_intent(question)
+    if legacy is RunIntent.COLLABORATION:
+        return None
+    if context.conversation_topic is None and legacy in (RunIntent.PROJECTS, RunIntent.CONTENT_SUGGESTION):
+        return None
+    return OWNER_PROFILE_REASON
+
+
+def _profile_decision(context: ExecutionContext, reason: str) -> RouteDecision:
+    """Profil rotası: kapsam profil, web yok, açıklama sorusu yok.
+
+    AUTO tercihte FAST; açık tercih korunur ama yalnız profil corpus'unda
+    retrieval derinliğini belirler (web/araştırma aracı açmaz).
+    """
+    preference = context.mode_preference
+    if preference is ModePreference.AUTO:
+        mode = AgentMode.FAST
+        brief_reason = reason
+    else:
+        mode = AgentMode(preference.value)
+        brief_reason = f"{reason}; kullanıcı tercihi: {preference.value}"
+    # Ziyaretçi-kimliği netleştirmesi profil iddiası taşımaz ve korpus
+    # kullanmaz: GENERAL niyet/kapsam (pinlenmiş snapshot gerektirmez).
+    visitor = reason.startswith(VISITOR_IDENTITY_ROUTE_REASON)
+    return RouteDecision(
+        run_id=context.run_id,
+        selected_mode=mode,
+        intent=RunIntent.GENERAL if visitor else RunIntent.PROFILE,
+        source_scope=SourceScope.GENERAL if visitor else SourceScope.PROFILE,
+        needs_web=False,
+        needs_clarification=False,
+        clarification_question=None,
+        brief_reason=brief_reason,
+        budget_profile_id=context.budget_profile.name,
+        decided_at=datetime.now(timezone.utc),
+    )
+
+
 def _rule_decision(context: ExecutionContext, *, mode: AgentMode) -> RouteDecision:
     """Kural tabanlı tam karar: 8 alan + sinyal gerekçesi."""
+    # Who am I (additive): açık konu, ziyaretçi kimliği ve blog sahibi soruları
+    # A5 açıklama/araştırma sinyallerinin ÖNÜNDE profil niyetidir.
+    profile_reason = profile_route_signal(context)
+    if profile_reason is not None:
+        return _profile_decision(context, profile_reason)
     question = context.question
     has_selection = context.selected_text is not None
     article_bound = bool(context.article_id or context.article_snapshot)
@@ -563,8 +656,17 @@ def _merge_suggestion(
     araştırma/güncellik sinyali taşımıyorsa ``needs_web`` false kalır (taşıma
     değişmezi: web bayrağı yalnız deep_research'te true).
     """
+    if context.conversation_topic is not None and suggestion.intent is RunIntent.PROFILE:
+        # Who am I (v2): profil niyeti yalnız deterministik, doğrulanabilir kurallardan
+        # gelir (``profile_route_signal``); modelin profil önerisi kural niyetine iner.
+        suggestion = suggestion.model_copy(update={"intent": base.intent})
     mode = suggestion.selected_mode
-    needs_web = suggestion.needs_web and mode is AgentMode.DEEP_RESEARCH
+    # Profil niyeti hiçbir koşulda web kapsamı açmaz (Who am I: yalnız profil corpus'u).
+    needs_web = (
+        suggestion.needs_web
+        and mode is AgentMode.DEEP_RESEARCH
+        and suggestion.intent is not RunIntent.PROFILE
+    )
     article_bound = bool(context.article_id or context.article_snapshot)
     reason = suggestion.brief_reason or base.brief_reason
     # A9 (additive): öneri yine de rehberlik niyeti taşıyorsa kapsam aynı eşlemeyle verilir.
@@ -617,7 +719,13 @@ async def route_for_context(
         preference=context.mode_preference,
     )
     decision = _rule_decision(context, mode=mode)
-    if router_model is None or not _is_ambiguous(context, mode=mode):
+    # Profil rotası (who_am_i / sahip sorusu / ziyaretçi kimliği) kesin karardır.
+    if (
+        router_model is None
+        or decision.intent is RunIntent.PROFILE
+        or decision.brief_reason.startswith(VISITOR_IDENTITY_ROUTE_REASON)
+        or not _is_ambiguous(context, mode=mode)
+    ):
         return decision
 
     try:

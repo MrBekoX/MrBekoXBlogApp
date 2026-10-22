@@ -5,6 +5,7 @@ using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Models;
 using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunQuery;
+using BlogApp.Core.Application.Features.AgentFeature.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -47,6 +48,8 @@ public sealed record AgentRunEventDto
 /// Agent live-steps olay yüzeyi (ADDITIVE): saklanan PayloadJson + ProgressMessage
 /// sütunlarından kind/message/detail türetilir; türetme OKUMA yönündedir ve
 /// mevcut replay davranışını değiştirmez.
+/// K6: profil run'ında (konu who_am_i veya etkin kapsam profile) generation_delta olayları
+/// gövdesiz döner (message/detail null) — doğrulanmamış biyografi parçası replay'de sunulmaz.
 /// </summary>
 public sealed class GetAgentRunEventsQueryHandler(
     IApplicationDbContext dbContext,
@@ -104,7 +107,8 @@ public sealed class GetAgentRunEventsQueryHandler(
             })
             .ToListAsync(cancellationToken);
 
-        var events = rows.Select(MapToEventDto).ToList();
+        var suppressDeltaBodies = ShouldSuppressDeltaBodies(run.ContextSnapshotJson, run.SourceScope);
+        var events = rows.Select(row => MapToEventDto(row, suppressDeltaBodies)).ToList();
 
         return Result<AgentRunEventsDto>.Success(new AgentRunEventsDto
         {
@@ -135,7 +139,13 @@ public sealed class GetAgentRunEventsQueryHandler(
 
     /// <summary>Ortak olay yüzeyi eşlemesi: mevcut dört alan birebir korunur;
     /// Kind/Message/Detail saklanan payload'dan türetilir.</summary>
-    private static AgentRunEventDto MapToEventDto(ReplayRow row)
+    /// <summary>Profil run'ı: konu who_am_i (kabulde sabit) veya etkin kapsam profile
+    /// (v2 mode_selected / terminal source_scope).</summary>
+    public static bool ShouldSuppressDeltaBodies(string? contextSnapshotJson, string? runSourceScope) =>
+        AgentRunWireContext.Parse(contextSnapshotJson).IsWhoAmI
+        || string.Equals(runSourceScope, "profile", StringComparison.Ordinal);
+
+    private static AgentRunEventDto MapToEventDto(ReplayRow row, bool suppressDeltaBodies)
     {
         // Progressed: kind/message/detail payload'tan; diğer türlerde null.
         string? kind = null;
@@ -159,6 +169,12 @@ public sealed class GetAgentRunEventsQueryHandler(
         {
             // Terminal + action.proposed: messageType son ekinden türet (sözleşme).
             kind = DeriveSuffixKind(row.MessageType);
+        }
+
+        if (suppressDeltaBodies && kind == "generation_delta")
+        {
+            message = null;
+            detail = null;
         }
 
         return new AgentRunEventDto

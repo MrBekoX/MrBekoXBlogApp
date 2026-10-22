@@ -8,11 +8,18 @@ namespace BlogApp.Core.Application.Common.Errors;
 /// <param name="Category">Logical error category (drives HTTP status mapping).</param>
 /// <param name="Message">Human-readable message; safe to surface to client.</param>
 /// <param name="FieldErrors">Optional field → messages map for validation errors.</param>
+/// <param name="Code">Optional machine-readable code (e.g. "capability_unavailable"); surfaced as
+/// <c>ApiResponse.code</c> so clients can branch without parsing localized messages.</param>
 public sealed record Error(
     ErrorCategory Category,
     string Message,
-    IReadOnlyDictionary<string, string[]>? FieldErrors = null)
+    IReadOnlyDictionary<string, string[]>? FieldErrors = null,
+    string? Code = null)
 {
+    /// <summary>Default code of <see cref="Unavailable"/>: a capability (feature gate, dependency,
+    /// canonical source) is not ready; the request was not executed and may be retried later.</summary>
+    public const string CapabilityUnavailableCode = "capability_unavailable";
+
     public static Error Validation(IReadOnlyDictionary<string, string[]> fieldErrors)
         => new(ErrorCategory.Validation, "Bir veya daha fazla validasyon hatasi olustu.", fieldErrors);
 
@@ -33,4 +40,8 @@ public sealed record Error(
 
     public static Error Domain(string message)
         => new(ErrorCategory.Domain, message);
+
+    /// <summary>503 — the requested capability is temporarily unavailable (no silent fallback).</summary>
+    public static Error Unavailable(string message, string code = CapabilityUnavailableCode)
+        => new(ErrorCategory.Unavailable, message, Code: code);
 }

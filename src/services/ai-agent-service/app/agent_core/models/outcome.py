@@ -12,7 +12,8 @@ from pydantic import Field, model_validator
 from ..errors import AgentErrorCode
 from .action import ActionProposal
 from .base import BusinessModel, NonEmptyText
-from .enums import AgentMode, RunStatus, SourceScope
+from .enums import AgentMode, RunIntent, RunStatus, SourceScope
+from .profile import ProfileSnapshotRef
 from .routing import ModeUpgradeRecord
 from .sources import SourceReference
 from .usage import UsageRecord
@@ -38,6 +39,28 @@ class AgentOutcome(BusinessModel):
     #: Yalnız failed/partial gibi hata bilgi taşıyan durumlarda anlamlıdır.
     error_code: AgentErrorCode | None = None
     error_message: str | None = Field(default=None, max_length=4000)
+    #: Routing'in çözdüğü etkin niyet (v2 terminal olaylarında taşınır); execute_plan doldurur.
+    run_intent: RunIntent | None = None
+    #: Profil cevabının dayandığı pinlenmiş canonical profil sürümü.
+    profile_snapshot: ProfileSnapshotRef | None = None
+
+    @model_validator(mode="after")
+    def _profile_provenance(self) -> "AgentOutcome":
+        """Profil kaynakları yalnız pinlenmiş sürüme ait olabilir ve profil kapsamında döner."""
+
+        profile_citations = [c for c in self.citations if c.kind == "profile"]
+        if not profile_citations:
+            return self
+        if self.profile_snapshot is None:
+            raise ValueError("profile citation taşıyan sonuç profile_snapshot ister")
+        if self.source_scope is not SourceScope.PROFILE:
+            raise ValueError("profile citation yalnız source_scope=profile sonuçlarında bulunabilir")
+        if len(profile_citations) != len(self.citations):
+            raise ValueError("profile kapsamı makale/web kaynağıyla karıştırılamaz")
+        for citation in profile_citations:
+            if not self.profile_snapshot.same_as(citation.profile_snapshot):
+                raise ValueError("profile citation pinlenmiş profil sürümüyle uyuşmuyor")
+        return self
 
     @model_validator(mode="after")
     def _status_specific_rules(self) -> "AgentOutcome":

@@ -274,7 +274,7 @@ def provision_vhost_and_users() -> None:
         {
             "configure": r".*",
             "write": r"blog\.(agent\.commands|content\.events)",
-            "read": r"backend\.agent\.events\.q(\.dlq)?|agent\.(execute|control|content)\.q",
+            "read": r"backend\.agent\.events\.q(\.dlq)?|agent\.(execute|control|content)(\.v2)?\.q",
         },
     )
     mgmt_request(
@@ -283,7 +283,7 @@ def provision_vhost_and_users() -> None:
         {
             "configure": "",
             "write": r"blog\.agent\.events",
-            "read": r"agent\.(execute|control|content)\.q(\.dlq)?",
+            "read": r"agent\.(execute|control|content)(\.v2)?\.q(\.dlq)?",
         },
     )
 

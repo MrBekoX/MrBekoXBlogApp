@@ -1,0 +1,471 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:blog-agent:v2:common",
+  "title": "Blog agent messaging v2 ortak tanimlar",
+  "description": "Zarfta ve payload şemalarında paylaşılan biçim ve değer tanımları. Tüm zamanlar UTC ISO 8601 ('Z' sonekli) tanımlı takvim günü olmalıdır; kimlikler kanonik küçük harf tireli UUID'dir. Alan taşırken null yazmak yerine alanı çıkarın.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "utc_iso": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$"
+    },
+    "hash_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "language_code": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$"
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "agent_mode": {
+      "enum": [
+        "fast",
+        "analysis",
+        "deep_research"
+      ]
+    },
+    "mode_preference": {
+      "enum": [
+        "auto",
+        "fast",
+        "analysis",
+        "deep_research"
+      ]
+    },
+    "source_scope": {
+      "enum": [
+        "article",
+        "web",
+        "article_and_web",
+        "profile",
+        "projects",
+        "general"
+      ]
+    },
+    "agent_error_code": {
+      "enum": [
+        "config_error",
+        "validation_error",
+        "not_found",
+        "stale_snapshot",
+        "budget_exhausted",
+        "cancelled",
+        "provider_error",
+        "timeout"
+      ]
+    },
+    "progress_kind": {
+      "enum": [
+        "run_started",
+        "mode_selected",
+        "article_context_ready",
+        "run_resumed",
+        "retrieval_started",
+        "retrieval_completed",
+        "research_started",
+        "research_round_completed",
+        "generation_started",
+        "generation_completed",
+        "validation_completed",
+        "action_proposed",
+        "tool_error",
+        "generation_delta"
+      ]
+    },
+    "conversation_turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "content",
+        "created_at"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "created_at": {
+          "$ref": "#/$defs/utc_iso"
+        }
+      }
+    },
+    "usage_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "recorded_at"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "model_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prompt_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completion_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "web_search_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/utc_iso"
+        }
+      }
+    },
+    "source_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "article",
+            "web",
+            "profile"
+          ]
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "article_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "article_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chunk_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "accessed_at": {
+          "$ref": "#/$defs/utc_iso"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/profile_id"
+        },
+        "profile_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "profile_content_hash": {
+          "$ref": "#/$defs/hash_hex"
+        },
+        "section_id": {
+          "$ref": "#/$defs/section_id"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "article"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "article_id",
+              "article_revision",
+              "chunk_index"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "url"
+                  ]
+                },
+                {
+                  "required": [
+                    "accessed_at"
+                  ]
+                },
+                {
+                  "required": [
+                    "profile_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "profile_revision"
+                  ]
+                },
+                {
+                  "required": [
+                    "profile_content_hash"
+                  ]
+                },
+                {
+                  "required": [
+                    "section_id"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "web"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "url",
+              "accessed_at"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "article_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "article_revision"
+                  ]
+                },
+                {
+                  "required": [
+                    "chunk_index"
+                  ]
+                },
+                {
+                  "required": [
+                    "profile_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "profile_revision"
+                  ]
+                },
+                {
+                  "required": [
+                    "profile_content_hash"
+                  ]
+                },
+                {
+                  "required": [
+                    "section_id"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "profile"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "source_id",
+              "title",
+              "profile_id",
+              "profile_revision",
+              "profile_content_hash",
+              "section_id",
+              "chunk_index",
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "pattern": "^/about#[a-z0-9][a-z0-9-]{0,127}$"
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "article_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "article_revision"
+                  ]
+                },
+                {
+                  "required": [
+                    "accessed_at"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "description": "Kaynak referansi. profile turu: source_id = profile:{profile_id}:{profile_revision}:{profile_content_hash}:{section_id}:{chunk_index}, url = /about#{section_id} (dogrulayicilar capraz kural olarak denetler); URL modelden alinmaz, canonical metadata'dan uretilir."
+    },
+    "action_proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "proposal_id",
+        "article_id",
+        "article_revision",
+        "base_content_hash",
+        "summary",
+        "proposed_content",
+        "created_at"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "article_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "article_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "base_content_hash": {
+          "$ref": "#/$defs/hash_hex"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "proposed_content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "created_at": {
+          "$ref": "#/$defs/utc_iso"
+        }
+      }
+    },
+    "conversation_topic": {
+      "enum": [
+        "auto",
+        "who_am_i"
+      ]
+    },
+    "run_intent": {
+      "enum": [
+        "article_qa",
+        "summarize",
+        "explain",
+        "compare",
+        "research",
+        "general",
+        "profile",
+        "projects",
+        "content_suggestion",
+        "collaboration"
+      ]
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "section_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,127}$"
+    },
+    "profile_snapshot_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "revision",
+        "content_hash"
+      ],
+      "properties": {
+        "profile_id": {
+          "$ref": "#/$defs/profile_id"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content_hash": {
+          "$ref": "#/$defs/hash_hex"
+        }
+      }
+    }
+  }
+}

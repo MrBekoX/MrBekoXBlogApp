@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
+import { connection } from 'next/server';
+import { headers } from 'next/headers';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
+import { NonceProvider } from '@/components/security/nonce-provider';
 import { CacheSyncProvider } from '@/components/cache-sync-provider';
 import { AuthSyncProvider } from '@/components/auth/auth-sync-provider';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -78,16 +81,20 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // A cached/static document cannot share a per-request CSP nonce.
+  await connection();
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
     <html lang="tr" suppressHydrationWarning>
       <head>
         {/* Enable View Transitions API for smooth page transitions (modern browsers) */}
         <meta name="view-transition" content="same-origin" />
+        <meta property="csp-nonce" content={nonce} />
         {/* Google Fonts via CDN at runtime — next/font/google downloads at build time and
             breaks offline builds. Family names are declared as CSS vars in globals.css;
             local fallback stacks apply when the CDN is unreachable. */}
@@ -103,7 +110,9 @@ export default function RootLayout({
         <PersonSchema />
       </head>
       <body className="antialiased min-h-screen">
+        <NonceProvider nonce={nonce}>
         <ThemeProvider
+          nonce={nonce}
           attribute="class"
           defaultTheme="dark"
           enableSystem
@@ -118,6 +127,7 @@ export default function RootLayout({
             </CacheSyncProvider>
           </ErrorBoundary>
         </ThemeProvider>
+        </NonceProvider>
       </body>
     </html>
   );

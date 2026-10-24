@@ -1,5 +1,9 @@
 import { z } from 'zod/v4';
 
+// CSP production does not permit eval. Configure Zod before creating schemas
+// so its optional JIT capability probe is never invoked.
+z.config({ jitless: true });
+
 // Password validation messages (Turkish)
 const passwordMessages = {
   min: 'Şifre en az 8 karakter olmalı',

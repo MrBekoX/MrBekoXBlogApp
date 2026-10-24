@@ -55,8 +55,7 @@ public static class CookieHelper
 
     public static string? GetIpAddress(HttpContext context)
     {
-        // Use RemoteIpAddress which is already set correctly by ForwardedHeaders middleware
-        return context.Connection.RemoteIpAddress?.MapToIPv4().ToString();
+        return ClientIpAddress.Get(context);
     }
 }
 

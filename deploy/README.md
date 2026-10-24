@@ -1,7 +1,7 @@
 # Production release preparation
 
 This directory defines the complete blog stack: PostgreSQL 18, Redis, RabbitMQ,
-.NET API, Python AI worker, Next.js and Nginx, plus two one-shot setup jobs.
+.NET API, Python AI worker, Next.js and Nginx, plus three one-shot setup jobs.
 Preparing these files does not deploy anything. Actual credentials remain empty
 in `.env.example`; `deploy.sh` validates only unless `--apply` is passed.
 
@@ -26,6 +26,11 @@ Read [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) for the EC2 runbook an
 - Backend, worker and topology provisioning use different RabbitMQ identities.
   No broker, database, cache or worker port is published to the internet.
 - Nginx handles both SignalR hubs and blocks the internal content API at the edge.
+- ALB subnet trust is explicit through `ALB_TRUSTED_CIDRS`. Nginx validates its
+  transport peer, counts the ALB-appended client IP and sends one canonical hop
+  to the API over an isolated network. Missing trust settings stop startup.
+- Next.js owns nonce-based HTML CSP. Reserved public Turnstile build settings
+  do not enable a widget or server verification; CAPTCHA is not implemented.
 - The worker requires real provider credentials and supervised task health. Its
   health check does not call a paid provider. Actual model quality and indexing
   acceptance require the later authorized live checks in the runbook.
@@ -50,8 +55,9 @@ is claimed by this preparation.
 | `.env.example` | Empty required secrets and explicit model/release selection |
 | `preflight.py` | Secret-safe configuration, private-bundle and Linux resource gate |
 | `profile_bundle.py` | Shared source/hash validator and private bundle preparation |
+| `edge_proxy_config.py` | Narrow ALB ingress trust and canonical upstream headers |
 | `deploy.sh` | Default read-only validation; explicit apply/backup/health sequence |
-| `deploy-to-hub.ps1` | Three local image builds; registry push is opt-in |
+| `deploy-to-hub.ps1` | Local image builds only; canonical publication uses manual GHCR workflow |
 | `rabbitmq-definitions.py` | Salted password hashes and broker role permissions |
 | `rabbitmq.conf` | Boot import, absolute memory watermark, bounded channels |
 | `nginx.conf` | Domain-templated proxy and SignalR upgrades/streaming |

@@ -16,6 +16,16 @@ the approved public author name; these values cannot be changed by adding
 container environment variables after the Next.js image is built.
 Configure an authorized registry pull identity on EC2 if images are private.
 
+HTML uses a fresh per-request CSP nonce and is dynamically rendered with private,
+no-store caching. Keep this policy at any future CDN; do not cache HTML across
+visitors or strip its CSP header. Measure the rendering cost on t3.micro during
+acceptance. Immutable Next.js static assets retain their normal caching.
+Mermaid renders in a disposable opaque sandbox and returns an SVG image. Public
+production hosts cache its pinned JavaScript asset. Development/loopback hosts
+embed the same trusted package in the renderer document to support Chrome's
+local-network restrictions; only these local documents carry the larger payload.
+No browser permission or CSP relaxation is required for local preview.
+
 ## 2. Prepare the host and TLS boundary
 
 Use a maintained 64-bit Linux image, Docker Engine with cgroup v2 and Docker Compose >= 5.6.1,
@@ -34,11 +44,31 @@ contacting the daemon. See the [official release](https://github.com/docker/comp
 
 Terminate HTTPS at an ALB with a managed certificate for `DOMAIN` and
 `www.DOMAIN`. Redirect ALB HTTP to HTTPS and forward HTTPS traffic to Nginx port 80.
-The EC2 security group must allow port 80 **only from the ALB security group**;
-Nginx trusts the ALB's forwarded protocol headers. Set target health to `/health`.
+The EC2 security group must allow port 80 **only from the ALB security group**.
+Keep the ALB `routing.http.xff_header_processing.mode` attribute at `append`.
+Set target health to `/health`.
 Allow SSH only from the administration network. Do not open 3000, 5432, 5672,
 6379, 8080 or the RabbitMQ management port. Outbound HTTPS and DNS must reach the
 selected LLM provider and `api.openai.com` for embeddings.
+
+Set `ALB_TRUSTED_CIDRS` to the comma-separated canonical subnet CIDRs of this
+ALB's nodes, for example `10.0.1.0/24,10.0.2.0/24`; use the actual subnets rather
+than the whole VPC. Missing or broad trust fails preflight and edge setup.
+Nginx checks the original transport peer against these ranges before accepting
+traffic. Only its loopback `/nginx-health` probe bypasses that ingress check.
+With ALB append mode, `real_ip_recursive off` selects the rightmost client entry
+once, so a caller cannot substitute an earlier forged entry. Rate limits then
+count this client address. Nginx overwrites the upstream forwarding headers.
+Every authorized apply recreates Nginx after generating these files, including
+when the application release tag is unchanged, so trust changes take effect.
+
+The API trusts only Nginx's fixed peer on the dedicated internal `proxy-api`
+network, with one forwarded hop. Other services cannot join that network.
+If `172.30.250.0/29` overlaps host/VPC routes, choose an unused private /24 to /29
+using `PROXY_NETWORK_SUBNET` and update `NGINX_API_PROXY_IP` and `API_PROXY_IP`
+together; neither address can be the network, gateway or broadcast address.
+Preflight checks this wiring. Direct/local API operation leaves forwarded
+headers disabled unless an exact proxy is explicitly configured.
 
 Prepare bind directories for the non-root API image:
 
@@ -136,7 +166,8 @@ bash deploy.sh --apply
 bash deploy.sh --apply --first-install
 ```
 
-Apply pulls prebuilt images, provisions salted broker role definitions, starts
+Apply pulls prebuilt images, generates the explicit edge trust configuration,
+provisions salted broker role definitions, starts
 database/cache/broker, runs the Python migration once per release, then starts
 API/worker/frontend/Nginx with bounded health waits. The API is the sole broker
 topology declarer. Its EF startup migrations finish before the worker fetches
@@ -158,7 +189,7 @@ existing database role or seeded admin account.
 
 Health is necessary but insufficient. With live-call approval and real keys:
 
-1. Confirm all seven runtime services are healthy, both setup jobs exited 0, and
+1. Confirm all seven runtime services are healthy, all three setup jobs exited 0, and
    `/health/ready` plus `/health/agent` pass from inside the API container.
 2. Publish/edit a real article, wait for the real embedding/index update, and ask
    a Turkish question whose answer is in that article. Verify cited text matches

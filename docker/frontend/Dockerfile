@@ -1,6 +1,6 @@
 # Build stage
 # Node 24 LTS, matching the supported production runtime.
-FROM node:24-alpine AS build
+FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS build
 WORKDIR /app
 
 # Copy package files and install dependencies first (cache-friendly)
@@ -39,7 +39,7 @@ ENV REWRITE_URL=${REWRITE_URL}
 RUN test -n "$NEXT_PUBLIC_SITE_URL" && test -n "$NEXT_PUBLIC_AUTHOR_NAME" && npm run build
 
 # Production stage
-FROM node:24-alpine AS runtime
+FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS runtime
 WORKDIR /app
 
 # Create non-root user for security

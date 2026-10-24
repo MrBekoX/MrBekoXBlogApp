@@ -381,3 +381,15 @@
   @apply prose-img:rounded-lg;
   @apply prose-hr:border-ide-border;
 }
+
+/* Scoped agent syntax colors are external CSS, compatible with nonce CSP. */
+.agent-md pre code.hljs{display:block;background:transparent;padding:0;overflow-x:auto;color:#d4d4d4}
+.agent-md .hljs-comment,.agent-md .hljs-quote{color:#6a737d;font-style:italic}
+.agent-md .hljs-keyword,.agent-md .hljs-selector-tag,.agent-md .hljs-meta .hljs-keyword,.agent-md .hljs-doctag,.agent-md .hljs-template-tag{color:#c678dd}
+.agent-md .hljs-string,.agent-md .hljs-regexp,.agent-md .hljs-addition,.agent-md .hljs-meta .hljs-string{color:#98c379}
+.agent-md .hljs-number,.agent-md .hljs-literal,.agent-md .hljs-attr,.agent-md .hljs-attribute,.agent-md .hljs-variable,.agent-md .hljs-template-variable,.agent-md .hljs-param{color:#d19a66}
+.agent-md .hljs-title,.agent-md .hljs-title.function_,.agent-md .hljs-section,.agent-md .hljs-name,.agent-md .hljs-selector-id,.agent-md .hljs-selector-class{color:#61afef}
+.agent-md .hljs-type,.agent-md .hljs-built_in,.agent-md .hljs-builtin-name,.agent-md .hljs-class .hljs-title,.agent-md .hljs-title.class_{color:#e5c07b}
+.agent-md .hljs-symbol,.agent-md .hljs-bullet,.agent-md .hljs-link{color:#56b6c2}
+.agent-md .hljs-deletion{color:#e06c75}
+.agent-md .hljs-emphasis{font-style:italic}.agent-md .hljs-strong{font-weight:600}

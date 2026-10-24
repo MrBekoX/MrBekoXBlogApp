@@ -17,7 +17,6 @@ using BlogApp.Infrastructure.Messaging;
 using BlogApp.Infrastructure.Persistence;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
@@ -47,6 +46,7 @@ var serverLimits = builder.Configuration
     .Get<ServerLimitsSettings>() ?? new ServerLimitsSettings();
 builder.Services.Configure<ServerLimitsSettings>(
     builder.Configuration.GetSection(ServerLimitsSettings.SectionName));
+builder.Services.AddTrustedProxyForwarding(builder.Configuration);
 
 // Agent servis kimliği: Python agent servisinin internal content ucuna erişim
 // anahtarı (AgentService:InternalApiKey; boşsa internal yüzey 404 ile kapalıdır).
@@ -116,15 +116,7 @@ var app = builder.Build();
 
 app.UseSwaggerInDevelopment();
 
-var forwardedHeaderOptions = new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
-    ForwardLimit = serverLimits.ForwardedHeadersForwardLimit
-};
-// Trust Docker network proxies — ForwardLimit=2 covers ALB + nginx
-forwardedHeaderOptions.KnownIPNetworks.Clear();
-forwardedHeaderOptions.KnownProxies.Clear();
-app.UseForwardedHeaders(forwardedHeaderOptions);
+app.UseForwardedHeaders();
 
 app.UseSecurityHeaders();
 app.UseExceptionHandling();

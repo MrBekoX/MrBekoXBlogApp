@@ -1,54 +1,68 @@
 name: Release image build
 
-# Preparation only: no automatic publishing or server deployment.
+# Manual code-image packaging. Runtime private profile bundles never enter CI.
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Immutable shared tag for API, web and agent (for example commit SHA)'
+        description: 'Shared release tag for API, web and agent'
         required: true
         type: string
       site_url:
-        description: 'HTTPS site origin matching production DOMAIN (no path)'
+        description: 'Approved public HTTPS site origin matching production DOMAIN'
         required: true
         type: string
       author_name:
-        description: 'Approved public author name (no sample identity)'
+        description: 'Explicitly approved PUBLIC site byline; never private biography text'
         required: true
         type: string
       github_url:
-        description: 'Optional approved public GitHub HTTPS link; empty omits it'
+        description: 'Optional approved public GitHub HTTPS link'
         required: false
         type: string
       twitter_url:
-        description: 'Optional approved public X/Twitter HTTPS link; empty omits it'
+        description: 'Optional approved public X/Twitter HTTPS link'
         required: false
         type: string
       linkedin_url:
-        description: 'Optional approved public LinkedIn HTTPS link; empty omits it'
+        description: 'Optional approved public LinkedIn HTTPS link'
         required: false
         type: string
       twitter_handle:
-        description: 'Optional approved public @handle; empty omits it'
+        description: 'Optional approved public @handle'
+        required: false
+        type: string
+      turnstile_site_key:
+        description: 'Optional PUBLIC site key, reserved build parity only; no CAPTCHA enforcement'
         required: false
         type: string
       push_images:
-        description: 'Publish to GHCR after the three images build successfully'
+        description: 'Explicitly publish the scanned code images to GHCR from main'
         required: true
         type: boolean
         default: false
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      image_repository: ${{ steps.release.outputs.image_repository }}
+      artifact_id: ${{ steps.archive.outputs.artifact-id }}
+      api_image_id: ${{ steps.export.outputs.api_image_id }}
+      agent_image_id: ${{ steps.export.outputs.agent_image_id }}
+      web_image_id: ${{ steps.export.outputs.web_image_id }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Validate release inputs
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate public release inputs
+        id: release
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
           PUBLIC_SITE_URL: ${{ inputs.site_url }}
@@ -57,9 +71,15 @@ jobs:
           PUBLIC_TWITTER_URL: ${{ inputs.twitter_url }}
           PUBLIC_LINKEDIN_URL: ${{ inputs.linkedin_url }}
           PUBLIC_TWITTER_HANDLE: ${{ inputs.twitter_handle }}
+          PUBLIC_TURNSTILE_SITE_KEY: ${{ inputs.turnstile_site_key }}
+          REQUEST_PUBLISH: ${{ inputs.push_images }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ || "$RELEASE_TAG" == latest ]]; then
-            echo 'Use a release-specific Docker tag'
+          if [[ "$REQUEST_PUBLISH" == true && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'GHCR publication requires an explicitly authorized run from main'
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,121}$ || "$RELEASE_TAG" == latest ]]; then
+            echo 'Use a release-specific Docker tag of at most 122 characters'
             exit 1
           fi
           python3 - <<'PY'
@@ -67,13 +87,14 @@ jobs:
           from urllib.parse import urlsplit
           value = os.environ['PUBLIC_SITE_URL']
           site = urlsplit(value)
-          if (site.scheme != 'https' or site.path not in ('', '/') or site.query or site.fragment
+          if (any(char.isspace() for char in value) or site.scheme != 'https'
+              or site.path not in ('', '/') or site.query or site.fragment
               or site.username or site.password or site.port not in (None, 443)
               or not re.fullmatch(r'(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}', site.hostname or '')):
               raise SystemExit('site_url must be an HTTPS public site origin without path or custom port')
           author = os.environ['PUBLIC_AUTHOR_NAME'].strip()
           if not author or author.casefold() == 'sample author' or len(author) > 200 or '\n' in author or '\r' in author:
-              raise SystemExit('author_name must be the approved public author name')
+              raise SystemExit('author_name must be the approved public site byline')
           for key in ('PUBLIC_GITHUB_URL', 'PUBLIC_TWITTER_URL', 'PUBLIC_LINKEDIN_URL'):
               value = os.environ.get(key, '')
               if not value:
@@ -86,10 +107,15 @@ jobs:
           handle = os.environ.get('PUBLIC_TWITTER_HANDLE', '')
           if handle and not re.fullmatch(r'@[A-Za-z0-9_]{1,15}', handle):
               raise SystemExit('twitter_handle must be empty or an approved public @handle')
+          key = os.environ.get('PUBLIC_TURNSTILE_SITE_KEY', '')
+          if key and (len(key) > 256 or not re.fullmatch(r'[A-Za-z0-9_-]+', key)):
+              raise SystemExit('turnstile_site_key must be an optional public site-key value')
           PY
-          echo "IMAGE_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - uses: docker/setup-buildx-action@v3
-      - name: Build all images without publishing
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE_REPOSITORY=$repository" >> "$GITHUB_ENV"
+          echo "image_repository=$repository" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build all code images without registry credentials
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
           PUBLIC_SITE_URL: ${{ inputs.site_url }}
@@ -98,26 +124,134 @@ jobs:
           PUBLIC_TWITTER_URL: ${{ inputs.twitter_url }}
           PUBLIC_LINKEDIN_URL: ${{ inputs.linkedin_url }}
           PUBLIC_TWITTER_HANDLE: ${{ inputs.twitter_handle }}
+          PUBLIC_TURNSTILE_SITE_KEY: ${{ inputs.turnstile_site_key }}
         run: |
-          docker build --platform linux/amd64 -t "$IMAGE_REPOSITORY:api-$RELEASE_TAG" -f docker/backend/Dockerfile .
-          docker build --platform linux/amd64 -t "$IMAGE_REPOSITORY:agent-$RELEASE_TAG" -f docker/ai-agent-service/Dockerfile .
-          docker build --platform linux/amd64 -t "$IMAGE_REPOSITORY:web-$RELEASE_TAG" -f docker/frontend/Dockerfile \
+          docker build --platform linux/amd64 --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" -t "$IMAGE_REPOSITORY:api-$RELEASE_TAG" -f docker/backend/Dockerfile .
+          docker build --platform linux/amd64 --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" -t "$IMAGE_REPOSITORY:agent-$RELEASE_TAG" -f docker/ai-agent-service/Dockerfile .
+          docker build --platform linux/amd64 --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" -t "$IMAGE_REPOSITORY:web-$RELEASE_TAG" -f docker/frontend/Dockerfile \
             --build-arg NEXT_PUBLIC_API_URL=/api/v1 --build-arg NEXT_PUBLIC_SIGNALR_URL= \
             --build-arg "NEXT_PUBLIC_SITE_URL=$PUBLIC_SITE_URL" --build-arg "NEXT_PUBLIC_AUTHOR_NAME=$PUBLIC_AUTHOR_NAME" \
             --build-arg "NEXT_PUBLIC_GITHUB_URL=$PUBLIC_GITHUB_URL" --build-arg "NEXT_PUBLIC_TWITTER_URL=$PUBLIC_TWITTER_URL" \
             --build-arg "NEXT_PUBLIC_LINKEDIN_URL=$PUBLIC_LINKEDIN_URL" --build-arg "NEXT_PUBLIC_TWITTER_HANDLE=$PUBLIC_TWITTER_HANDLE" \
+            --build-arg "NEXT_PUBLIC_TURNSTILE_SITE_KEY=$PUBLIC_TURNSTILE_SITE_KEY" \
             --build-arg API_URL=http://api:8080/api/v1 --build-arg REWRITE_URL=http://api:8080 \
             src/frontend/blogapp-web
-      - name: Log in to GHCR
+      - name: Export the newly built code images
+        id: export
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-images"
+          for component in api agent web; do
+            image="$IMAGE_REPOSITORY:$component-$RELEASE_TAG"
+            docker image save --output "$RUNNER_TEMP/release-images/$component.tar" "$image"
+            echo "${component}_image_id=$(docker image inspect --format '{{.Id}}' "$image")" >> "$GITHUB_OUTPUT"
+          done
+      - name: Scan the newly built API image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: image
+          input: ${{ runner.temp }}/release-images/api.tar
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: 'false'
+          format: table
+          cache: 'false'
+      - name: Scan the newly built worker image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: image
+          input: ${{ runner.temp }}/release-images/agent.tar
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: 'false'
+          format: table
+          cache: 'false'
+      - name: Scan the newly built web image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: image
+          input: ${{ runner.temp }}/release-images/web.tar
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: 'false'
+          format: table
+          cache: 'false'
+      - name: Hash the scanned code images
         if: inputs.push_images
+        working-directory: ${{ runner.temp }}/release-images
+        run: sha256sum --binary api.tar agent.tar web.tar > checksums.sha256
+      - name: Transfer only the scanned code images for explicit publication
+        id: archive
+        if: inputs.push_images
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scanned-code-images-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/release-images/api.tar
+            ${{ runner.temp }}/release-images/agent.tar
+            ${{ runner.temp }}/release-images/web.tar
+            ${{ runner.temp }}/release-images/checksums.sha256
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          include-hidden-files: false
+
+  publish:
+    if: inputs.push_images && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Retrieve this run's scanned code-image artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-images
+      - name: Verify artifact hashes and exact scanned image identities
+        working-directory: ${{ runner.temp }}/release-images
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_REPOSITORY: ${{ needs.build.outputs.image_repository }}
+          EXPECTED_API_ID: ${{ needs.build.outputs.api_image_id }}
+          EXPECTED_AGENT_ID: ${{ needs.build.outputs.agent_image_id }}
+          EXPECTED_WEB_ID: ${{ needs.build.outputs.web_image_id }}
+        run: |
+          sha256sum --check --strict checksums.sha256
+          for component in api agent web; do
+            docker image load --input "$component.tar"
+            image="$IMAGE_REPOSITORY:$component-$RELEASE_TAG"
+            actual_id=$(docker image inspect --format '{{.Id}}' "$image")
+            case "$component" in
+              api) expected_id="$EXPECTED_API_ID" ;;
+              agent) expected_id="$EXPECTED_AGENT_ID" ;;
+              web) expected_id="$EXPECTED_WEB_ID" ;;
+            esac
+            [[ "$actual_id" == "$expected_id" ]]
+            [[ $(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image") == "$GITHUB_SHA" ]]
+          done
+      - name: Authenticate only after scanned-image verification
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: Publish the complete release
-        if: inputs.push_images
+      - name: Publish the exact scanned release to the canonical GHCR repository
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_REPOSITORY: ${{ needs.build.outputs.image_repository }}
         run: |
           for component in api agent web; do
             docker push "$IMAGE_REPOSITORY:$component-$RELEASE_TAG"
           done
+      - name: Remove ephemeral registry credentials
+        if: always()
+        run: docker logout ghcr.io

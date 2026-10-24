@@ -5,8 +5,11 @@ configured locally; missing values deliberately stop composition.
 
 1. Read [the EC2 runbook](PRODUCTION_DEPLOYMENT.md), including existing-volume
    preservation, encrypted EBS, TLS/ALB boundary and t3.micro swap requirements.
+   Configure `ALB_TRUSTED_CIDRS` with the ALB's actual node-subnet CIDRs and keep
+   ALB X-Forwarded-For processing in append mode. Check the dedicated proxy
+   subnet for overlap before applying.
 2. Build all three images away from EC2 using
-   [the release build guide](DOCKER_HUB_DEPLOYMENT.md). Publishing is opt-in.
+   [the release build guide](DOCKER_HUB_DEPLOYMENT.md). The manual GHCR workflow is the only publisher; local builds never push.
 3. Prepare `uploads`/`keys` with UID:GID 1001:1001, fill `.env` from `.env.example`,
    and use the same immutable image release tag for API, web and agent. Build the
    frontend with a site URL matching `https://DOMAIN` and the approved author name.

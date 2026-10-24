@@ -1,4 +1,5 @@
 using AspNetCoreRateLimit;
+using BlogApp.Presentation.Api.Security;
 using Microsoft.AspNetCore.Builder;
 
 namespace BlogApp.Presentation.Api.Extensions;
@@ -25,7 +26,7 @@ public static class SecurityExtensions
         services.AddMemoryCache();
         services.Configure<IpRateLimitOptions>(configuration.GetSection("IpRateLimiting"));
         services.AddInMemoryRateLimiting();
-        services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+        services.AddSingleton<IRateLimitConfiguration, CanonicalIpRateLimitConfiguration>();
 
         return services;
     }

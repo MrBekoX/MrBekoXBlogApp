@@ -1,6 +1,7 @@
 # Environment files
 .env
 **/.env
+**/*.env
 .env.local
 .env.production
 .env.*.local
@@ -28,6 +29,7 @@ deploy/*
 !deploy/rabbitmq.conf
 !deploy/rabbitmq-definitions.py
 !deploy/preflight.py
+!deploy/edge_proxy_config.py
 !deploy/profile_bundle.py
 !deploy/deploy.sh
 !deploy/deploy-to-hub.ps1
@@ -41,6 +43,7 @@ deploy/tests/*
 !deploy/tests/test_preflight.py
 !deploy/tests/test_profile_bundle.py
 !deploy/tests/test_compose_config.py
+!deploy/tests/test_edge_proxy_config.py
 
 #docs files
 docs/
@@ -56,13 +59,7 @@ scripts/
 chroma_data/
 **/chroma.sqlite3
 
-#CI/CD Pipeline
-.github/*
-!.github/workflows/
-.github/workflows/*
-!.github/workflows/ai-agent-ci.yml
-!.github/workflows/image-build.yml
-ci-cd.yml
+# GitHub workflows are public source and use normal Git tracking.
 
 # PowerShell scripts (utility/ops scripts)
 run-search-migration.ps1
@@ -243,6 +240,9 @@ feature-prompts/who-am-i/
 !deploy/tests/test_preflight.py
 !deploy/tests/test_profile_bundle.py
 !deploy/tests/test_compose_config.py
+!deploy/tests/test_edge_proxy_config.py
 **/TestResults/
 **/.agent_checkpoints/
 **/author-profile.local/
+
+!deploy/tests/test_workflow_security.py

@@ -20,9 +20,6 @@ public sealed class ServerLimitsSettings
     public int SignalRClientTimeoutSeconds { get; set; } = 30;
     public int SignalRHandshakeTimeoutSeconds { get; set; } = 15;
 
-    // Forwarded Headers
-    public int ForwardedHeadersForwardLimit { get; set; } = 2; // ALB + nginx = 2 proxy hop
-
     // Output Cache TTLs (minutes)
     public int CategoriesCacheMinutes { get; set; } = 10;
     public int TagsCacheMinutes { get; set; } = 10;

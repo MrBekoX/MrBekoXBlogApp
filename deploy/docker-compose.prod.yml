@@ -17,6 +17,20 @@ x-agent-db: &agent-db
   AGENT_DB_POOL_MAX: "3"
 
 services:
+  edge-config:
+    image: python:3.13-slim@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962
+    command: ["python", "/config/edge_proxy_config.py"]
+    environment:
+      ALB_TRUSTED_CIDRS: "${ALB_TRUSTED_CIDRS:?ALB_TRUSTED_CIDRS is required}"
+    volumes:
+      - ./edge_proxy_config.py:/config/edge_proxy_config.py:ro
+      - edge_proxy_config:/edge-config
+    network_mode: none
+    restart: "no"
+    mem_limit: 64m
+    memswap_limit: 128m
+    logging: *logging
+
   # No provider calls; create salted password hashes for isolated broker roles.
   rabbitmq-definitions:
     image: "${IMAGE_REPOSITORY:?IMAGE_REPOSITORY is required}:agent-${RELEASE_TAG:?RELEASE_TAG is required}"
@@ -35,7 +49,7 @@ services:
     logging: *logging
 
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
     environment:
       POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
@@ -58,7 +72,7 @@ services:
     logging: *logging
 
   redis:
-    image: redis:8-alpine
+    image: redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--maxmemory", "24mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
     environment:
       REDISCLI_AUTH: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
@@ -76,7 +90,7 @@ services:
     logging: *logging
 
   rabbitmq:
-    image: rabbitmq:4.3.6-alpine
+    image: rabbitmq:4.3.6-alpine@sha256:6931816af1a943f471c038b278835d36692d55dec769232739296bb91b7de0f5
     hostname: rabbitmq
     environment:
       RABBITMQ_NODENAME: rabbit@rabbitmq
@@ -114,8 +128,14 @@ services:
 
   api:
     image: "${IMAGE_REPOSITORY:?IMAGE_REPOSITORY is required}:api-${RELEASE_TAG:?RELEASE_TAG is required}"
+    networks:
+      default: {}
+      proxy-api:
+        ipv4_address: "${API_PROXY_IP:-172.30.250.3}"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__KnownProxies__0: "${NGINX_API_PROXY_IP:-172.30.250.2}"
       DOTNET_GCServer: "0"
       DOTNET_GCHeapHardLimit: "0x10000000"
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-blogdb};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Maximum Pool Size=10;Minimum Pool Size=0"
@@ -237,6 +257,7 @@ services:
 
   frontend:
     image: "${IMAGE_REPOSITORY:?IMAGE_REPOSITORY is required}:web-${RELEASE_TAG:?RELEASE_TAG is required}"
+    networks: [default, proxy-web]
     environment:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=128
@@ -258,7 +279,12 @@ services:
     logging: *logging
 
   nginx:
-    image: nginx:alpine
+    image: nginx:alpine@sha256:a3554c0d0b48177b1413c26e01f695334428020d9df01243fbae3e11cfd17417
+    networks:
+      proxy-web:
+        gw_priority: 1
+      proxy-api:
+        ipv4_address: "${NGINX_API_PROXY_IP:-172.30.250.2}"
     environment:
       DOMAIN: "${DOMAIN:?DOMAIN is required}"
       NGINX_ENVSUBST_FILTER: ^DOMAIN
@@ -267,7 +293,10 @@ services:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/templates/nginx.conf.template:ro
+      - edge_proxy_config:/etc/nginx/trusted:ro
     depends_on:
+      edge-config:
+        condition: service_completed_successfully
       frontend:
         condition: service_healthy
       api:
@@ -298,3 +327,14 @@ volumes:
     name: deploy_rabbitmq_definitions
   agent_state:
     name: deploy_agent_state
+  edge_proxy_config:
+    name: deploy_edge_proxy_config
+
+networks:
+  default: {}
+  proxy-web: {}
+  proxy-api:
+    internal: true
+    ipam:
+      config:
+        - subnet: "${PROXY_NETWORK_SUBNET:-172.30.250.0/29}"

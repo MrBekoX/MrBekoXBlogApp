@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import ipaddress
 import json
 import os
 import re
@@ -15,6 +16,64 @@ import shutil
 import stat
 import sys
 from pathlib import Path, PurePosixPath
+
+
+def validate_proxy_boundary(config: dict) -> list[str]:
+    errors = []
+    services = config.get("services", {})
+    api = services.get("api", {})
+    edge = services.get("nginx", {})
+    generator = services.get("edge-config", {})
+    try:
+        spec = importlib.util.spec_from_file_location("edge_trust", Path(__file__).with_name("edge_proxy_config.py"))
+        if spec is None or spec.loader is None:
+            raise ValueError("Edge trust generator is unavailable")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.trusted_networks(str(generator.get("environment", {}).get("ALB_TRUSTED_CIDRS", "")))
+    except (ValueError, ImportError, OSError):
+        errors.append("Configure explicit narrow ALB subnet CIDRs for the edge trust generator")
+    if generator.get("network_mode") != "none":
+        errors.append("The edge trust generator must not have network access")
+
+    def network_names(service: dict) -> set[str]:
+        networks = service.get("networks", {})
+        return set(networks) if isinstance(networks, (dict, list)) else set()
+
+    try:
+        network = config.get("networks", {}).get("proxy-api", {})
+        subnet = ipaddress.ip_network(network["ipam"]["config"][0]["subnet"], strict=True)
+        nginx_ip = ipaddress.ip_address(edge["networks"]["proxy-api"]["ipv4_address"])
+        api_ip = ipaddress.ip_address(api["networks"]["proxy-api"]["ipv4_address"])
+        reserved = {subnet.network_address, subnet.broadcast_address, subnet.network_address + 1}
+        if (network.get("internal") is not True or subnet.version != 4 or not subnet.is_private
+                or subnet.is_loopback or subnet.is_link_local or not 24 <= subnet.prefixlen <= 29
+                or nginx_ip not in subnet or api_ip not in subnet or nginx_ip == api_ip
+                or nginx_ip in reserved or api_ip in reserved):
+            raise ValueError("Invalid dedicated proxy network")
+        settings = api.get("environment", {})
+        peers = {key: value for key, value in settings.items() if key.startswith("ForwardedHeaders__KnownProxies__")}
+        if (str(settings.get("ForwardedHeaders__Enabled", "")).lower() != "true"
+                or peers != {"ForwardedHeaders__KnownProxies__0": str(nginx_ip)}):
+            errors.append("The API must trust exactly the dedicated Nginx proxy address")
+    except (ValueError, KeyError, IndexError, TypeError):
+        errors.append("Configure the isolated internal Nginx-to-API network and distinct static peer addresses")
+    if network_names(edge) != {"proxy-api", "proxy-web"}:
+        errors.append("Nginx must be isolated from the shared application network")
+    if any("proxy-api" in network_names(service) for name, service in services.items() if name not in {"api", "nginx"}):
+        errors.append("Only Nginx and API may join the trusted proxy network")
+    for name, target, writable in (("nginx", "/etc/nginx/trusted", False), ("edge-config", "/edge-config", True)):
+        mounts = [mount for mount in services.get(name, {}).get("volumes", [])
+                  if isinstance(mount, dict) and mount.get("target") == target]
+        if len(mounts) != 1 or mounts[0].get("type") != "volume" or bool(mounts[0].get("read_only")) != (not writable):
+            errors.append("Edge trust configuration must be generated once and mounted read-only by Nginx")
+    edge_mounts = services.get("nginx", {}).get("volumes", [])
+    generated_mounts = services.get("edge-config", {}).get("volumes", [])
+    sources = [mount.get("source") for mount in [*edge_mounts, *generated_mounts]
+               if isinstance(mount, dict) and mount.get("target") in {"/etc/nginx/trusted", "/edge-config"}]
+    if len(sources) != 2 or sources[0] != sources[1]:
+        errors.append("Nginx and the generator must use the same edge trust configuration volume")
+    return errors
 
 
 def profile_mount(config: dict) -> tuple[str, list[str]]:
@@ -81,7 +140,7 @@ def validate_private_profile(directory: str) -> list[str]:
 def validate_config(config: dict) -> list[str]:
     errors: list[str] = []
     services = config.get("services", {})
-    required_services = {"postgres", "redis", "rabbitmq", "rabbitmq-definitions",
+    required_services = {"edge-config", "postgres", "redis", "rabbitmq", "rabbitmq-definitions",
                          "agent-migrate", "api", "ai-agent", "frontend", "nginx"}
     if not required_services.issubset(services):
         return ["Compose must contain the complete API, worker, migration, broker and frontend stack"]
@@ -147,6 +206,7 @@ def validate_config(config: dict) -> list[str]:
         errors.append("Migrations and worker must use the same image")
     _, mount_errors = profile_mount(config)
     errors.extend(mount_errors)
+    errors.extend(validate_proxy_boundary(config))
     return errors
 
 

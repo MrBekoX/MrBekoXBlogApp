@@ -23,10 +23,10 @@ import os
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import asyncpg
 import pytest
+from infra_environment import postgres_credentials, postgres_host, postgres_migration_url, postgres_port
 
 from messaging import ControlStore, JobStore
 
@@ -82,23 +82,14 @@ def _close_shared_loop() -> Any:
 
 
 def load_docker_env() -> dict[str, str]:
-    env_path = REPO_ROOT / "docker" / ".env"
-    if not env_path.exists():
-        pytest.fail("docker/.env bulunamadı; Postgres kimlikleri okunamadı")
-    values: dict[str, str] = {}
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            values[key.strip()] = value.strip()
-    return values
+    return postgres_credentials(REPO_ROOT)
 
 
 def db_conn_kwargs(database: str) -> dict[str, Any]:
     env = load_docker_env()
     return dict(
-        host="127.0.0.1",
-        port=5432,
+        host=postgres_host(),
+        port=postgres_port(),
         user=env.get("POSTGRES_USER", "blogapp_user"),
         password=env.get("POSTGRES_PASSWORD", ""),
         database=database,
@@ -145,10 +136,7 @@ def run_agent_migrations(database: str) -> None:
     user = env.get("POSTGRES_USER", "blogapp_user")
     password = env.get("POSTGRES_PASSWORD", "")
     previous_url = os.environ.get("AGENT_DB_URL")
-    os.environ["AGENT_DB_URL"] = (
-        f"postgresql+asyncpg://{quote(user, safe='')}:{quote(password, safe='')}"
-        f"@127.0.0.1:5432/{database}"
-    )
+    os.environ["AGENT_DB_URL"] = postgres_migration_url(database, user, password)
     os.environ["AGENT_DB_SCHEMA"] = "agent"
     try:
         cfg = Config(str(SERVICE_ROOT / "migrations" / "alembic.ini"))

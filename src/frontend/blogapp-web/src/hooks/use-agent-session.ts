@@ -45,6 +45,8 @@ import {
 import type { AgentRequestPlan } from '@/lib/agent/topic';
 import { replayEventPages } from '@/lib/agent/replay';
 import { openRunChannel, type ChannelState } from '@/lib/agent/run-channel';
+import { createTerminalRecovery } from '@/lib/agent/terminal-recovery';
+import { createSubmissionIdentity, isDefinitiveSubmissionFailure } from '@/lib/agent/submission-identity';
 import {
   httpStatusOf,
   isActivePhase,
@@ -148,10 +150,15 @@ export function useAgentSession(options: UseAgentSessionOptions) {
   const epochRef = useRef(0);
   /** Commit edilmiş projection'dan okunan son event_sequence (monoton imleç). */
   const lastSequenceRef = useRef(0);
+  /** Authoritative GET responses can overlap; replay cursor is a separate stream. */
+  const lastStatusSequenceRef = useRef(-1);
   const eventsRef = useRef<AgentRunEvent[]>([]);
   const ingestBusyRef = useRef(false);
   const ingestRerunRef = useRef(false);
   const terminalHandledRef = useRef(false);
+  const terminalRecoveryRef = useRef<ReturnType<typeof createTerminalRecovery> | null>(null);
+  const submissionIdentityRef = useRef(createSubmissionIdentity(newIdempotencyKey));
+  const submittingOperationRef = useRef<object | null>(null);
   const startedSeenRef = useRef(false);
   /** İlk generation_delta görüldüğünde TEK kez "yazıyor" duyurusu (aria-live). */
   const deltaAnnouncedRef = useRef(false);
@@ -187,15 +194,30 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     setTurns((prev) => prev.map((turn) => (turn.runId === runId ? update(turn) : turn)));
   }, []);
 
-  /** GET /runs/{runId}: durum + guard'dan geçmiş terminal sonuç (yetkili kaynak).
-   * Hata (403/404/ağ) sessizce null döner. */
+  /** Only the current scope/run may apply an authoritative result. */
   const refreshStatus = useCallback(
     async (runId: string): Promise<AgentRunStatus | null> => {
+      const epoch = epochRef.current;
+      const isCurrent = () => currentRunIdRef.current === runId && epochRef.current === epoch;
+      if (!isCurrent()) return null;
       try {
         const status = await agentApi.getRun(runId);
+        if (!isCurrent() || !validateRestoredRun(status, runId)) return null;
+        // A backend deadline terminal can precede a newer worker terminal. Keep
+        // equal-sequence refreshes so publication/profile masking can still change.
+        if (status.lastEventSequence < lastStatusSequenceRef.current) return null;
         const nextPhase = phaseFromStatus(status);
-        updateTurn(runId, (turn) => ({ ...turn, status, phase: mergePhase(turn.phase, nextPhase) }));
+        if (terminalHandledRef.current && !isTerminalPhase(nextPhase)) return null;
+        lastStatusSequenceRef.current = status.lastEventSequence;
+        updateTurn(runId, (turn) => {
+          // An older overlapping GET must not erase a terminal result with Accepted.
+          if (isTerminalPhase(turn.phase) && !isTerminalPhase(nextPhase)) return turn;
+          return { ...turn, status, phase: mergePhase(turn.phase, nextPhase) };
+        });
         if (isTerminalPhase(nextPhase)) {
+          terminalHandledRef.current = true;
+          terminalRecoveryRef.current?.dispose();
+          terminalRecoveryRef.current = null;
           announce(terminalLabel(nextPhase, t));
           // Terminalde adım alanı bir kez otomatik kapanır (kullanıcı açabilir).
           if (runId === currentRunIdRef.current && !autoCollapseDoneRef.current) {
@@ -206,12 +228,43 @@ export function useAgentSession(options: UseAgentSessionOptions) {
           announce(startedText);
         }
         return status;
-      } catch {
-        return null; // 403/404: sessiz (başka oturum / kayıt yok)
+      } catch (err) {
+        if (!isCurrent()) return null;
+        const status = httpStatusOf(err);
+        if (status === 403 || status === 404) {
+          terminalRecoveryRef.current?.dispose();
+          terminalRecoveryRef.current = null;
+          currentRunIdRef.current = null;
+          epochRef.current += 1;
+          const storage = getBrowserStorage();
+          if (storage) clearStoredRunId(storage, storageKey, runId);
+          setTurns((previous) => previous.filter((turn) => turn.runId !== runId));
+          setSteps([]);
+          setConversationId(undefined);
+          const message = status === 403 ? t.runForbidden : t.runNotFound;
+          setError(message);
+          announce(message);
+        }
+        return null;
       }
     },
-    [announce, startedText, t, updateTurn],
+    [announce, startedText, storageKey, t, updateTurn, validateRestoredRun],
   );
+
+  const reconcileTerminal = useCallback(async (runId: string) => {
+    if (terminalHandledRef.current || currentRunIdRef.current !== runId) return;
+    if (!terminalRecoveryRef.current) {
+      const epoch = epochRef.current;
+      terminalRecoveryRef.current = createTerminalRecovery({
+        isCurrent: () => currentRunIdRef.current === runId && epochRef.current === epoch,
+        refresh: async () => {
+          const status = await refreshStatus(runId);
+          return status !== null && isTerminalPhase(phaseFromStatus(status));
+        },
+      });
+    }
+    await terminalRecoveryRef.current.start();
+  }, [refreshStatus]);
 
   /** Yeni projection olaylarını monoton filtreyle al; adımları GERÇEK olaylardan kur. */
   const ingestEvents = useCallback(
@@ -264,9 +317,8 @@ export function useAgentSession(options: UseAgentSessionOptions) {
                 return kind !== null && isTerminalKind(kind);
               });
               if (sawTerminal && !terminalHandledRef.current) {
-                terminalHandledRef.current = true;
                 // Terminal sonucu guard'lı GET'ten tazele (push maskeli olabilir).
-                await refreshStatus(target);
+                await reconcileTerminal(target);
               }
             },
           });
@@ -282,7 +334,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
         ingestBusyRef.current = false;
       }
     },
-    [announce, refreshStatus, startedText, streamLiveAnswer, t, updateTurn],
+    [announce, reconcileTerminal, startedText, streamLiveAnswer, t, updateTurn],
   );
 
   // Sayfa yenileme sonrası geri dönüş: bu konu/kapsam için kayıtlı SON run.
@@ -334,6 +386,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     const terminal = isTerminalPhase(phase);
     currentRunIdRef.current = runId;
     lastSequenceRef.current = 0;
+    lastStatusSequenceRef.current = status.lastEventSequence;
     eventsRef.current = [];
     terminalHandledRef.current = terminal;
     startedSeenRef.current = terminal;
@@ -355,9 +408,16 @@ export function useAgentSession(options: UseAgentSessionOptions) {
 
   useEffect(() => {
     const signal = { cancelled: false };
+    const submissionIdentity = submissionIdentityRef.current;
     void restoreFromStorage(storageKey, signal);
     return () => {
       signal.cancelled = true;
+      epochRef.current += 1;
+      currentRunIdRef.current = null;
+      terminalRecoveryRef.current?.dispose();
+      terminalRecoveryRef.current = null;
+      submissionIdentity.clear();
+      submittingOperationRef.current = null;
     };
   }, [storageKey]);
 
@@ -377,9 +437,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
       connection,
       getLastSequence: () => lastSequenceRef.current,
       ingest: () => ingestEvents(runId),
-      refresh: () => {
-        void refreshStatus(runId);
-      },
+      refresh: () => refreshStatus(runId),
       setChannel,
       pollMs: POLL_FALLBACK_MS,
     });
@@ -397,8 +455,11 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     (accepted: AgentRunAccepted, questionText: string, isResearch: boolean) => {
       // Yeni çalışma: replay imlecini sıfırla; devam eden geri yükleme bayatlar.
       epochRef.current += 1;
+      terminalRecoveryRef.current?.dispose();
+      terminalRecoveryRef.current = null;
       currentRunIdRef.current = accepted.runId;
       lastSequenceRef.current = 0;
+      lastStatusSequenceRef.current = -1;
       eventsRef.current = [];
       terminalHandledRef.current = false;
       startedSeenRef.current = false;
@@ -422,21 +483,28 @@ export function useAgentSession(options: UseAgentSessionOptions) {
   const submit = useCallback(
     async (questionText: string, deepResearch: boolean): Promise<boolean> => {
       const trimmed = questionText.trim();
-      if (!trimmed || submitting || isRunActive) return false;
+      if (!trimmed || submittingOperationRef.current || submitting || isRunActive) return false;
 
-      const plan = buildRequest({
+      const candidate = buildRequest({
         question: trimmed,
         deepResearch,
         conversationId,
-        idempotencyKey: newIdempotencyKey(),
+        idempotencyKey: '', // Assigned once for this exact logical operation below.
       });
-      if (!plan.ok) {
-        if (plan.reason === 'research_not_allowed_for_topic') {
+      if (!candidate.ok) {
+        if (candidate.reason === 'research_not_allowed_for_topic') {
           setError(t.researchNotAllowed);
           announce(t.researchNotAllowed);
         }
         return false;
       }
+
+      const plan = submissionIdentityRef.current.prepare(candidate);
+      const operation = {};
+      submittingOperationRef.current = operation;
+      // User intent invalidates any in-flight restoration before the POST resolves.
+      const epoch = ++epochRef.current;
+      const isCurrent = () => epochRef.current === epoch && submittingOperationRef.current === operation;
 
       setSubmitting(true);
       setError(null);
@@ -448,6 +516,8 @@ export function useAgentSession(options: UseAgentSessionOptions) {
             ? await agentApi.startResearch(plan.body)
             : await agentApi.sendMessage(plan.body);
 
+        if (!isCurrent()) return false;
+        submissionIdentityRef.current.complete(plan);
         startRun(accepted, trimmed, deepResearch);
         announce(t.statusAccepted);
 
@@ -456,6 +526,8 @@ export function useAgentSession(options: UseAgentSessionOptions) {
         void ingestEvents(accepted.runId);
         return true;
       } catch (err) {
+        if (!isCurrent()) return false;
+        if (isDefinitiveSubmissionFailure(err)) submissionIdentityRef.current.complete(plan);
         if (submitErrorKind(err, topic) === 'capability_unavailable') {
           // who_am_i kapasitesi kapalı (503): normal sohbete sessiz düşüş YOK.
           setError(t.whoAmIUnavailable);
@@ -466,7 +538,10 @@ export function useAgentSession(options: UseAgentSessionOptions) {
         }
         return false;
       } finally {
-        setSubmitting(false);
+        if (submittingOperationRef.current === operation) {
+          submittingOperationRef.current = null;
+          setSubmitting(false);
+        }
       }
     },
     [

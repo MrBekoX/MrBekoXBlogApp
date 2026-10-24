@@ -141,8 +141,22 @@ class HttpFetcher:
                         f"yönlendirme sınırı aşıldı ({self._settings.max_redirects}): {current}",
                         port="HttpFetcher",
                     )
-                # Her adım parse+resolve+engel listesinden yeniden geçer.
-                current = urljoin(target.url, location.strip())
+                # Operator headers can contain a search credential. Public IP
+                # validation alone does not authorize sharing it with another
+                # origin (including an HTTPS-to-HTTP downgrade).
+                redirect_url = urljoin(target.url, location.strip())
+                if extra_headers:
+                    redirect_target = self._guard.parse(redirect_url)
+                    if (redirect_target.scheme, redirect_target.host, redirect_target.port) != (
+                        target.scheme, target.host, target.port
+                    ):
+                        raise PortError(
+                            AgentErrorCode.VALIDATION_ERROR,
+                            "Authenticated requests cannot follow a redirect to another origin",
+                            port="HttpFetcher",
+                        )
+                # Every permitted hop still passes parse, DNS and address checks.
+                current = redirect_url
                 redirects += 1
                 continue
             return FetchedContent(

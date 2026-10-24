@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Data.Common;
 using BlogApp.BuildingBlocks.Messaging;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Options;
@@ -7,6 +8,8 @@ using BlogApp.Core.Application.Features.AgentFeature.Collaboration;
 using BlogApp.Core.Domain.Enums;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace BlogApp.Infrastructure.Messaging;
 
@@ -19,8 +22,10 @@ namespace BlogApp.Infrastructure.Messaging;
 /// Sorumluluk bölümü:
 /// - Kalıcı sözleşme ihlali (şema/yön/üretici) → istisna → temel sınıf
 ///   ``BasicNackAsync(requeue: false)`` ile DLX'e düşürür (sürekli requeue yok).
-/// - Geçici DB hatası → aynı DLX yolu; transport retry ayrımı B7 kapsamıdır
-///   (bilinçli B5 sınırı, raporda kayıtlı).
+/// - Retryable infrastructure failures retain the original unacknowledged delivery
+///   for at most three configured delays (10s/30s/120s by default). Each attempt
+///   gets a fresh DI scope. Exhaustion goes to DLQ; no republish permissions or
+///   unbounded requeue loop are required.
 /// - Bilinmeyen run_id kalıcı business koşuldur: projection işleyicisi
 ///   ``quarantined`` inbox kaydını yazar; consumer mesajı ACK'lar (sınırlı
 ///   politika: sonsuz retry/DLQ döngüsü kurulmaz).
@@ -45,6 +50,22 @@ public sealed class AgentEventProjectionConsumer(
 
     private readonly AgentContractValidator _validator = new();
     private readonly int _proposalValidityHours = collaborationOptions.Value.ProposalValidityHours;
+    private readonly TimeSpan[] _retryDelays = settings.RetryTierSeconds.Take(3)
+        .Select(seconds => TimeSpan.FromSeconds(Math.Clamp(seconds, 1, 120))).ToArray();
+
+    protected override IReadOnlyList<TimeSpan> RetryDelays => _retryDelays;
+
+    protected override bool IsRetryable(Exception error)
+    {
+        var retryable = error is TimeoutException or DbException { IsTransient: true }
+                        || error is DbUpdateException or InvalidOperationException or RetryLimitExceededException
+                           && error.InnerException is { } inner && IsRetryable(inner);
+        if (retryable)
+        {
+            logger.LogWarning(error, "Agent event projection infrastructure failure; retaining the delivery for bounded retry.");
+        }
+        return retryable;
+    }
 
     protected override async Task HandleAsync(
         string exchange,

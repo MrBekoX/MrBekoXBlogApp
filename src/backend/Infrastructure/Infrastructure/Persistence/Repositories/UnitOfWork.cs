@@ -101,6 +101,17 @@ public class UnitOfWork(AppDbContext context) : BlogApp.Core.Application.Common.
         _transaction = null;
     }
 
+    public Task AcquireTransactionLockAsync(long lockKey, CancellationToken cancellationToken = default)
+    {
+        if (context.Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException("A transaction is required for an advisory transaction lock.");
+        }
+
+        return context.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})", cancellationToken);
+    }
+
     public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
     {
         if (_transaction is null)

@@ -37,6 +37,8 @@ public interface IUnitOfWork : IAsyncDisposable, IDisposable
 
     Task BeginTransactionAsync(CancellationToken cancellationToken = default);
     Task<ITransactionScope> BeginTransactionAsync(IsolationLevel isolationLevel, CancellationToken cancellationToken = default);
+    /// <summary>Acquire a database advisory lock until the current transaction ends.</summary>
+    Task AcquireTransactionLockAsync(long lockKey, CancellationToken cancellationToken = default);
     Task CommitTransactionAsync(CancellationToken cancellationToken = default);
     Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
     Task<TResult> ExecuteResilientAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken = default);

@@ -14,6 +14,10 @@ internal static class BrokerTestEnvironment
 
     internal static int Port => int.TryParse(Environment.GetEnvironmentVariable("RABBITMQ_PORT"), out var port) ? port : 5672;
 
+    internal static Uri ManagementBaseAddress => new(
+        new Uri(Environment.GetEnvironmentVariable("RABBITMQ_MGMT_URL") ?? "http://127.0.0.1:15672/api")
+            .GetLeftPart(UriPartial.Authority) + "/");
+
     internal static string VirtualHost => Environment.GetEnvironmentVariable("RABBITMQ_VHOST") ?? "blogapp_dev";
 
     internal static (string User, string Password) BackendUser =>

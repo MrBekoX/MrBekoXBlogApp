@@ -448,6 +448,7 @@ def build_router_request(context: ExecutionContext) -> ModelRequest:
     return ModelRequest(
         prompt="\n".join(facts),
         system=_ROUTER_SYSTEM_PROMPT,
+        max_output_tokens=256,
         metadata={"run_id": context.run_id, "role": "router", "output": "json"},
     )
 

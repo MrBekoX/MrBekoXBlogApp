@@ -1,5 +1,6 @@
 using BlogApp.BuildingBlocks.Options;
 using BlogApp.Presentation.Api.Health;
+using BlogApp.Infrastructure.Messaging;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Serilog;
@@ -36,6 +37,7 @@ public static class ObservabilityExtensions
             {
                 metrics
                     .AddMeter("BlogApp.Cache")
+                    .AddMeter(OutboxMetrics.MeterName)
                     .AddPrometheusExporter();
             })
             .WithTracing(tracing =>

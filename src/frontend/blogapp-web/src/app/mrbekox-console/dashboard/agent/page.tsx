@@ -69,7 +69,7 @@ export default function AgentObservationsPage() {
     setError(null);
     try {
       const response = await apiClient.get<{ success: boolean; data?: AgentObservations; errors?: string[] }>(
-        '/api/v1/agent/admin/observations',
+        '/agent/admin/observations',
         { params: { windowHours: 24 } },
       );
       if (response.data.success && response.data.data) {

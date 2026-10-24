@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from ..budget.guard import BudgetGuard, CallResult, estimate_tokens
+from ..budget.guard import BudgetGuard, CallResult, estimate_model_tokens
 from ..budget.policy import BudgetPolicy, Deadline
 from ..budget.store import PolicyBudgetStore
 from ..content.retrieval import tokenize
@@ -429,6 +429,8 @@ async def _guarded_complete(
 ) -> str:
     """Tek ``model.complete`` çağrısı: bütçe guard'ı + kalan süreyle sınır (stream yok)."""
 
+    request = await guard.prepare_model_request(request)
+
     async def call(_attempt: int) -> CallResult:
         try:
             response = await asyncio.wait_for(
@@ -440,8 +442,9 @@ async def _guarded_complete(
                 "profil cevabı üretimi süre sınırını aştı",
                 port="profile.runner",
                 retryable=False,
+                usage_uncertain=True,
             ) from None
-        return CallResult(value=response, usage=response.usage)
+        return CallResult(value=response, usage=response.usage, request=request, estimated=response.usage_estimated)
 
     outcome = await guard.guarded(
         action_id=action_id,
@@ -449,7 +452,7 @@ async def _guarded_complete(
         call=call,
         cancel=cancel,
         deadline=deadline,
-        token_estimate=estimate_tokens((request.system or "") + request.prompt) + (request.max_output_tokens or 0),
+        token_estimate=estimate_model_tokens(request),
         events_sink=events,
     )
     return outcome.value.text or ""

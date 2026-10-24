@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from ..budget.guard import BudgetGuard, CallResult, assert_active, estimate_tokens
+from ..budget.guard import BudgetGuard, CallResult, assert_active, estimate_model_tokens
 from ..budget.policy import BudgetPolicy, Deadline
 from ..content.models import IndexedChunk
 from ..errors import AgentErrorCode, PortError
@@ -50,8 +50,7 @@ from .guardrails import (
     append_source_block,
     build_citations,
     build_section_refs,
-    neutralize_attributions,
-    select_citations,
+    ground_answer,
 )
 from .models import QaFlowConfig
 from .retrieval import ArticleRetriever
@@ -397,24 +396,24 @@ def make_generate(deps: QaDeps) -> Callable[[QaState], Any]:
         await _publish(
             deps.progress, context.run_id, ProgressKind.GENERATION_STARTED, "yanıt üretiliyor"
         )
-        request = build_generation_request(deps, state)
+        request = await deps.guard.prepare_model_request(build_generation_request(deps, state), max_output_tokens=2048)
 
         async def generate_call(_attempt: int) -> CallResult:
             async def on_delta(chunk: str) -> None:
-                # Canlı parça: GENERATION_DELTA olarak akar; sink arızası
-                # üretimi kesmez (port sözleşmesi).
-                await _publish_delta(deps.progress, context.run_id, chunk)
+                # Drafts are untrusted until the source-control node accepts
+                # each claim. Only the controlled answer may be published.
+                return None
 
             response = await deps.model.stream_complete(
                 request, cancel=deps.tasks.cancel, on_delta=on_delta
             )
-            return CallResult(value=response)
+            return CallResult(value=response, usage=response.usage, request=request, estimated=response.usage_estimated)
 
         outcome = await deps.tasks.guarded(
             action_id="qa:generate",
             kind=BudgetKind.MODEL_CALL,
             call=generate_call,
-            token_estimate=estimate_tokens(request.prompt),
+            token_estimate=estimate_model_tokens(request),
         )
         return {
             "draft_answer": outcome.value.text,
@@ -438,12 +437,11 @@ def make_control(deps: QaDeps) -> Callable[[QaState], Any]:
                 port="qa.control",
             )
         retrieved = list(state.get("retrieved") or [])
-        evidence_text = "\n".join(record.chunk.content for record in retrieved)
-        controlled, removed = neutralize_attributions(draft, evidence_text)
-
-        cited = select_citations(
-            controlled, retrieved, min_overlap=deps.config.min_citation_overlap
-        )
+        controlled, cited, removed = ground_answer(draft, retrieved, min_overlap=deps.config.min_citation_overlap)
+        if not controlled:
+            controlled = _localized(context.language,
+                tr="Bu soruya makaledeki kanıtlarla doğrulanmış bir yanıt veremiyorum.",
+                en="I could not verify an answer to this question against the article evidence.")
         sections = build_section_refs(cited)
 
         parts = [controlled]
@@ -451,8 +449,8 @@ def make_control(deps: QaDeps) -> Callable[[QaState], Any]:
             parts.append(
                 _localized(
                     context.language,
-                    tr="Not: bazı ifadeler makalede doğrulanamadığı için makale atıfları kaldırıldı; bunlar genel açıklamadır.",
-                    en="Note: some statements could not be verified in the article, so article attributions were removed; they are general explanations.",
+                    tr="Not: makalede doğrulanamayan ifadeler yanıttan çıkarıldı.",
+                    en="Note: statements that could not be verified in the article were omitted.",
                 )
             )
         if state.get("selected_text_ok") is False:
@@ -465,6 +463,7 @@ def make_control(deps: QaDeps) -> Callable[[QaState], Any]:
             )
         body = "\n\n".join(parts)
         answer = append_source_block(body, sections)
+        await _publish_delta(deps.progress, context.run_id, answer)
         return {"answer": answer, "citations": build_citations(cited), "sections": sections}
 
     return control
@@ -501,8 +500,8 @@ def make_finalize(deps: QaDeps) -> Callable[[QaState], Any]:
         verdict = state.get("sufficiency")
         sufficient = bool(verdict is not None and verdict.sufficient)
         if sufficient:
-            answer = state.get("answer") or state.get("draft_answer") or ""
-            citations = list(state.get("citations") or [])
+            answer = state.get("answer") or insufficient_answer(context, state.get("snapshot"), rewritten=False)
+            citations = list(state.get("citations") or []) if state.get("answer") else []
         else:
             answer = insufficient_answer(
                 context, state.get("snapshot"), rewritten=bool(state.get("rewritten"))

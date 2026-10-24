@@ -34,6 +34,7 @@ from agent_core.adapters import (  # noqa: E402
 )
 from agent_core.content.postgres import PostgresContentIndex, PostgresEmbeddingCache  # noqa: E402
 from agent_core.errors import AgentErrorCode, PortError  # noqa: E402
+from agent_core.models import BudgetProfile  # noqa: E402
 from agent_core.profile import (  # noqa: E402
     CanonicalProfileRepository,
     resolve_profile_dir,
@@ -41,6 +42,7 @@ from agent_core.profile import (  # noqa: E402
     ProfileRetriever,
 )
 from agent_core.qa.retrieval import SnapshotRetriever  # noqa: E402
+from agent_core.web.config import research_tools_from_env  # noqa: E402
 
 from .messaging.connection import connect_broker  # noqa: E402
 from .messaging.content import ContentConsumerService, ContentIndexProjector, ContentSyncState, build_content_consumer  # noqa: E402
@@ -245,6 +247,7 @@ async def _compose_components(
         index, embedding_provider=embedding, model_config=settings.index_config, content_fetcher=ContentFetcher(),
         canonical_url_template=canonical_url_template,
     ))
+    research_tools = research_tools_from_env(env)
     # Both profile execution paths share this already validated local source.
     deps = ExecutionDependencies(
         model=resolved_model,
@@ -254,9 +257,16 @@ async def _compose_components(
         profile_repository=resolved_profile,
         profile_retriever=ProfileRetriever(embedding=ProfileEmbedding(embedding, settings.index_config)),
         content_state=state,
+        web_tools=research_tools,
     )
 
     worker_settings = WorkerSettings(
+        # These limits are selected by the server, never by a client's profile
+        # label. No configured search provider means no external search budget.
+        budget_profile=BudgetProfile(name="standard", max_model_calls=16, max_total_tokens=32000,
+            max_tool_calls=env_int("AGENT_MAX_TOOL_CALLS", 24, env),
+            max_web_search_calls=env_int("AGENT_MAX_WEB_SEARCH_CALLS", 8, env) if research_tools is not None else 0,
+            max_duration_seconds=600.0),
         worker_id=env.get("AGENT_WORKER_ID", "agent-py-worker"),
         queue_classes=tuple(
             raw.strip() for raw in env.get("AGENT_WORKER_QUEUE_CLASSES", "fast,research").split(",") if raw.strip()

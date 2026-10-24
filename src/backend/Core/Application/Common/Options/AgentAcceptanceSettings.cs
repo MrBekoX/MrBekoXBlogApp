@@ -30,4 +30,7 @@ public sealed class AgentAcceptanceSettings
 
     /// <summary>mode_preference=auto için varsayılan bitiş zamanı (dakika); mod seçimi Python'dadır.</summary>
     public int AutoDeadlineMinutes { get; set; } = 5;
+
+    /// <summary>Interval for backend recovery of expired accepted runs.</summary>
+    public int DeadlineReaperIntervalSeconds { get; set; } = 15;
 }

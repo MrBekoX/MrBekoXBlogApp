@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from infra_environment import broker_address, broker_management_url
 
 from messaging import BrokerSettings, broker_connection, connect_broker, declare_topology
 from messaging.topology import (
@@ -38,7 +39,7 @@ REPO_ROOT = next(
 )
 FIXTURES_DIR = REPO_ROOT / "src" / "contracts" / "agent" / "fixtures"
 
-MGMT = "http://127.0.0.1:15672/api"
+MGMT = broker_management_url()
 VHOST = "blogapp_dev"
 ADMIN = ("blogapp", "blogapp_dev")
 BACKEND_USER = ("backend_svc", "backend_svc_dev")
@@ -65,7 +66,7 @@ def make_settings(
     **overrides: Any,
 ) -> BrokerSettings:
     defaults: dict[str, Any] = dict(
-        host="127.0.0.1",
+        **broker_address(),
         username=username,
         password=password,
         virtualhost=VHOST,

@@ -43,12 +43,14 @@ class PortError(Exception):
         *,
         port: str | None = None,
         retryable: bool = False,
+        usage_uncertain: bool = False,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.port = port
         self.retryable = retryable
+        self.usage_uncertain = usage_uncertain
 
     def __str__(self) -> str:
         if self.port:

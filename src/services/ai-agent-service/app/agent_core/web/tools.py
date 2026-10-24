@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from ..budget.guard import BudgetGuard, CallResult
@@ -50,6 +50,10 @@ from .ssrf import UrlGuard
 
 if TYPE_CHECKING:
     from ..state.events import UsageEvent
+
+# A factory avoids sharing reservations and action counters between runs. Tests
+# and embedded callers can still supply an explicitly constructed tool mapping.
+WebTools = dict[str, object] | Callable[[BudgetGuard], dict[str, object]]
 
 __all__ = [
     "AssessSourceTool",

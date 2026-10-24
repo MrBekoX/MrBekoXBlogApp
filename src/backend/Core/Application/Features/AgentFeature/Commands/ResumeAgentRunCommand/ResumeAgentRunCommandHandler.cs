@@ -156,6 +156,15 @@ public sealed class ResumeAgentRunCommandHandler(
                 "Tamamlanmış veya sonlanmış bir iş devam ettirilemez."));
         }
 
+        if (request.ExpectedInputVersion.HasValue == request.ExpectedProposalVersion.HasValue
+            || request.ExpectedInputVersion is < 0 || request.ExpectedProposalVersion is <= 0)
+        {
+            return Result<AgentRunResumeDto>.Failure(Error.Validation(new Dictionary<string, string[]>
+            {
+                ["ExpectedVersion"] = ["Exactly one expected version is required (input >= 0, proposal >= 1)."],
+            }));
+        }
+
         // 3) Beklenen sürüm doğrulaması — commit edilmiş projection/B9-port durumuyla.
         var pending = await resumeStateStore.GetPendingAsync(request.RunId, cancellationToken);
         if (pending is null)

@@ -197,9 +197,11 @@ async def run_article_analysis(
             )
     except PortError as error:
         final_state = dict(initial)
+        final_state["usage_events"] = guard.recorded_events
         outcome = _terminal_outcome(deps, final_state, error, deadline.elapsed())
     except asyncio.CancelledError:
         final_state = dict(initial)
+        final_state["usage_events"] = guard.recorded_events
         outcome = _terminal_outcome(
             deps,
             final_state,

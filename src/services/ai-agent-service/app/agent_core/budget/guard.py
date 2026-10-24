@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..errors import AgentErrorCode, PortError
 from ..ports import BudgetKind, BudgetReservation, BudgetStore, BudgetUsage, CancellationToken
-from ..ports.model import ModelUsage
+from ..ports.model import ModelRequest, ModelResponse, ModelUsage
 from .policy import BudgetPolicy, Deadline
 
 if TYPE_CHECKING:
@@ -48,6 +48,8 @@ __all__ = [
     "GuardedOutcome",
     "assert_active",
     "estimate_tokens",
+    "estimate_model_input_tokens",
+    "estimate_model_tokens",
 ]
 
 #: Token tahmini için karakter başına oran (kaba; sonuç ``estimated`` işaretlidir).
@@ -60,6 +62,23 @@ _MIN_RETRY_SECONDS = 0.05
 def estimate_tokens(text: str) -> int:
     """Metin uzunluğundan kaba token tahmini üretir; tahmin işaretlemesi çağıranındır."""
     return max(int(math.ceil(len(text) / _CHARS_PER_TOKEN)), 1)
+
+
+def estimate_model_input_tokens(request: ModelRequest) -> int:
+    """Conservative byte-token bound, including both messages and framing.
+
+    UTF-8 bytes upper-bound text tokens for byte-pair tokenizers. The fixed
+    allowance covers the two chat message envelopes; this is deliberately
+    more conservative than the display-only characters/4 approximation.
+    """
+    return len(request.prompt.encode("utf-8")) + len((request.system or "").encode("utf-8")) + 64
+
+
+def estimate_model_tokens(request: ModelRequest) -> int:
+    """Reserve the input bound and the explicit provider output limit."""
+    if request.max_output_tokens is None:
+        raise PortError(AgentErrorCode.VALIDATION_ERROR, "A model output limit is required", port="BudgetGuard")
+    return estimate_model_input_tokens(request) + request.max_output_tokens
 
 
 def assert_active(cancel: CancellationToken | None, deadline: Deadline | None) -> None:
@@ -84,6 +103,8 @@ class CallResult:
 
     value: Any = None
     usage: ModelUsage | None = None
+    request: ModelRequest | None = None
+    estimated: bool = False
 
 
 @dataclass
@@ -104,10 +125,16 @@ class BudgetGuard:
         self._store = store
         self._policy = policy
         self._run_id = run_id
+        self._recorded_events: list[UsageEvent] = []
 
     @property
     def policy(self) -> BudgetPolicy:
         return self._policy
+
+    @property
+    def recorded_events(self) -> list["UsageEvent"]:
+        """A snapshot of every event, including tools with their own sinks."""
+        return list(self._recorded_events)
 
     async def reserve(self, kind: BudgetKind, amount: int = 1) -> BudgetReservation:
         return await self._store.reserve(self._run_id, kind, amount)
@@ -121,6 +148,23 @@ class BudgetGuard:
     async def usage(self) -> BudgetUsage:
         return await self._store.usage(self._run_id)
 
+    async def prepare_model_request(self, request: ModelRequest, *, max_output_tokens: int = 2048) -> ModelRequest:
+        """Fit a provider output limit into the run's remaining token budget.
+
+        The following guarded reservation is still atomic: concurrent callers
+        may be rejected before sending when another caller reserves first.
+        """
+        consumed = (await self.usage()).committed.get(BudgetKind.TOKEN, 0)
+        available_output = self.policy.max_total_tokens - consumed - estimate_model_input_tokens(request)
+        if available_output < 1:
+            raise PortError(AgentErrorCode.BUDGET_EXHAUSTED,
+                            "The remaining model budget cannot cover the input and an output token",
+                            port="BudgetGuard")
+        desired = request.max_output_tokens or max_output_tokens
+        if desired < 1:
+            raise ValueError("Model output limit must be positive")
+        return request.model_copy(update={"max_output_tokens": min(desired, available_output)})
+
     async def track(self, kind: BudgetKind, action_id: str, *, amount: int = 1) -> list["UsageEvent"]:
         """Dış çağrı olmayan yönetimsel birimi (ör. araştırma turu) bütçeye yazar.
 
@@ -132,7 +176,9 @@ class BudgetGuard:
         """
         reservation = await self.reserve(kind, amount)
         await self.commit(reservation, amount)
-        return [self._event(action_id=action_id, kind=kind, attempt=1, outcome="success")]
+        event = self._event(action_id=action_id, kind=kind, attempt=1, outcome="success")
+        self._recorded_events.append(event)
+        return [event]
 
     def _event(
         self,
@@ -195,11 +241,23 @@ class BudgetGuard:
             token_reservation: BudgetReservation | None = None
             if kind is BudgetKind.MODEL_CALL:
                 per_call = max(self._policy.max_total_tokens // max(self._policy.max_model_calls, 1), 1)
-                token_reservation = await self.reserve(BudgetKind.TOKEN, token_estimate or per_call)
+                try:
+                    token_reservation = await self.reserve(BudgetKind.TOKEN, token_estimate or per_call)
+                except BaseException:
+                    await self.release(call_reservation)
+                    raise
             try:
-                result = await call(attempt)
+                if deadline is None:
+                    result = await call(attempt)
+                else:
+                    try:
+                        async with asyncio.timeout(deadline.remaining()):
+                            result = await call(attempt)
+                    except TimeoutError:
+                        raise PortError(AgentErrorCode.TIMEOUT, "The call exceeded the remaining run deadline",
+                                        port="BudgetGuard", usage_uncertain=True) from None
             except PortError as error:
-                if error.code is AgentErrorCode.CANCELLED:
+                if error.code is AgentErrorCode.CANCELLED or error.usage_uncertain:
                     await self._record_interruption(
                         action_id=action_id, kind=kind, attempt=attempt,
                         call_reservation=call_reservation, token_reservation=token_reservation,
@@ -209,9 +267,15 @@ class BudgetGuard:
                         self._event(action_id=action_id, kind=kind, attempt=attempt,
                                     outcome="uncertain", uncertain=True, estimated=True),
                     )
+                    if (error.code is not AgentErrorCode.CANCELLED and error.retryable
+                            and attempt < max_attempts
+                            and (deadline is None or deadline.remaining() > _MIN_RETRY_SECONDS)):
+                        continue
                     raise
                 if error.code is AgentErrorCode.BUDGET_EXHAUSTED:
                     await self.release(call_reservation)
+                    if token_reservation is not None:
+                        await self.release(token_reservation)
                     raise
                 # Başarısız deneme bütçeyi tüketti: çağrı commit, token release.
                 await self.commit(call_reservation, 1)
@@ -237,11 +301,34 @@ class BudgetGuard:
                 )
                 raise
 
+            except Exception:
+                # An unexpected failure may follow a request that reached the
+                # provider. Close every reservation conservatively, then keep
+                # the original failure visible to the caller.
+                await self._record_interruption(
+                    action_id=action_id, kind=kind, attempt=attempt,
+                    call_reservation=call_reservation, token_reservation=token_reservation,
+                )
+                self._emit(events, events_sink, self._event(
+                    action_id=action_id, kind=kind, attempt=attempt,
+                    outcome="uncertain", uncertain=True, estimated=True,
+                ))
+                raise
+
             usage = result.usage
-            estimated = False
+            estimated = result.estimated
             if kind is BudgetKind.MODEL_CALL:
+                if isinstance(result.value, ModelResponse):
+                    usage = usage or result.value.usage
+                    estimated = estimated or result.value.usage_estimated
                 if usage is None or usage.total_tokens == 0:
-                    usage = ModelUsage(prompt_tokens=estimate_tokens(action_id), completion_tokens=0)
+                    if result.request is not None:
+                        output = result.value.text if isinstance(result.value, ModelResponse) else str(result.value or "")
+                        usage = ModelUsage(prompt_tokens=estimate_model_input_tokens(result.request),
+                                           completion_tokens=len(output.encode("utf-8")))
+                    else:
+                        assert token_reservation is not None
+                        usage = ModelUsage(prompt_tokens=token_reservation.reserved_amount, completion_tokens=0)
                     estimated = True  # sağlayıcı kullanım bilgisi yok: tahmin
                 assert token_reservation is not None
                 await self.commit(token_reservation, max(usage.total_tokens, 1))
@@ -266,14 +353,15 @@ class BudgetGuard:
             port="BudgetGuard",
         )
 
-    @staticmethod
     def _emit(
+        self,
         events: list["UsageEvent"],
         sink: list["UsageEvent"] | None,
         event: "UsageEvent",
     ) -> None:
         """Olayı hem dönüş listesine hem varsa dış akışa yazar."""
         events.append(event)
+        self._recorded_events.append(event)
         if sink is not None:
             sink.append(event)
 

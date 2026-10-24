@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.Memory;
 using SixLabors.ImageSharp.Processing;
 
 namespace BlogApp.Infrastructure.Services;
@@ -49,35 +50,91 @@ public class FileStorageService(IHostEnvironment environment, ILogger<FileStorag
 
     public async Task<ImageUploadResult> UploadImageAsync(Stream fileStream, string fileName, ImageUploadOptions? options = null, CancellationToken cancellationToken = default)
     {
-        options ??= new ImageUploadOptions();
-
+        options = ImageProcessingSecurity.ValidateOptions(options ?? new ImageUploadOptions());
+        using var processing = await ImageProcessingSecurity.EnterAsync(cancellationToken).ConfigureAwait(false);
+        var outputFiles = new List<string>();
+        var completed = false;
         try
         {
-            // Magic bytes validation before processing
+            // Snapshot and bound the actual bytes inside the process-wide processing gate.
+            using var input = await ImageProcessingSecurity.CopyInputAsync(fileStream, cancellationToken).ConfigureAwait(false);
             var contentType = GetContentTypeFromExtension(fileName);
-            var validationResult = await FileValidationHelper.ValidateImageAsync(fileStream, fileName, contentType);
+            var validationResult = await FileValidationHelper.ValidateImageAsync(input, fileName, contentType);
 
             if (!validationResult.IsValid)
+                throw ImageProcessingSecurity.InvalidImage(validationResult.ErrorMessage ?? "Invalid image.");
+
+            var expectedFrames = contentType switch
             {
-                throw new InvalidOperationException($"File validation failed: {validationResult.ErrorMessage}");
+                "image/png" => ImageProcessingSecurity.CountPngFrames(input, cancellationToken),
+                "image/webp" => ImageProcessingSecurity.CountWebpFrames(input, cancellationToken),
+                _ => (int?)null
+            };
+            if (contentType == "image/png")
+                ImageProcessingSecurity.RemovePngIccChunks(input, cancellationToken);
+
+            Image image;
+            try
+            {
+                input.Position = 0;
+                var identifyOptions = processing.DecoderOptions(contentType is "image/png" or "image/webp"
+                    ? uint.MaxValue : ImageProcessingSecurity.MaximumFrames + 1u);
+                // The 3.1.12 full PNG Identify path mis-skips fdAT data on valid APNGs.
+                // Our envelope pass validated the entire container; let ImageSharp identify
+                // the original IHDR without traversing animation data a second time.
+                using var pngHeader = contentType == "image/png"
+                    ? new MemoryStream(input.GetBuffer(), 0, 33, writable: false, publiclyVisible: true)
+                    : null;
+                var info = await Image.IdentifyAsync(identifyOptions, pngHeader ?? input, cancellationToken).ConfigureAwait(false);
+                var allowedFrames = ImageProcessingSecurity.GetAllowedFrameCount(info);
+                expectedFrames ??= Math.Max(1, info.FrameMetadataCollection.Count);
+                if (expectedFrames > allowedFrames)
+                    throw ImageProcessingSecurity.InvalidImage("The image has too many frames or decoded pixels.");
+                ImageProcessingSecurity.ValidatePlannedPixels(info.Width, info.Height, expectedFrames.Value, options);
+
+                input.Position = 0;
+                // PNG and WebP containers have already been counted in full. Their 3.1.12
+                // MaxFrames counters do not reliably represent the number of stored frames.
+                var decodeOptions = processing.DecoderOptions(contentType is "image/png" or "image/webp"
+                    ? uint.MaxValue : (uint)allowedFrames + 1);
+                image = await Image.LoadAsync(decodeOptions, input, cancellationToken).ConfigureAwait(false);
+                if (image is null)
+                    throw ImageProcessingSecurity.InvalidImage("The image contains no decodable frames.");
+                try
+                {
+                    ImageProcessingSecurity.ValidateDecodedImage(image, allowedFrames, options);
+                    if (image.Width != info.Width || image.Height != info.Height || image.Frames.Count != expectedFrames)
+                        throw ImageProcessingSecurity.InvalidImage("The decoded image does not match its validated container.");
+                }
+                catch
+                {
+                    image.Dispose();
+                    throw;
+                }
+            }
+            catch (Exception ex) when (ex is UnknownImageFormatException or ImageFormatException or
+                                       InvalidMemoryOperationException or NotSupportedException or ArgumentException or
+                                       OverflowException or EndOfStreamException or InvalidDataException)
+            {
+                throw ImageProcessingSecurity.InvalidImage("The image is malformed or exceeds the supported processing limits.");
             }
 
-            // Reset stream position after validation
-            fileStream.Position = 0;
+            using var decodedImage = image;
 
-            using var image = await Image.LoadAsync(fileStream, cancellationToken);
-
-            // Strip EXIF and other metadata for security
+            // SkipMetadata is partial in 3.1.12 (PNG still inflates iCCP). Never read ICC Entries.
             image.Metadata.ExifProfile = null;
             image.Metadata.XmpProfile = null;
             image.Metadata.IccProfile = null;
             image.Metadata.IptcProfile = null;
+            foreach (var frame in image.Frames)
+            {
+                frame.Metadata.ExifProfile = null;
+                frame.Metadata.XmpProfile = null;
+                frame.Metadata.IccProfile = null;
+                frame.Metadata.IptcProfile = null;
+            }
 
-            // Orijinal boyutları kaydet
-            var originalWidth = image.Width;
-            var originalHeight = image.Height;
-
-            // Boyutlandır (max boyutları aşıyorsa)
+            cancellationToken.ThrowIfCancellationRequested();
             if (image.Width > options.MaxWidth || image.Height > options.MaxHeight)
             {
                 image.Mutate(x => x.Resize(new ResizeOptions
@@ -87,10 +144,13 @@ public class FileStorageService(IHostEnvironment environment, ILogger<FileStorag
                 }));
             }
 
-            // Dosya adını oluştur
-            var baseFileName = Path.GetFileNameWithoutExtension(fileName);
+            ImageProcessingSecurity.ValidateDecodedImage(image, ImageProcessingSecurity.MaximumFrames, options);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var safeFileName = FileValidationHelper.SanitizeFileName(fileName);
+            var baseFileName = Path.GetFileNameWithoutExtension(safeFileName);
             var uniqueId = Guid.NewGuid().ToString("N")[..8];
-            var extension = options.ConvertToWebP ? ".webp" : Path.GetExtension(fileName);
+            var extension = options.ConvertToWebP ? ".webp" : Path.GetExtension(safeFileName);
             var uniqueFileName = $"{baseFileName}_{uniqueId}{extension}";
 
             // Images klasörünü oluştur (thread-safe: Directory.CreateDirectory doesn't throw if exists)
@@ -98,6 +158,7 @@ public class FileStorageService(IHostEnvironment environment, ILogger<FileStorag
             Directory.CreateDirectory(imagesFolder); // Idempotent - safe for concurrent calls
 
             var filePath = Path.Combine(imagesFolder, uniqueFileName);
+            outputFiles.Add(filePath);
 
             // Kaydet
             if (options.ConvertToWebP)
@@ -124,33 +185,64 @@ public class FileStorageService(IHostEnvironment environment, ILogger<FileStorag
             // Thumbnail oluştur
             if (options.GenerateThumbnail)
             {
-                var thumbnailResult = await CreateThumbnailAsync(image, baseFileName, uniqueId, options, imagesFolder, cancellationToken);
+                var thumbnailResult = await CreateThumbnailAsync(image, baseFileName, uniqueId, options, imagesFolder, outputFiles, cancellationToken);
                 result.ThumbnailUrl = thumbnailResult;
             }
 
             logger.LogInformation("Image uploaded: {Url}, Size: {Width}x{Height}, FileSize: {FileSize}KB",
                 result.Url, result.Width, result.Height, result.FileSize / 1024);
 
+            cancellationToken.ThrowIfCancellationRequested();
+            completed = true;
             return result;
+        }
+        catch (InvalidMemoryOperationException)
+        {
+            throw ImageProcessingSecurity.InvalidImage("The image processing buffer budget was exceeded.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error uploading image {FileName}", fileName);
             throw;
         }
+        finally
+        {
+            if (!completed)
+            {
+                foreach (var path in outputFiles)
+                {
+                    try
+                    {
+                        File.Delete(path);
+                    }
+                    catch (Exception cleanupError) when (cleanupError is IOException or UnauthorizedAccessException)
+                    {
+                        logger.LogWarning(cleanupError, "Could not remove incomplete image output {FilePath}", path);
+                    }
+                }
+            }
+        }
     }
 
-    private static async Task<string> CreateThumbnailAsync(Image image, string baseFileName, string uniqueId, ImageUploadOptions options, string folder, CancellationToken cancellationToken)
+    private static async Task<string> CreateThumbnailAsync(Image image, string baseFileName, string uniqueId, ImageUploadOptions options, string folder, List<string> outputFiles, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using var thumbnail = image.Clone(x => x.Resize(new ResizeOptions
         {
             Mode = ResizeMode.Crop,
             Size = new Size(options.ThumbnailWidth, options.ThumbnailHeight)
         }));
+        ImageProcessingSecurity.ValidateDecodedImage(thumbnail, ImageProcessingSecurity.MaximumFrames, options, includePlannedThumbnail: false);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var extension = options.ConvertToWebP ? ".webp" : ".jpg";
         var thumbnailFileName = $"{baseFileName}_{uniqueId}_thumb{extension}";
         var thumbnailPath = Path.Combine(folder, thumbnailFileName);
+        outputFiles.Add(thumbnailPath);
 
         if (options.ConvertToWebP)
         {

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Models;
+using BlogApp.Core.Application.Common.Utilities;
 using BlogApp.Core.Application.Features.MediaFeature.Commands.DeleteMediaCommand;
 using BlogApp.Core.Application.Features.MediaFeature.Commands.UploadImageCommand;
 using BlogApp.Core.Application.Features.MediaFeature.Commands.UploadImagesCommand;
@@ -33,27 +34,25 @@ public static class MediaEndpoints
             if (file == null || file.Length == 0)
                 return Results.BadRequest(ApiResponse<ImageUploadResult>.FailureResult("No file uploaded"));
 
-            // Copy to MemoryStream — IFormFile stream is non-seekable (ReferenceReadStream)
-            // but ImageValidation.IsValidImageFile needs seek support for magic byte checking
-            var memoryStream = new MemoryStream();
-            await using (var formStream = file.OpenReadStream())
+            if (file.Length < 0 || file.Length > ImageValidation.MaxFileSize)
+                return Results.BadRequest(ApiResponse<ImageUploadResult>.FailureResult("File too large. Maximum size: 10MB"));
+
+            // Own one bounded, seekable buffer through hashing and command execution.
+            await using var memoryStream = await BufferFileAsync(file, cancellationToken);
+            var fileDto = new FileUploadDto
             {
-                await formStream.CopyToAsync(memoryStream, cancellationToken);
-            }
-            memoryStream.Position = 0;
+                Stream = memoryStream,
+                FileName = file.FileName,
+                ContentType = file.ContentType,
+                Length = memoryStream.Length
+            };
 
             var response = await mediator.Send(new UploadImageCommandRequest
             {
-                File = new FileUploadDto
-                {
-                    Stream = memoryStream,
-                    FileName = file.FileName,
-                    ContentType = file.ContentType,
-                    Length = file.Length
-                },
+                File = fileDto,
                 GenerateThumbnail = generateThumbnail ?? true,
                 OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty,
-                CustomRequestHash = await BuildUploadRequestHashAsync([file], generateThumbnail, cancellationToken)
+                CustomRequestHash = await BuildUploadRequestHashAsync([fileDto], generateThumbnail, cancellationToken)
             }, cancellationToken);
 
             if (!response.IsSuccess)
@@ -63,9 +62,13 @@ public static class MediaEndpoints
         })
         .WithName("UploadImage")
         .WithDescription("Upload an image")
+        .WithFormOptions(multipartBodyLengthLimit: ImageValidation.MaxFileSize)
+        .RequireRateLimiting("image-upload")
         .ValidateAntiforgery()
         .Produces<ApiResponse<ImageUploadResult>>(200)
-        .Produces(400);
+        .Produces(400)
+        .Produces(413)
+        .Produces(429);
 
         // POST /api/media/upload/images
         group.MapPost("/upload/images", async (
@@ -77,34 +80,42 @@ public static class MediaEndpoints
             if (files == null || files.Count == 0)
                 return Results.BadRequest(ApiResponse<UploadImagesResultDto>.FailureResult("No files uploaded"));
 
+            if (files.Count > ImageValidation.MaxBatchSize)
+                return Results.BadRequest(ApiResponse<UploadImagesResultDto>.FailureResult("Maximum 10 files at once"));
+
+            long totalLength = 0;
+            foreach (var file in files)
+            {
+                if (file.Length < 0 || file.Length > ImageValidation.MaxFileSize)
+                    return Results.BadRequest(ApiResponse<UploadImagesResultDto>.FailureResult("File too large. Maximum size: 10MB"));
+                if (file.Length > ImageValidation.MaxBatchFileSize - totalLength)
+                    return Results.BadRequest(ApiResponse<UploadImagesResultDto>.FailureResult("Total upload size is too large"));
+                totalLength += file.Length;
+            }
+
             var fileDtos = new List<FileUploadDto>();
             var memoryStreams = new List<MemoryStream>();
 
-            foreach (var file in files)
-            {
-                var memoryStream = new MemoryStream();
-                await using (var formStream = file.OpenReadStream())
-                {
-                    await formStream.CopyToAsync(memoryStream, cancellationToken);
-                }
-                memoryStream.Position = 0;
-                memoryStreams.Add(memoryStream);
-                fileDtos.Add(new FileUploadDto
-                {
-                    Stream = memoryStream,
-                    FileName = file.FileName,
-                    ContentType = file.ContentType,
-                    Length = file.Length
-                });
-            }
-
             try
             {
+                foreach (var file in files)
+                {
+                    var memoryStream = await BufferFileAsync(file, cancellationToken);
+                    memoryStreams.Add(memoryStream);
+                    fileDtos.Add(new FileUploadDto
+                    {
+                        Stream = memoryStream,
+                        FileName = file.FileName,
+                        ContentType = file.ContentType,
+                        Length = memoryStream.Length
+                    });
+                }
+
                 var response = await mediator.Send(new UploadImagesCommandRequest
                 {
                     Files = fileDtos,
                     OperationId = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault() ?? string.Empty,
-                    CustomRequestHash = await BuildUploadRequestHashAsync(files, null, cancellationToken)
+                    CustomRequestHash = await BuildUploadRequestHashAsync(fileDtos, null, cancellationToken)
                 }, cancellationToken);
 
                 if (!response.IsSuccess)
@@ -120,9 +131,13 @@ public static class MediaEndpoints
         })
         .WithName("UploadImages")
         .WithDescription("Upload multiple images")
+        .WithFormOptions(multipartBodyLengthLimit: ImageValidation.MaxFileSize)
+        .RequireRateLimiting("image-upload")
         .ValidateAntiforgery()
         .Produces<ApiResponse<UploadImagesResultDto>>(200)
-        .Produces(400);
+        .Produces(400)
+        .Produces(413)
+        .Produces(429);
 
         // DELETE /api/media
         group.MapDelete("/", async (
@@ -151,8 +166,39 @@ public static class MediaEndpoints
         return app;
     }
 
+    private static async Task<MemoryStream> BufferFileAsync(IFormFile file, CancellationToken cancellationToken)
+    {
+        var initialCapacity = file.Length is >= 0 and <= ImageValidation.MaxFileSize ? (int)file.Length : 0;
+        var memoryStream = new MemoryStream(initialCapacity);
+        try
+        {
+            await using var source = file.OpenReadStream();
+            var buffer = new byte[81920];
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                // Read at most one byte beyond the limit, including when Length is inaccurate.
+                var count = (int)Math.Min(buffer.Length, ImageValidation.MaxFileSize - memoryStream.Length + 1);
+                var bytesRead = await source.ReadAsync(buffer.AsMemory(0, count), cancellationToken);
+                if (bytesRead == 0)
+                    break;
+                if (bytesRead > ImageValidation.MaxFileSize - memoryStream.Length)
+                    throw new BadHttpRequestException("File too large. Maximum size: 10MB", StatusCodes.Status413PayloadTooLarge);
+                await memoryStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+            }
+
+            memoryStream.Position = 0;
+            return memoryStream;
+        }
+        catch
+        {
+            await memoryStream.DisposeAsync();
+            throw;
+        }
+    }
+
     private static async Task<string> BuildUploadRequestHashAsync(
-        IReadOnlyCollection<IFormFile> files,
+        IReadOnlyCollection<FileUploadDto> files,
         bool? generateThumbnail,
         CancellationToken cancellationToken)
     {
@@ -165,13 +211,22 @@ public static class MediaEndpoints
             AppendHashText(hasher, file.ContentType);
             AppendHashText(hasher, file.Length.ToString());
 
-            await using var stream = file.OpenReadStream();
+            var stream = file.Stream;
+            var originalPosition = stream.Position;
             var buffer = new byte[81920];
-            while (true)
+            try
             {
-                var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-                if (bytesRead == 0) break;
-                hasher.AppendData(buffer, 0, bytesRead);
+                stream.Position = 0;
+                while (true)
+                {
+                    var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+                    if (bytesRead == 0) break;
+                    hasher.AppendData(buffer, 0, bytesRead);
+                }
+            }
+            finally
+            {
+                stream.Position = originalPosition;
             }
         }
 

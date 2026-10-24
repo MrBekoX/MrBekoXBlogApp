@@ -4,7 +4,7 @@
  * Makale agent paneli — ortak AgentChatPanel'in makale bağlamı veren ince sarmalayıcısı.
  *
  * Props ve yerleşim değişmedi (posts/[slug]/page.tsx aynen kullanır). Ek olarak:
- * - "Konu" seçici (Otomatik / Who am I · Sample Author) "Çalışma tercihi"
+ * - "Konu" seçici (Otomatik / Who am I · configured author) "Çalışma tercihi"
  *   seçicisinden AYRIDIR. Konu değişimi yeni sohbet bağlamıdır: sohbet alt ağacı
  *   konu başına yeniden kurulur (yeni conversationId, ayrı depolama anahtarı);
  *   seçici bu alt ağacın DIŞINDA olduğundan klavye odağı korunur. Çalışma

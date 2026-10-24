@@ -40,7 +40,7 @@ from messaging.wire import (
     versioned_payload,
 )
 
-from .fakes import CONV_ID, CORR_ID, PROFILE_HASH, RUN_ID
+from .wire_constants import CONV_ID, CORR_ID, PROFILE_HASH, RUN_ID
 
 SNAPSHOT = ProfileSnapshotRef(profile_id="sample-author", revision=1, content_hash=PROFILE_HASH)
 

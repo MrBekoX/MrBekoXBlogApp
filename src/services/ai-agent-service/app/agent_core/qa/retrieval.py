@@ -1,22 +1,11 @@
-"""Makale retrieval portu ve A3 indeksine dayalı gerçekleştirim (plan A4).
-
-``ArticleRetriever`` QA akışının tek retrieval yüzeyidir: akış doğrudan
-``InMemoryContentIndex``'e bağımlı değildir; üretimde B8 pgvector adaptörü
-ve testlerde betimli double aynı portu doldurur. ``SnapshotRetriever``
-bağlam doğrulamasından geçen snapshot'ı idempotent indeksler (aynı
-revizyon + hash için embedding çağrısı yapılmaz) ve aramayı tek makaleyle
-sınırlı filtrelerle koşar.
-
-Web erişimi YOKTUR: bu port yalnız yerel/veritabanı içerik indeksini okur
-(plan A4: "Bu aşamada web araçlarını çalıştırma").
-"""
+"""Validated article-scoped retrieval through an explicitly provided durable index."""
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from ..content.config import EmbeddingModelConfig
-from ..content.index import InMemoryContentIndex, IndexResult, SearchQuery
+from ..content.index import IndexResult, SearchQuery
 from ..content.models import IndexedChunk
 from ..content.retrieval import SearchFilters
 from ..models import ArticleSnapshot
@@ -49,7 +38,7 @@ class ArticleRetriever(Protocol):
 
 
 class SnapshotRetriever:
-    """``InMemoryContentIndex`` üzerinde ``ArticleRetriever`` gerçekleştirim.
+    """ArticleRetriever implementation over the configured persistent index.
 
     Yalnız doğrulanmış snapshot indekslenir; arama filtreleri skorlamadan
     önce makale kimliğini ve yayın durumunu uygular (A3 kabul ölçütü).
@@ -61,15 +50,15 @@ class SnapshotRetriever:
         embedding_provider: EmbeddingProvider,
         model_config: EmbeddingModelConfig,
         canonical_url_template: str | None = None,
-        index: InMemoryContentIndex | None = None,
+        index: Any,
     ) -> None:
         self._embedding_provider = embedding_provider
         self._model_config = model_config
         self._canonical_url_template = canonical_url_template
-        self._index = index if index is not None else InMemoryContentIndex()
+        self._index = index
 
     @property
-    def index(self) -> InMemoryContentIndex:
+    def index(self) -> Any:
         return self._index
 
     async def ensure_indexed(
@@ -102,4 +91,4 @@ class SnapshotRetriever:
             model_config=self._model_config,
             cancel=cancel,
         )
-        return [hit.record for hit in hits]
+        return [hit.record for hit in hits if hit.record.article_revision == article_revision]

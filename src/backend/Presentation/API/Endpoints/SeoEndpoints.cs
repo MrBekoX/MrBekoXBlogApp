@@ -1,3 +1,4 @@
+using BlogApp.Core.Application.Common.AuthorProfile;
 using System.ServiceModel.Syndication;
 using System.Text;
 using System.Xml;
@@ -108,6 +109,7 @@ Sitemap: {baseUrl}/sitemap.xml
             IApplicationDbContext context,
             IOptions<SiteSettings> siteSettings,
             IOptions<ServerLimitsSettings> serverLimits,
+            IAuthorProfileSource profileSource,
             CancellationToken cancellationToken) =>
         {
             var maxPosts = serverLimits.Value.LlmsTxtMaxPosts;
@@ -125,9 +127,11 @@ Sitemap: {baseUrl}/sitemap.xml
                 })
                 .ToListAsync(cancellationToken);
 
+            var profile = profileSource.GetCurrent();
             var llmsTxt = SeoDocuments.BuildLlmsTxt(
                 siteSettings.Value.BaseUrl,
-                posts.Select(p => new SeoPostLink(p.Title, p.Slug, p.Excerpt, p.Content, p.PublishedAt)));
+                posts.Select(p => new SeoPostLink(p.Title, p.Slug, p.Excerpt, p.Content, p.PublishedAt)),
+                profile.IsAvailable ? profile.Document!.OwnerName : null);
 
             return Results.Content(llmsTxt, "text/plain", Encoding.UTF8);
         })
@@ -160,6 +164,7 @@ Sitemap: {baseUrl}/sitemap.xml
         IApplicationDbContext context,
         IOptions<SiteSettings> siteSettings,
         IOptions<ServerLimitsSettings> serverLimits,
+        IAuthorProfileSource profileSource,
         CancellationToken cancellationToken)
     {
         var baseUrl = SeoDocuments.NormalizeBaseUrl(siteSettings.Value.BaseUrl);
@@ -191,7 +196,11 @@ Sitemap: {baseUrl}/sitemap.xml
             posts.FirstOrDefault()?.PublishedAt ?? DateTime.UtcNow
         );
 
-        feed.Authors.Add(new SyndicationPerson { Name = SeoDocuments.AuthorName });
+        var profile = profileSource.GetCurrent();
+        feed.Authors.Add(new SyndicationPerson
+        {
+            Name = profile.IsAvailable ? profile.Document!.OwnerName : SeoDocuments.AuthorName,
+        });
         feed.Language = "tr-TR";
         feed.Copyright = new TextSyndicationContent($"© {DateTime.UtcNow.Year} {SeoDocuments.SiteName}");
 

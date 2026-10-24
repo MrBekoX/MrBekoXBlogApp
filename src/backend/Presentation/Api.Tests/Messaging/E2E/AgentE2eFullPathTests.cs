@@ -28,21 +28,11 @@ using Xunit;
 namespace BlogApp.Presentation.Api.Tests.Messaging.E2E;
 
 /// <summary>
-/// B11 bileşik uçtan uca testler (plan "BİRLEŞİK E2E" bileşeni; gerçek
-/// RabbitMQ 4.2.9 + gerçek PostgreSQL). Model yolu test sağlayıcısıyla
-/// DEĞİL, kablo sözleşmesiyle temsil edilir: worker graph'ı python e2e
-/// suite'inde (tests/e2e) gerçek bileşenleriyle koşar; burada her iki yarımın
-/// KABLO üstündeki karşılığı donuk B1 sözleşmesiyle doğrulanır. Gerçek LLM
-/// olmadığından bu suite gerçek model davranışı iddia ETMEZ.
-///
-/// Kapsanan kullanıcı yolları (birleşik kapı maddeleri 1/5/6/8):
-/// 1. makale bağlamıyla soru → kabul+outbox → broker → (kablo) → kaynaklı
-///    cevap olayı → projection → GET run sonucu → replay aynı sonucu döner.
-/// 2. iptal yolu: cancel outbox → cancelled olayı → terminal; geç completed reddi.
-/// 3. kaldırılan içeriğe dayanan geç sonuç → sunum denetimi maskeleyerek
-///    UnavailableReason döner (içerik sızmaz).
-/// 4. broker kesintisi: kabul edilen iş "bekliyor" görünür; kesinti sonrası
-///    backlog toparlanıp tüm kayıtlar kabloda görünür.
+/// Transport integration checks using real RabbitMQ and PostgreSQL. The tests
+/// exercise acceptance, outbox publication, wire contracts, result projection,
+/// replay, cancellation ordering, and stale-content presentation guards.
+/// Agent events are explicit contract inputs; these tests do not execute the
+/// Python worker or establish embedding/chat provider behavior.
 /// </summary>
 [Collection("agent-e2e-b11")]
 public sealed class AgentE2eFullPathTests : IAsyncLifetime

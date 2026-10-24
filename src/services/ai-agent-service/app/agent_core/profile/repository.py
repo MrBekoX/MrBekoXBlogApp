@@ -62,7 +62,7 @@ def profile_summary_from_document(document: ProfileDocument) -> ProfileSummary:
     parts: list[str] = []
     faq = document.section("faq")
     if faq is not None:
-        # FAQ cevapları üçüncü şahıstır: agent kendini Sample olarak tanıtmaz.
+        # FAQ answers describe the owner; the assistant does not impersonate them.
         # Kalın soru satırı (**...?**) özete girmez; yalnız cevap metni alınır.
         for paragraph in faq.body.split("\n\n"):
             lines = [line for line in paragraph.splitlines() if line.strip()]

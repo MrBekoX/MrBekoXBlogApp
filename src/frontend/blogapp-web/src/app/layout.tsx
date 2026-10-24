@@ -57,7 +57,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: `${SITE_NAME} | ${AUTHOR_NAME}`,
     description: SITE_DESCRIPTION,
-    creator: TWITTER_HANDLE,
+    ...(TWITTER_HANDLE ? { creator: TWITTER_HANDLE } : {}),
     images: [OG_IMAGE_PATH],
   },
   robots: {

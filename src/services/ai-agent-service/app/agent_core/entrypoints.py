@@ -42,8 +42,8 @@ korpus gerektirmez). v1 run'larda A9 ``run_guidance`` yolu aynen kalır.
 Her terminal sonuç ``run_intent = route.intent`` ile işaretlenir; profil RAG
 sonuçları pinlenmiş ``profile_snapshot``'ı taşır.
 
-Paket dış adaptör olmadan test girdisiyle çağrılabilir: tüm bağımlılıklar
-portlardan gelir ve ``agent_core.adapters.test_doubles`` ile koşulur.
+Dependencies are supplied through explicit ports; production composition uses
+the configured remote model and persistent semantic index.
 """
 
 from __future__ import annotations
@@ -99,6 +99,7 @@ from .ports.model import ModelRequest
 from .ports.profile import ProfileKnowledgeRepository
 from .profile.detection import is_visitor_identity_route
 from .profile.runner import run_profile_rag, visitor_identity_outcome
+from .profile.detection import ProfileIdentity
 from .qa.models import QaFlowConfig
 from .qa.runner import run_article_qa
 from .research.runner import run_deep_research
@@ -242,6 +243,7 @@ async def prepare_and_route(
     cancel: CancellationToken | None = None,
     checkpoint: CheckpointStore | None = None,
     execution_id: str | None = None,
+    profile_identity: ProfileIdentity | None = None,
 ) -> PreparedRun:
     """Hazırlık ve mod seçimi; rota kararı bir kez üretilir.
 
@@ -276,7 +278,7 @@ async def prepare_and_route(
             f"makale bağlamı doğrulandı: {context.article_id}",
         )
 
-    route = await route_for_context(context, router_model=router_model, cancel=cancel)
+    route = await route_for_context(context, router_model=router_model, cancel=cancel, profile_identity=profile_identity)
     await _publish(
         progress, context.run_id, ProgressKind.MODE_SELECTED,
         f"mod seçildi: {route.selected_mode.value} ({route.brief_reason})",
@@ -461,6 +463,7 @@ async def execute_plan(
     collab_input: CollabResumeInput | None = None,
     validated_result: ValidatedActionResult | None = None,
     profile_knowledge: ProfileKnowledgeRepository | None = None,
+    profile_retriever=None,
 ) -> AgentOutcome:
     """Hazırlanmış planı yürütür ve sonucu etkin niyetle işaretler.
 
@@ -488,6 +491,7 @@ async def execute_plan(
         collab_input=collab_input,
         validated_result=validated_result,
         profile_knowledge=profile_knowledge,
+        profile_retriever=profile_retriever,
     )
     return _stamp_outcome(prepared, outcome)
 
@@ -512,6 +516,7 @@ async def _dispatch_plan(
     collab_input: CollabResumeInput | None = None,
     validated_result: ValidatedActionResult | None = None,
     profile_knowledge: ProfileKnowledgeRepository | None = None,
+    profile_retriever=None,
 ) -> AgentOutcome:
     """Hazırlanmış planı yürütür; rota kararını yeniden hesaplamaz.
 
@@ -584,6 +589,7 @@ async def _dispatch_plan(
             route,
             model=model,
             knowledge=profile_knowledge,
+            retriever=profile_retriever,
             store=budget,
             progress=progress,
             cancel=cancel,
@@ -846,6 +852,7 @@ async def resume(
     project_repository=None,
     article_catalog: list[ArticleCatalogEntry] | None = None,
     profile_knowledge: ProfileKnowledgeRepository | None = None,
+    profile_retriever=None,
 ) -> AgentOutcome:
     """Duraklatılmış çalışmayı checkpoint'ten sürdürür; rota kararı yeniden hesaplanmaz.
 
@@ -968,4 +975,5 @@ async def resume(
         collab_input=request.collab_input,
         validated_result=request.validated_result,
         profile_knowledge=profile_knowledge,
+        profile_retriever=profile_retriever,
     )

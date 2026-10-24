@@ -16,13 +16,13 @@
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.15.0" />
+    <!-- Override the EF design-time tooling dependency affected by CVE-2026-84008/70162. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="9.0.21" PrivateAssets="all" />
 
-    <!-- W5 güvenlik duyuruları (kapı NU1902/NU1903): HtmlSanitizer 9.2.x geçişli
-         AngleSharp'i 1.7.2'ye taşır (GHSA-pgww-w46g-26qg yaması 1.5.0).
-         ImageSharp 3.1.12 bilinçli olarak BURADA TUTULDU: yüksek GHSA'ların tek
-         yaması 4.1.2+'dadır ama ImageSharp 4.x Release build'i Six Labors
-         lisansı olmadan ERROR ile durur (bu checkout'ta doğrulandı); lisans
-         edinme sahibin kararıdır — sürüm yükseltmesi o kararla birlikte yapılır. -->
+    <!-- HtmlSanitizer carries the patched AngleSharp dependency.
+         ImageSharp 3.2.0 and 4.x introduce license enforcement; keep the existing
+         version until a licensed upgrade or behavior-preserving replacement is
+         selected. The remaining ImageSharp NuGet advisories are not suppressed. -->
     <PackageReference Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>

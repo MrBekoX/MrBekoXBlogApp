@@ -146,6 +146,7 @@ from .wire import (
     to_transport_profile_snapshot,
     versioned_payload,
 )
+from agent_core.profile.detection import ProfileIdentity
 
 __all__ = [
     "ExecutionWorker",
@@ -224,6 +225,7 @@ class ExecutionDependencies:
     project_repository: Any | None = None
     article_catalog: Any | None = None
     profile_knowledge: Any | None = None
+    profile_retriever: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -809,6 +811,7 @@ class ExecutionWorker:
                     cancel=cancel,
                     checkpoint=self._checkpoint,
                     execution_id=stable_execution_id(run_id),
+                    profile_identity=self._profile_identity(context),
                 )
                 route_state["intent"] = prepared.route.intent
                 if is_profile_bound(prepared.context, prepared.route.intent):
@@ -1062,6 +1065,7 @@ class ExecutionWorker:
             project_repository=self._deps.project_repository,
             article_catalog=self._deps.article_catalog,
             profile_knowledge=self._deps.profile_knowledge,
+            profile_retriever=self._deps.profile_retriever,
         )
         return outcome
 
@@ -1093,9 +1097,17 @@ class ExecutionWorker:
             collab_input=collab_input,
             validated_result=validated_result,
             profile_knowledge=self._deps.profile_knowledge,
+            profile_retriever=self._deps.profile_retriever,
         )
 
     # ------------------------------------------------- iptal terminali + guard
+
+    def _profile_identity(self, context: ExecutionContext) -> ProfileIdentity | None:
+        repository = self._deps.profile_knowledge
+        if repository is None:
+            return None
+        snapshot = context.profile_snapshot or repository.active_snapshot()
+        return ProfileIdentity.from_document(repository.load(snapshot))
 
     def _ensure_execution_allowed(self, payload: AgentExecutionRequestedV1) -> None:  # v2 alt sınıfı dahil
         """B8 stale komut denetimi: bilinen kaldırma revizyonundan eski snapshot reddedilir.

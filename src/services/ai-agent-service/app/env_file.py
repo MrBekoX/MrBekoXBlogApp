@@ -149,6 +149,11 @@ def load_env_file(path: str | None = None) -> dict[str, str]:
 
     explicit = path if path is not None else os.environ.get(_ENV_FILE_VAR)
     if explicit is not None:
+        # Container/CI environments can explicitly disable dotenv discovery.
+        # Only the operating system's null device receives this special case;
+        # arbitrary missing paths remain configuration errors.
+        if explicit == os.devnull:
+            return {}
         if not Path(explicit).is_file():
             raise EnvFileError(
                 f"'{_ENV_FILE_VAR}' ile gösterilen .env dosyası bulunamadı; "

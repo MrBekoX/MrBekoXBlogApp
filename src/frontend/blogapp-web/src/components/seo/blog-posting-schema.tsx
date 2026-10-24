@@ -69,7 +69,7 @@ export function BlogPostingSchema({
       '@id': `${SITE_URL}/#author`,
       name: author.fullName || author.userName,
       url: SITE_URL,
-      sameAs: SOCIAL_URLS,
+      ...(SOCIAL_URLS.length ? { sameAs: SOCIAL_URLS } : {}),
       ...(author.avatarUrl && { image: author.avatarUrl }),
     },
     publisher: {

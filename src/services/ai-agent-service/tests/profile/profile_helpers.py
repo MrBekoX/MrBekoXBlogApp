@@ -3,8 +3,7 @@
 ``tests/profile`` bir paket DEĞİLDİR (``__init__.py`` yok): stdlib ``profile``
 modülünü gölgelememek için. Modül adı benzersizdir (``profile_helpers``).
 
-Model double'ları GERÇEK LLM DEĞİLDİR (``is_test_double``). Canonical profil
-GERÇEK kaynaktan (``resolve_profile_dir()``) okunur; bozuk/eksik/sürüm
+Canonical profile content is read from ``resolve_profile_dir()``; corruption and revision
 senaryoları geçici dizin kopyalarında üretilir.
 """
 
@@ -13,14 +12,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import re
 import shutil
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from agent_core.errors import AgentErrorCode, PortError
 from agent_core.models import (
     BudgetProfile,
     ConversationTopic,
@@ -28,7 +25,6 @@ from agent_core.models import (
     DomainProgress,
     ExecutionContext,
 )
-from agent_core.ports import ModelRequest, ModelResponse, ModelUsage
 from agent_core.profile import CanonicalProfileRepository, ProfileDocument, resolve_profile_dir
 
 NOW = datetime(2026, 10, 22, 9, 0, 0, tzinfo=timezone.utc)
@@ -130,106 +126,3 @@ def make_v2_context(
     )
     defaults.update(overrides)
     return ExecutionContext(**defaults)
-
-
-_EVIDENCE_RE = re.compile(r"^\[(S\d+)\] Bölüm: [^\n]*\n([^\n]+)", re.MULTILINE)
-
-
-def evidence_from_prompt(prompt: str) -> list[tuple[str, str]]:
-    """İstemdeki ``[S#]`` kanıt etiketleri ve parçaların ilk satırları."""
-
-    return _EVIDENCE_RE.findall(prompt)
-
-
-def quote_from(line: str, *, words: int = 6) -> str:
-    cleaned = line.replace("**", "").strip(" -")
-    return " ".join(cleaned.split()[:words])
-
-
-def grounded_json(prompt: str, *, answer: str = "Sample Author hakkında profil kaynağına dayalı cevap.", labels: int = 1) -> str:
-    """İstemdeki gerçek kanıttan geçerli yapılandırılmış cevap üretir."""
-
-    evidence = evidence_from_prompt(prompt)[:labels]
-    claims = [
-        {"text": f"İddia {label}", "sources": [label], "quotes": [quote_from(line)]}
-        for label, line in evidence
-    ]
-    return json.dumps({"answer": answer, "claims": claims}, ensure_ascii=False)
-
-
-class ScriptedProfileModel:
-    """Sırayla yanıt veren model double'ı; yanıt metin, çağrılabilir veya istisna olabilir.
-
-    ``stream_complete`` profil akışında ASLA çağrılmamalıdır: çağrılırsa test kırılır.
-    """
-
-    is_test_double = True
-
-    def __init__(self, responses: list[Any]) -> None:
-        self._responses = list(responses)
-        self.requests: list[ModelRequest] = []
-        self.call_count = 0
-        self.stream_call_count = 0
-
-    async def complete(self, request: ModelRequest, *, cancel: Any = None) -> ModelResponse:
-        if cancel is not None:
-            cancel.raise_if_cancelled()
-        self.requests.append(request)
-        self.call_count += 1
-        if not self._responses:
-            raise AssertionError("ScriptedProfileModel yanıtı tükendi: beklenmedik model çağrısı")
-        item = self._responses.pop(0)
-        if isinstance(item, BaseException):
-            raise item
-        if callable(item):
-            item = item(request)
-            if asyncio.iscoroutine(item):
-                item = await item
-        return ModelResponse(
-            text=str(item),
-            model_name="scripted-profile",
-            usage=ModelUsage(prompt_tokens=120, completion_tokens=40),
-            finished_at=datetime.now(timezone.utc),
-        )
-
-    async def stream_complete(self, request: ModelRequest, *, cancel: Any = None, on_delta: Any = None) -> ModelResponse:
-        self.stream_call_count += 1
-        raise AssertionError("profil akışı stream_complete ÇAĞIRMAMALI (generation_delta yasak)")
-
-
-def grounded_model(**kwargs: Any) -> ScriptedProfileModel:
-    return ScriptedProfileModel([lambda request: grounded_json(request.prompt, **kwargs)])
-
-
-def provider_error(*, retryable: bool = False) -> PortError:
-    return PortError(AgentErrorCode.PROVIDER_ERROR, "sağlayıcı arızası (test)", port="ModelProvider", retryable=retryable)
-
-
-class RecordingSink:
-    is_test_double = True
-
-    def __init__(self) -> None:
-        self.events: list[DomainProgress] = []
-
-    async def publish(self, event: DomainProgress) -> None:
-        self.events.append(event)
-
-
-class ExplodingWebTool:
-    """Profil akışında web aracının asla çağrılmadığını kanıtlayan double."""
-
-    is_test_double = True
-
-    def __init__(self) -> None:
-        self.call_count = 0
-
-    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        self.call_count += 1
-        raise AssertionError("profil akışı web aracı çağırmamalı")
-
-    def __getattr__(self, name: str) -> Any:
-        async def _boom(*args: Any, **kwargs: Any) -> Any:
-            self.call_count += 1
-            raise AssertionError(f"profil akışı web aracı çağırmamalı ({name})")
-
-        return _boom

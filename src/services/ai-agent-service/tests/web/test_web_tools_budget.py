@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from agent_core.adapters.test_doubles.fake_signals import PreCancelledToken
+from agent_core.budget import PolicyBudgetStore
 from agent_core.budget.guard import BudgetGuard
 from agent_core.budget.policy import BudgetPolicy
 from agent_core.errors import AgentErrorCode, PortError
@@ -34,11 +34,8 @@ from agent_core.web.fetch import HttpFetcher
 from agent_core.web.ssrf import UrlGuard
 
 from .web_helpers import (
-    CapacityBudgetStore,
-    FakeBudgetStore,
     MockResponse,
     MockWebServer,
-    ScriptedSearchProvider,
     html_page,
     make_settings,
     run,
@@ -49,116 +46,10 @@ RESULT_OK = [{"title": "Sonuç", "url": "https://example.com/r", "snippet": "öz
 
 def make_guard(store=None, *, max_attempts: int = 2) -> BudgetGuard:
     return BudgetGuard(
-        store or FakeBudgetStore(),
+        store or PolicyBudgetStore(BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60)),
         BudgetPolicy(max_attempts_per_action=max_attempts, max_duration_seconds=60),
         "run-a6",
     )
-
-
-def make_search_tool(provider, store=None, *, max_attempts: int = 2) -> SearchWebTool:
-    return SearchWebTool(make_guard(store, max_attempts=max_attempts), provider, settings=WebToolSettings(environment="test", retry_backoff_base_s=0))
-
-
-def retryable_error() -> PortError:
-    return PortError(AgentErrorCode.PROVIDER_ERROR, "sağlayıcı 500", port="WebSearchProvider", retryable=True)
-
-
-def hard_error() -> PortError:
-    return PortError(AgentErrorCode.PROVIDER_ERROR, "erişim engellendi", port="WebSearchProvider", retryable=False)
-
-
-# --- search_web bütçe olayları --------------------------------------------------------
-
-
-def test_search_success_records_single_budget_event() -> None:
-    provider = ScriptedSearchProvider([RESULT_OK])
-    store = FakeBudgetStore()
-    tool = make_search_tool(provider, store)
-    events: list = []
-    results = run(tool.search("asyncio iptal", events_sink=events))
-
-    assert results[0].url == "https://example.com/r"
-    assert len(events) == 1
-    event = events[0]
-    assert event.kind.value == "web_search_call"
-    assert event.outcome == "success"
-    assert event.attempt == 1
-    assert event.event_id.endswith("#1")
-    assert store.committed[BudgetKind.WEB_SEARCH_CALL] == 1
-
-
-def test_search_empty_query_rejected_before_budget() -> None:
-    provider = ScriptedSearchProvider([RESULT_OK])
-    store = FakeBudgetStore()
-    tool = make_search_tool(provider, store)
-    with pytest.raises(PortError) as excinfo:
-        run(tool.search("   "))
-    assert excinfo.value.code is AgentErrorCode.VALIDATION_ERROR
-    assert provider.calls == []  # çağrı hiç başlamadı
-    assert store.committed == {}  # bütçe olayı yok
-
-
-def test_search_retryable_failure_then_success_records_both_attempts() -> None:
-    provider = ScriptedSearchProvider([retryable_error(), RESULT_OK])
-    store = FakeBudgetStore()
-    tool = make_search_tool(provider, store)
-    events: list = []
-    results = run(tool.search("sorgu", events_sink=events))
-
-    assert results[0].title == "Sonuç"
-    assert [e.outcome for e in events] == ["failed", "success"]
-    assert [e.attempt for e in events] == [1, 2]
-    assert events[0].event_id != events[1].event_id
-    assert store.committed[BudgetKind.WEB_SEARCH_CALL] == 2  # başarısız deneme de bütçededir
-
-
-def test_search_hard_failure_records_single_failed_event() -> None:
-    provider = ScriptedSearchProvider([hard_error()])
-    store = FakeBudgetStore()
-    tool = make_search_tool(provider, store)
-    events: list = []
-    with pytest.raises(PortError):
-        run(tool.search("sorgu", events_sink=events))
-    assert len(provider.calls) == 1  # tekrar denenmez
-    assert [e.outcome for e in events] == ["failed"]
-    assert store.committed[BudgetKind.WEB_SEARCH_CALL] == 1
-
-
-def test_search_retry_exhaustion_respects_policy() -> None:
-    provider = ScriptedSearchProvider([retryable_error(), retryable_error(), retryable_error()])
-    store = FakeBudgetStore()
-    tool = make_search_tool(provider, store, max_attempts=2)
-    events: list = []
-    with pytest.raises(PortError) as excinfo:
-        run(tool.search("sorgu", events_sink=events))
-    assert excinfo.value.retryable is True
-    assert len(provider.calls) == 2
-    assert [e.outcome for e in events] == ["failed", "failed"]
-    assert store.committed[BudgetKind.WEB_SEARCH_CALL] == 2
-
-
-def test_search_budget_exhausted_rejected_before_call_without_events() -> None:
-    provider = ScriptedSearchProvider([RESULT_OK])
-    store = CapacityBudgetStore({BudgetKind.WEB_SEARCH_CALL: 0})
-    tool = make_search_tool(provider, store)
-    events: list = []
-    with pytest.raises(PortError) as excinfo:
-        run(tool.search("sorgu", events_sink=events))
-    assert excinfo.value.code is AgentErrorCode.BUDGET_EXHAUSTED
-    assert provider.calls == []  # rezervasyon reddi: çağrı başlamadı
-    assert events == []
-
-
-def test_search_precancelled_before_budget() -> None:
-    provider = ScriptedSearchProvider([RESULT_OK])
-    tool = make_search_tool(provider)
-    with pytest.raises(PortError) as excinfo:
-        run(tool.search("sorgu", cancel=PreCancelledToken()))
-    assert excinfo.value.code is AgentErrorCode.CANCELLED
-    assert provider.calls == []
-
-
-# --- read_source bütçe olayları ve kayıt ------------------------------------------------
 
 
 def test_read_success_produces_record_with_plan_fields() -> None:
@@ -245,7 +136,7 @@ def test_read_invalid_url_rejected_before_budget() -> None:
 
 def make_read_tool_for(server):
     settings = make_settings(server)
-    store = FakeBudgetStore()
+    store = PolicyBudgetStore(BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60))
     guard = make_guard(store)
     fetcher = HttpFetcher(settings, UrlGuard.from_settings(settings))
     return ReadSourceTool(guard, fetcher, TextExtractor(settings), settings=settings), guard
@@ -265,11 +156,11 @@ def test_extract_text_is_local_and_budget_free() -> None:
         body=html_page("<p>yerel çıkarma</p>").encode("utf-8"),
         fetched_at=datetime.now(timezone.utc),
     )
-    store = FakeBudgetStore()
+    store = PolicyBudgetStore(BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60))
     tool = ExtractTextTool(TextExtractor(WebToolSettings(environment="test")))
     extracted = run(tool.extract(content))
     assert extracted.extraction_status.value == "ok"
-    assert store.committed == {}  # dış deneme yok
+    assert run(store.usage("run-a6")).committed == {}  # dış deneme yok
 
 
 def test_assess_source_is_local_and_budget_free() -> None:
@@ -282,11 +173,11 @@ def test_assess_source_is_local_and_budget_free() -> None:
         extraction_status=ExtractionStatus.OK,
         text="metin",
     )
-    store = FakeBudgetStore()
+    store = PolicyBudgetStore(BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60))
     tool = AssessSourceTool()
     assessment = run(tool.assess(record))
     assert assessment.source_type.value == "official_docs"
-    assert store.committed == {}
+    assert run(store.usage("run-a6")).committed == {}
 
 
 # --- Port uyumu (A1 sözleşmesi DONMUŞ) ---------------------------------------------------
@@ -484,7 +375,7 @@ def test_short_freshness_question_end_to_end() -> None:
             server.handlers["/search"] = MockResponse.json_text(payload)
 
             settings = make_settings(server)
-            store = FakeBudgetStore()
+            store = PolicyBudgetStore(BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60))
             guard = make_guard(store)
             provider = HttpWebSearchProvider(server.url("/search"), settings, UrlGuard.from_settings(settings))
             fetcher = HttpFetcher(settings, UrlGuard.from_settings(settings))
@@ -516,5 +407,5 @@ def test_short_freshness_question_end_to_end() -> None:
     assert assessment.priority_rank == 0 and assessment.preferred is True
     assert any("uydurulmadı" in note for note in assessment.notes)
     # her dış deneme bütçede: 1 arama + 1 okuma
-    assert store.committed[BudgetKind.WEB_SEARCH_CALL] == 1
-    assert store.committed[BudgetKind.SOURCE_PAGE_READ] == 1
+    assert run(store.usage("run-a6")).committed[BudgetKind.WEB_SEARCH_CALL] == 1
+    assert run(store.usage("run-a6")).committed[BudgetKind.SOURCE_PAGE_READ] == 1

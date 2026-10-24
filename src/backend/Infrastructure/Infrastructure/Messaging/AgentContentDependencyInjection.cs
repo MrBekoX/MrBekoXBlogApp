@@ -8,21 +8,24 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BlogApp.Infrastructure.Messaging;
 
 /// <summary>
-/// B8 içerik olay hattı kayıtları (ADDITIVE): makale değişim olaylarını outbox'a yazan
-/// servis, backend'in başlattığı ilk içerik senkronizasyonu ve makale kaynaklı sonucun
-/// sunum öncesi güncellik denetimi. ÖN KOŞUL: <see cref="AgentOutboxDependencyInjection.AddAgentOutbox"/>
-/// (B3) — outbox yazıcısı ve relay kayıtlı olmalıdır.
-/// Program.cs bağlaması B10'un kompozisyon adımıdır (B3/B5 deseni: servis + extension
-/// bu fazda hazır, host kaydı kompozisyon fazında).
+/// Registers durable content events, startup snapshot synchronization, and
+/// presentation guards. AddAgentOutbox must provide the scoped outbox writer.
+/// The startup service blocks HTTP readiness only when explicitly enabled.
 /// </summary>
 public static class AgentContentDependencyInjection
 {
     public static IServiceCollection AddAgentContentEvents(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<AgentContentSyncSettings>(configuration.GetSection(AgentContentSyncSettings.SectionName));
+        services.AddOptions<AgentContentSyncSettings>()
+            .Bind(configuration.GetSection(AgentContentSyncSettings.SectionName))
+            .Validate(settings => settings.BatchSize is >= 1 and <= 1000, "AgentContentSync:BatchSize must be from 1 to 1000.")
+            .Validate(settings => settings.StartupMaxAttempts is >= 1 and <= 10, "AgentContentSync:StartupMaxAttempts must be from 1 to 10.")
+            .Validate(settings => settings.StartupRetryDelaySeconds is >= 0 and <= 60, "AgentContentSync:StartupRetryDelaySeconds must be from 0 to 60.")
+            .ValidateOnStart();
 
         services.AddScoped<IAgentContentEventService, AgentContentEventService>();
         services.AddScoped<ContentSnapshotSyncService>();
+        services.AddHostedService<ContentSyncStartupService>();
         services.AddScoped<IAgentResultPresentationGuard, AgentResultPresentationGuard>();
 
         return services;

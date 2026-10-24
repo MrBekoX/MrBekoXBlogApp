@@ -17,6 +17,10 @@ const TAG_COLORS = [
 export async function IdeSidebarRight() {
   const tags = await fetchTags();
   const visibleTags = (tags || []).slice(0, 12);
+  const socialLinks = [
+    { href: GITHUB_URL, icon: Github, label: 'GitHub' },
+    { href: LINKEDIN_URL, icon: Linkedin, label: 'LinkedIn' },
+  ].filter(({ href }) => Boolean(href));
 
   return (
     <aside className="w-72 bg-ide-sidebar border-l border-ide-border flex flex-col shrink-0 h-full">
@@ -48,32 +52,27 @@ export async function IdeSidebarRight() {
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="space-y-3">
-          <div className="text-[10px] text-gray-500 font-bold uppercase font-mono">
-            Quick Actions
+        {socialLinks.length > 0 && (
+          <div className="space-y-3">
+            <div className="text-[10px] text-gray-500 font-bold uppercase font-mono">
+              Quick Actions
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              {socialLinks.map(({ href, icon: Icon, label }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-2 rounded bg-white/5 hover:bg-white/10 text-xs transition-colors border border-ide-border/50 text-gray-400 hover:text-white font-mono"
+                >
+                  <Icon className="w-4 h-4 text-gray-500 shrink-0" />
+                  {label}
+                </a>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-1 gap-2">
-            <a
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 p-2 rounded bg-white/5 hover:bg-white/10 text-xs transition-colors border border-ide-border/50 text-gray-400 hover:text-white font-mono"
-            >
-              <Github className="w-4 h-4 text-gray-500 shrink-0" />
-              Github
-            </a>
-            <a
-              href={LINKEDIN_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 p-2 rounded bg-white/5 hover:bg-white/10 text-xs transition-colors border border-ide-border/50 text-gray-400 hover:text-white font-mono"
-            >
-              <Linkedin className="w-4 h-4 text-gray-500 shrink-0" />
-              LinkedIn
-            </a>
-          </div>
-        </div>
+        )}
 
         {/* Active Tags */}
         {visibleTags.length > 0 && (

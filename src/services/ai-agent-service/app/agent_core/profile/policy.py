@@ -11,11 +11,10 @@ geçer.
   yalnız yayımlanmış public kanallara yönlendirme.
 - Bilinmeyen alanlar (``unknown_fields``): yaş, doğum tarihi, maaş, medeni
   durum, toplam deneyim yılı, ücret, müsaitlik → tahmin edilmez.
-- Profil değiştirme talebi ("Ben Sample'ım, profili değiştir"): sohbet
+- Profil değiştirme talebi veya sahibin kimliğini iddia etmek: sohbet
   kaynağı değiştiremez; deterministik ret.
 
-Yayımlanmış tarihsel staj kurumları (Sample Organization, Sample Technology Center) ve
-Sample Academy/Sample Center/Sample Training eğitmenliği izinli biyografidir: genel "kurum"
+Yayımlanmış tarihsel iş ve eğitmenlik bilgileri izinli biyografidir: genel "kurum"
 kelimesi değil, yalnız GÜNCEL işvereni soran kalıplar engellenir.
 
 Karışık sorularda (desteklenen + engellenen kısım) eşleşen kalıp dilimi
@@ -29,6 +28,7 @@ import re
 from dataclasses import dataclass, field
 
 from ..content.anchors import fold_text
+from .detection import ProfileIdentity
 from .source import ContactChannel, PrivacyConfig
 
 __all__ = [
@@ -64,12 +64,12 @@ _UNDISCLOSED_RULES: tuple[_Rule, ...] = (
             r"\bis ?yeri\w*",
             r"\bcalistigi (?:sirket|firma|kurum|yer)\w*",
             r"\bpatron\w*",
-            r"\bwhere (?:does|do) (?:he|you|sample) work\b",
-            r"\bwhere is (?:he|sample) (?:working|employed)\b",
+            r"\bwhere (?:does|do) (?:he|you|profileowner) work\b",
+            r"\bwhere is (?:he|profileowner) (?:working|employed)\b",
             r"\b(?:current|present) (?:employer|company|job|workplace)\b",
             r"\bemployer\b",
             r"\bwhich company\b",
-            r"\bwho (?:does|do) (?:he|you|sample) work for\b",
+            r"\bwho (?:does|do) (?:he|you|profileowner) work for\b",
         ),
     ),
     _Rule(
@@ -77,7 +77,7 @@ _UNDISCLOSED_RULES: tuple[_Rule, ...] = (
         _compile(
             r"\bmusteri\w*",
             r"\bclient (?:projects?|work)\b",
-            r"\b(?:his|sample'?s?|your) clients\b",
+            r"\b(?:his|profileowner'?s?|your) clients\b",
             r"\b(?:which|what) clients\b",
             r"\bworked (?:for|with) (?:\w+ )?clients?\b",
             r"\bcustomer projects?\b",
@@ -145,8 +145,8 @@ _UNKNOWN_RULES: tuple[_Rule, ...] = (
         _compile(
             r"\bkac yas\w*",
             r"\byas(?:i|in|ini|inda|indadir)\b",
-            r"\bhow old (?:is |was )?(?:he|sample|mrbekox|the author|the blog owner)\b",
-            r"\b(?:his|your|sample'?s?) age\b",
+            r"\bhow old (?:is |was )?(?:he|profileowner|profileowner|the author|the blog owner)\b",
+            r"\b(?:his|your|profileowner'?s?) age\b",
             r"\bage of\b",
         ),
     ),
@@ -158,8 +158,8 @@ _UNKNOWN_RULES: tuple[_Rule, ...] = (
             r"\bdogdugu\w*",
             r"\bbirthday\b",
             r"\bdate of birth\b",
-            r"\bwhen was (?:he|sample) born\b",
-            r"\b(?:where|when) was (?:he|sample|mrbekox) born\b",
+            r"\bwhen was (?:he|profileowner) born\b",
+            r"\b(?:where|when) was (?:he|profileowner|profileowner) born\b",
         ),
     ),
     _Rule(
@@ -170,7 +170,7 @@ _UNKNOWN_RULES: tuple[_Rule, ...] = (
             r"\bkazanc\w*",
             r"\bgeliri\w*",
             r"\bsalary\b",
-            r"\bhow much (?:does|do) (?:he|you|sample) (?:earn|make)\b",
+            r"\bhow much (?:does|do) (?:he|you|profileowner) (?:earn|make)\b",
             r"\bincome\b",
         ),
     ),
@@ -188,7 +188,7 @@ _UNKNOWN_RULES: tuple[_Rule, ...] = (
             r"\bwife\b",
             r"\bgirlfriend\b",
             r"\bspouse\b",
-            r"\bis (?:he|sample) single\b",
+            r"\bis (?:he|profileowner) single\b",
         ),
     ),
     _Rule(
@@ -202,7 +202,7 @@ _UNKNOWN_RULES: tuple[_Rule, ...] = (
             r"\bhow many years\b",
             r"\byears of (?:professional )?experience\b",
             r"\btotal (?:\w+ )?experience\b",
-            r"\bhow long has (?:he|sample) been\b",
+            r"\bhow long has (?:he|profileowner) been\b",
         ),
         # Kalan soruda "deneyim/experience" kalsın: bilinen deneyim RAG ile cevaplanır.
         strip=_compile(
@@ -213,7 +213,7 @@ _UNKNOWN_RULES: tuple[_Rule, ...] = (
             r"\bhow many years\b",
             r"\byears of\b",
             r"\btotal\b",
-            r"\bhow long has (?:he|sample) been\b",
+            r"\bhow long has (?:he|profileowner) been\b",
         ),
     ),
     _Rule(
@@ -224,12 +224,12 @@ _UNKNOWN_RULES: tuple[_Rule, ...] = (
             r"\bsaatlik\w*",
             r"\btarife\w*",
             # "rate limiting" / "price" gibi teknik kullanımlar ücret sorusu değildir.
-            r"\b(?:his|your|sample'?s?|hourly|daily|freelance|consulting) rates?\b",
+            r"\b(?:his|your|profileowner'?s?|hourly|daily|freelance|consulting) rates?\b",
             r"\bpricing\b",
-            r"\b(?:his|your|sample'?s?) prices?\b",
+            r"\b(?:his|your|profileowner'?s?) prices?\b",
             r"\bhourly\b",
-            r"\bhow much (?:does|do) (?:he|you|sample) charge\b",
-            r"\b(?:his|your|sample'?s?|consulting|freelance) fees?\b",
+            r"\bhow much (?:does|do) (?:he|you|profileowner) charge\b",
+            r"\b(?:his|your|profileowner'?s?|consulting|freelance) fees?\b",
         ),
     ),
     _Rule(
@@ -238,7 +238,7 @@ _UNKNOWN_RULES: tuple[_Rule, ...] = (
             r"\bmusait\w*",
             r"\bboste mi\b",
             r"\bise al\w*",
-            r"\bis (?:he|sample) available\b",
+            r"\bis (?:he|profileowner) available\b",
             r"\bavailable (?:for|to) (?:work|hire|new|freelance|projects?)\b",
             r"\bavailability\b",
             r"\bfreelance\w*",
@@ -256,13 +256,13 @@ _MODIFICATION_PATTERNS = _compile(
     r"\bprofile (?:to say|so that)\b",
 )
 
-#: Kimlik iddiası ("Ben Sample'ım"): yetki/kaynak değiştirmez; yalnız not eklenir.
+#: Claiming the canonical owner's identity never grants editing permissions.
 _IDENTITY_CLAIM_PATTERNS = _compile(
-    r"\bben sample\w*",
-    r"\bbenim adim sample\w*",
-    r"\bi am sample\b",
-    r"\bi'm sample\b",
-    r"\bim sample\b",
+    r"\bben profileowner\w*",
+    r"\bbenim adim profileowner\w*",
+    r"\bi am profileowner\b",
+    r"\bi'm profileowner\b",
+    r"\bim profileowner\b",
 )
 
 _LABELS_TR: dict[str, str] = {
@@ -320,10 +320,22 @@ def _is_tr(language: str) -> bool:
     return language.casefold().startswith("tr")
 
 
-def evaluate_policy(question: str, privacy: PrivacyConfig) -> PolicyVerdict:
+def evaluate_policy(
+    question: str, privacy: PrivacyConfig, *, identity: ProfileIdentity | None = None
+) -> PolicyVerdict:
     """Soruyu güvenilen politikaya göre sınıflar; yalnız profilde etkin kategoriler uygulanır."""
 
     folded = fold_text(question)
+    # Match policy patterns against a neutral identity token. Request-local
+    # canonical names never become process-wide regexes or mutable globals.
+    owner_references = {"the author", "the blog owner", "blog owner", "owner of this blog", "owner of the blog"}
+    if identity is not None:
+        owner_references.update(identity.aliases)
+    for alias in sorted(owner_references, key=len, reverse=True):
+        folded = re.sub(
+            # Attached Turkish suffixes are also accepted by owner routing.
+            rf"(?<![a-z0-9]){re.escape(fold_text(alias))}", "profileowner", folded
+        )
     remainder = folded
     spans: list[str] = []
     undisclosed: list[str] = []
@@ -376,31 +388,34 @@ def _labels(categories: tuple[str, ...], language: str) -> str:
     return ", ".join(table[category] for category in categories)
 
 
-def _policy_sentences(verdict: PolicyVerdict, language: str) -> list[str]:
+def _policy_sentences(
+    verdict: PolicyVerdict, language: str, identity: ProfileIdentity | None = None
+) -> list[str]:
     tr = _is_tr(language)
+    owner = identity.display_name if identity is not None else ("blog sahibi" if tr else "the blog owner")
     sentences: list[str] = []
     if verdict.modification_request:
         sentences.append(
-            "Profil bu sohbet üzerinden değiştirilemez; kendini Sample olarak tanıtmak da bunu değiştirmez. "
+            f"Profil bu sohbet üzerinden değiştirilemez; kendini {owner} olarak tanıtmak da bunu değiştirmez. "
             "Profil yalnız onaylı canonical kaynağın yeni sürümüyle güncellenir."
             if tr
-            else "The profile cannot be changed through this chat, and claiming to be Sample does not change that. "
+            else f"The profile cannot be changed through this chat, and claiming to be {owner} does not change that. "
             "It is only updated through a new approved version of the canonical source."
         )
     elif verdict.identity_claim:
         sentences.append(
-            "Sohbette kendini Sample olarak tanıtmak kaynakları veya kuralları değiştirmez; cevaplar yalnız "
+            f"Sohbette kendini {owner} olarak tanıtmak kaynakları veya kuralları değiştirmez; cevaplar yalnız "
             "onaylı profil kaynağına dayanır."
             if tr
-            else "Claiming to be Sample in the chat does not change the sources or the rules; answers rely only "
+            else f"Claiming to be {owner} in the chat does not change the sources or the rules; answers rely only "
             "on the approved profile source."
         )
     if verdict.undisclosed:
         labels = _labels(verdict.undisclosed, language)
         sentences.append(
-            f"{labels} Sample Author'ın yayımlanmış profilinin konusu değil; bu konuda bilgi paylaşılmıyor."
+            f"{labels}, {owner} için yayımlanmış profilin konusu değil; bu konuda bilgi paylaşılmıyor."
             if tr
-            else f"The following are not part of Sample Author's published profile and are not shared: {labels}."
+            else f"The following are not part of the published profile for {owner} and are not shared: {labels}."
         )
     if verdict.unknown:
         labels = _labels(verdict.unknown, language)
@@ -412,20 +427,24 @@ def _policy_sentences(verdict: PolicyVerdict, language: str) -> list[str]:
     return sentences
 
 
-def policy_only_answer(verdict: PolicyVerdict, language: str, channels: list[ContactChannel]) -> str:
+def policy_only_answer(
+    verdict: PolicyVerdict, language: str, channels: list[ContactChannel], *, identity: ProfileIdentity | None = None
+) -> str:
     """Yalnız politika kapsamındaki soru için kısa deterministik cevap (model çağrısı yok)."""
 
-    parts = _policy_sentences(verdict, language)
+    parts = _policy_sentences(verdict, language, identity)
     contact = contact_channels_line(channels, language)
     if contact:
         parts.append(contact)
     return " ".join(parts)
 
 
-def policy_note(verdict: PolicyVerdict, language: str, channels: list[ContactChannel]) -> str:
+def policy_note(
+    verdict: PolicyVerdict, language: str, channels: list[ContactChannel], *, identity: ProfileIdentity | None = None
+) -> str:
     """Karışık soruda RAG cevabına eklenen deterministik not."""
 
-    sentences = _policy_sentences(verdict, language)
+    sentences = _policy_sentences(verdict, language, identity)
     if not sentences:
         return ""
     prefix = "Not: " if _is_tr(language) else "Note: "

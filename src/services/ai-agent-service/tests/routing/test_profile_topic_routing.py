@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from routing_helpers import ExplodingRouterModel, make_context, run
+from routing_helpers import make_context, run
 
 from agent_core.models import AgentMode, ConversationTopic, RunIntent, SourceScope
 from agent_core.profile import load_profile_source, resolve_profile_dir
+from agent_core.profile.detection import ProfileIdentity
 from agent_core.routing import (
     OWNER_PROFILE_REASON,
     WHO_AM_I_REASON,
@@ -23,6 +24,7 @@ from agent_core.routing import (
 )
 
 SNAPSHOT = load_profile_source(resolve_profile_dir()).snapshot
+IDENTITY = ProfileIdentity.from_document(load_profile_source(resolve_profile_dir()))
 
 
 def decide(question: str, *, topic: str | None = "auto", **overrides):
@@ -31,9 +33,7 @@ def decide(question: str, *, topic: str | None = "auto", **overrides):
         fields["conversation_topic"] = ConversationTopic(topic)
         fields.setdefault("profile_snapshot", SNAPSHOT)
     context = make_context(**fields)
-    router = ExplodingRouterModel()
-    decision = run(route_for_context(context, router_model=router))
-    assert router.call_count == 0
+    decision = run(route_for_context(context, profile_identity=IDENTITY))
     return decision
 
 
@@ -67,7 +67,7 @@ def test_who_am_i_topic_forces_profile_without_web_a31(preference: str, question
         "Sample'ın eğitimini açıkla",
         "Sample Author'ın kariyerini özetle",
         "Explain Sample's teaching background",
-        "MrBekoX'un mimari yaklaşımını açıkla",
+        "Sample'ın mimari yaklaşımını açıkla",
         "Samplein egitimi nedir",
         "Blog sahibinin mimari yaklaşımı nedir?",
     ],
@@ -168,17 +168,3 @@ def test_personal_context_overrides_owner_detection() -> None:
 
     assert decision.intent is not RunIntent.PROFILE
     assert decision.needs_clarification is True
-
-
-def test_router_model_cannot_select_profile_on_its_own_in_v2() -> None:
-    from routing_helpers import ScriptedRouterModel, suggestion_json
-
-    long_question = "Kuyruk tasarımında dikkat edilmesi gereken genel noktalar nelerdir? " * 4
-    context = make_context(question=long_question, conversation_topic=ConversationTopic.AUTO)
-    router = ScriptedRouterModel([suggestion_json(intent="profile", selected_mode="fast")])
-
-    decision = run(route_for_context(context, router_model=router))
-
-    assert router.call_count == 1
-    assert decision.intent is not RunIntent.PROFILE
-    assert decision.source_scope is not SourceScope.PROFILE

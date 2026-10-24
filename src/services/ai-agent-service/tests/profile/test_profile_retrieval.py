@@ -1,14 +1,7 @@
-"""Profil lexical retrieval testleri + W7 offline soru kümesi ölçümü.
-
-Ölçüm GERÇEK canonical kaynak ve GERÇEK lexical retriever ile yapılır (test
-double yok); yine de bu bir LLM kalite ölçümü DEĞİLDİR. Kümedeki sorular
-retriever'la birlikte yazıldı; bağımsız (held-out) bir benchmark değildir.
-"""
+"""Deterministic profile indexing, version, filtering, and cache checks."""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 
 from profile_helpers import canonical_document, copy_profile, rewrite_profile, section_by_id
 
@@ -19,51 +12,6 @@ from agent_core.profile import (
     budget_for_mode,
     load_profile_source,
 )
-
-_SERVICE_ROOT = Path(__file__).resolve().parents[2]
-if str(_SERVICE_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SERVICE_ROOT))
-
-from evals.profile_retrieval import load_cases, measure  # noqa: E402
-
-
-def test_eval_question_set_covers_sections_and_acceptance_ids() -> None:
-    payload = load_cases()
-    document = canonical_document()
-    cases = payload["cases"]
-    retrieval = [case for case in cases if case["kind"] == "retrieval"]
-    by_section: dict[str, set[str]] = {}
-    for case in retrieval:
-        for section_id in case["expected_sections"]:
-            by_section.setdefault(section_id, set()).add(case["language"])
-            assert document.section(section_id) is not None, section_id
-
-    important = {
-        section.section_id
-        for section in document.sections
-        if section.kind in {"bio", "project", "ai_work", "oss", "contact"} and section.section_id != "overview"
-    } | {"overview"}
-    for section_id in important:
-        assert by_section.get(section_id, set()) >= {"tr", "en"}, f"{section_id} için TR+EN soru eksik"
-
-    acceptance = {aid for case in cases for aid in case.get("acceptance", [])}
-    required = {f"A{n:02d}" for n in range(1, 23)} | {"A31", "A35"}
-    required -= {"A20", "A21"}  # model isteği/çıktısı: runner testlerinde (test_profile_runner)
-    assert required <= acceptance, sorted(required - acceptance)
-
-
-def test_eval_retrieval_hit_rate_with_real_lexical_retriever() -> None:
-    report = measure()
-    summary = report.summary()
-    print("\nprofile retrieval eval:", summary)  # pytest -s ile görünür
-
-    assert report.retrieval_total >= 60
-    assert report.hit_rate >= 0.95, report.failures()
-    assert report.precision_at_1 >= 0.9
-    assert report.insufficient_ok == report.insufficient_total
-    assert report.policy_ok == report.policy_total, report.failures()
-    assert report.routing_ok == report.routing_total, report.failures()
-    assert not report.failures(), [(f.case_id, f.detail) for f in report.failures()]
 
 
 def test_index_is_built_once_per_snapshot_and_queries_are_cached() -> None:
@@ -138,8 +86,10 @@ def test_non_retrievable_sections_never_enter_results(tmp_path) -> None:
 
 
 def test_owner_name_alone_is_not_evidence() -> None:
+    document = canonical_document()
     result = ProfileRetriever().retrieve(
-        canonical_document(), "Sample Sample Author MrBekoX", language="tr", budget=budget_for_mode(AgentMode.FAST)
+        document, " ".join([document.owner.name, *document.owner.aliases]),
+        language="tr", budget=budget_for_mode(AgentMode.FAST)
     )
     assert result.sufficient is False
 

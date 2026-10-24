@@ -1,136 +1,125 @@
-# ai-agent-service — Python agent çekirdeği ve değerlendirme paketi
+# AI agent service
 
-MrBekoX blogunun ziyaretçi agent çekirdeği (`app/agent_core`), transport
-bağımsız iş modelleri/portları ve A10 kalite değerlendirme paketi (`evals/`).
-Python 3.13 + Pydantic v2 + LangGraph; transport yok — uygulama haberleşmesi
-RabbitMQ adaptörüyle (B4/B6/B7/B9, `app/messaging`) yapılır ve bu paketin
-giriş noktalarını çağırır (bkz. `docs/entry-points.md`).
+The Python 3.13 worker consumes blog agent jobs from RabbitMQ, retrieves verified
+blog and profile content, and publishes run events to the .NET backend. Chat
+completion uses the configured OpenAI-compatible model. Embeddings use OpenAI
+`text-embedding-3-small` with 1536 dimensions.
 
-```
-app/agent_core/          # çekirdek: models, ports, entrypoints, qa, analysis,
-                         # research, web, checkpoint, collab, guidance, content, budget
-evals/                   # A10 değerlendirme kümesi (61 örnek) + ölçüm koşucusu
-tests/                   # pytest paketi (duman + birim + gerçek-broker entegrasyonu)
-docs/                    # teslim belgeleri: portlar, yapılandırma, giriş noktaları,
-                         # state/şema sürümleri, değerlendirme raporu
-```
+The production composition lives in `app/service_main.py`. Model credentials,
+database access, and the backend content service must be configured before
+starting it. Missing credentials are configuration errors; no synthetic model
+response or hashing embedding is substituted.
 
-## Hızlı başlangıç (yerel test girdileriyle)
+## Configuration
 
-Gerçek LLM/embedding sağlayıcısı GEREKMEZ: çekirdek tüm model erişimini
-portlardan alır ve `agent_core.adapters.test_doubles` + `evals.providers`
-altındaki `is_test_double` işaretli sağlayıcılarla koşar. **Test sağlayıcı
-sonucu gerçek sağlayıcı başarısı sayılmaz; üretimde gerçek sağlayıcı
-bağlanmadan hiçbir kalite iddiası yapılmaz.**
+Copy `.env.example` to a local `.env` and fill its required values. Never commit
+that file. Process environment values take precedence over `.env` values. The
+loader searches only up to this service's root; `AGENT_ENV_FILE` can select an
+explicit file independently of the working directory.
+
+Required provider settings:
+
+| Variable | Purpose |
+| --- | --- |
+| `AGENT_LLM_API_KEY` | Chat completion API key |
+| `AGENT_LLM_MODEL` | Explicit chat model identifier |
+| `AGENT_EMBEDDING_API_KEY` | Embedding API key; defaults to `AGENT_LLM_API_KEY` |
+| `AGENT_EMBEDDING_MODEL` | `text-embedding-3-small` |
+| `AGENT_EMBEDDING_BATCH_SIZE` | Embedding request batch size, at most 32 |
+| `AGENT_DB_PASSWORD` | Password for the worker's PostgreSQL connection |
+| `AGENT_CONTENT_BASE_URL` | Backend internal content API |
+| `AGENT_CONTENT_SERVICE_KEY` | Shared key for the internal content API |
+
+The embedding endpoint has its own `AGENT_EMBEDDING_BASE_URL`; it does not inherit
+the chat provider's base URL. Configure a separate embedding key when the chat
+provider does not support the OpenAI embedding API.
+
+Canonical author profile JSON contains versioned source content and provenance.
+It remains an input to retrieval and citation validation. It does not provide
+embedding vectors or replace the embedding model.
+
+Real profile preparation stays private. The generic `deploy/profile_bundle.py`
+tool preserves approved Markdown bytes and builds a Git-ignored bundle; both
+services mount that same bundle read-only at runtime. Never put personal source
+or generated profile files in Git, build contexts, image layers or registries.
+Run `python tools/verify_profile.py /absolute/private/profile-directory` for an
+offline check of the worker's exact profile reader and request-local owner route.
+
+For the complete production stack and resource limits, see
+[`deploy/PRODUCTION_DEPLOYMENT.md`](../../../deploy/PRODUCTION_DEPLOYMENT.md).
+Preparing the files does not start the stack or call the provider.
+
+## Local setup and checks
+
+From this directory, using a Python 3.13 environment:
 
 ```bash
-# 1) Değerlendirme kümesini koş (hizmet kökünden):
-cd src/services/ai-agent-service
-python -m evals.run --suite all --report out/evals
-#   → out/evals/eval-report.json + eval-report.md (provider=test_executor işaretli)
-python -m evals.run --list                 # 61 örneklik kümeyi listele
-python -m evals.run --suite routing        # tek suite
-
-# 2) Değerlendirme koşucusunun duman testleri:
-python -m pytest src/services/ai-agent-service/tests/evals -q
-
-# 3) Paketin tam regresyonu (broker/DB isteyen dizinler hariç; L009 gereği SERİ):
-python -m pytest src/services/ai-agent-service/tests -q \
-  --ignore=src/services/ai-agent-service/tests/messaging_broker \
-  --ignore=src/services/ai-agent-service/tests/intake \
-  --ignore=src/services/ai-agent-service/tests/events \
-  --ignore=src/services/ai-agent-service/tests/worker \
-  --ignore=src/services/ai-agent-service/tests/control \
-  --ignore=src/services/ai-agent-service/tests/content_sync \
-  --ignore=src/services/ai-agent-service/tests/collab
+python -m pip install -e ".[dev]"
+python -m pytest tests -q \
+  --ignore=tests/messaging_broker \
+  --ignore=tests/intake \
+  --ignore=tests/events \
+  --ignore=tests/worker \
+  --ignore=tests/control \
+  --ignore=tests/content_sync \
+  --ignore=tests/integration
+python ../../content/author-profile/tools/update_manifest.py --check
 ```
 
-## Ortam değişkenleri ve .env dosyası
-
-Tüm `AGENT_*` değişkenleri ortamdan okunur; kolay kurulum için `.env` dosyası
-desteklenir (`app/env_file.py`, sıfır bağımlılık):
+For real PostgreSQL migration and storage checks without Docker or model calls:
 
 ```bash
-cd src/services/ai-agent-service
-cp .env.example .env
-# .env'i doldur: AGENT_DB_PASSWORD (servis açılışı için zorunlu) ve
-# AGENT_LLM_API_KEY + AGENT_LLM_MODEL (gerçek sağlayıcı için).
+python -m pip install -e ".[dev,storage-test]"
+python tools/verify_storage.py
+```
+
+The runner creates a disposable local PostgreSQL cluster, applies the complete
+Alembic chain, checks persistent removal/restart behavior and vector constraints,
+then verifies the new migration's downgrade/upgrade. It does not simulate an AI
+provider or certify semantic answer quality.
+
+Paid provider acceptance is separate and opt-in. After the owner authorizes real
+calls, provide a **dedicated migrated test database**, provider keys and set
+`AGENT_RUN_PAID_TESTS=1`, then run
+`python -m pytest tests/live/test_openai_semantic_retrieval.py -q`.
+Normal test runs skip it. It creates real vectors and checks index persistence,
+article scoping and removal. Use test database credentials, never production.
+
+Production SQL storage uses typed `real[]` vectors and bounded article-scoped
+cosine/BM25 retrieval. A search loads at most 512 chunks; larger scopes are
+rejected explicitly to protect the small worker's memory. Large source chunks
+are split into bounded real OpenAI requests and their vectors are pooled; no
+synthetic vector fallback exists.
+
+The fast checks exercise real configuration validation, model and wire schemas,
+filesystem checkpoints, input policies, content chunking, and citation rules.
+Local HTTP tests exercise HTTP parsing and SSRF checks without calling an AI
+provider. Synthetic agent providers, scripted agent acceptance harnesses, and
+their generated evaluation reports have been removed.
+
+The infrastructure suites require actual PostgreSQL and RabbitMQ instances and
+their documented test credentials. Run those serially against disposable test
+databases and vhosts. They are not provider acceptance tests. External web checks
+require `AGENT_RUN_NETWORK_TESTS=1`.
+
+After configuring credentials and infrastructure, apply migrations and start the
+worker:
+
+```bash
+python -m alembic -c migrations/alembic.ini upgrade head
 python -m app.service_main
 ```
 
-**Yükleme kuralı** (`load_env_file`): yol önce `AGENT_ENV_FILE` ortam
-değişkeninden alınır (verilmişse dosyanın varlığı zorunludur); verilmediyse
-`app/env_file.py`'nin dizininden hizmet köküne kadar ilk `.env` aranır
-(CWD'den bağımsız; arama repo/sürücü kökündeki ilgisiz `.env`'lere inmez).
-Dosya bulunamazsa sessizce atlanır — `.env` zorunlu değildir;
-üretimde değerleri deployment ortamından verebilirsiniz.
+Running these commands starts real services and can make billable provider
+requests once jobs arrive. Provider quality and EC2 memory capacity require live
+validation after deployment credentials are supplied.
 
-**Öncelik:** GERÇEK ORTAM değişkeni > `.env` > kod varsayılanı. `.env` yalnız
-ortamda olmayan anahtarları doldurur; tür hataları anlaşılır `EnvConfigError`
-üretir (mesaj ham değeri yazmaz; `.env` içeriği asla loglanmaz).
+## Internal interfaces
 
-**Alembic** (`migrations/env.py`) da aynı `.env` dosyasını okur: `AGENT_DB_URL`
-verilirse doğrudan kullanılır, aksi hâlde `AGENT_DB_*` değişkenlerinden DSN
-kurulur (`AGENT_DB_PASSWORD` zorunlu).
+`prepare_and_route`, `execute_plan`, and `resume` are the worker's core entry
+points. A routing decision is retained through checkpoint continuation. The
+backend validates article revisions, profile snapshots, permissions, and action
+approval; clients communicate with the backend and its SignalR stream.
 
-Tam değişken listesi ve yerleşik kod default'ları: `.env.example`.
-
-## Paketi kullanma: üç giriş noktası
-
-Haberleşme adaptörü (ve kendi denemeleriniz) yalnız üç fonksiyon çağırır —
-tam imzalar ve çağrı sözleşmeleri `docs/entry-points.md`'de:
-
-```python
-import asyncio
-from agent_core.adapters.test_doubles import FakeModelProvider  # ÜRETİMDE GERÇEK SAĞLAYICI
-from agent_core.entrypoints import prepare_and_route, execute_plan
-from agent_core.models import BudgetProfile, ExecutionContext
-
-context = ExecutionContext(
-    run_id="run-1",
-    conversation_id="conv-1",
-    question="Asyncio kuyruğunda önerilen üst sınır aralığı kaçtır?",
-    language="tr",
-    budget_profile=BudgetProfile(
-        name="default", max_model_calls=2,
-        max_total_tokens=8000, max_duration_seconds=120.0,
-    ),
-    # article_id / article_revision / article_content_hash / article_snapshot
-    # backend doğrulamalı makale bağlamıyla verilir (D008).
-)
-
-async def main() -> None:
-    prepared = await prepare_and_route(context)          # rota kararı BİR KEZ hesaplanır
-    outcome = await execute_plan(                        # kararı yeniden hesaplamaz
-        prepared,
-        model=FakeModelProvider(),                       # üretimde: gerçek ModelProvider
-        # retriever=..., web_tools=..., budget=..., checkpoint=...,
-        # profile_repository=..., project_repository=..., article_catalog=...,
-    )
-    print(outcome.status, outcome.selected_mode, (outcome.answer or outcome.report or "")[:80])
-
-asyncio.run(main())
-```
-
-`resume` üçüncü giriş noktasıdır: checkpoint'ten sürer, rota kararını
-yeniden hesaplamaz (A8/A9; iş birliği zinciri `docs/entry-points.md` §3'te
-uçtan uca örneklidir).
-
-## Belgeler
-
-| Belge | İçerik |
-| --- | --- |
-| `docs/entry-points.md` | Haberleşme adaptörünün çağıracağı giriş noktaları + çağrı sözleşmeleri |
-| `docs/port-contracts.md` | 11 portun sözleşme özeti + veri tipleri |
-| `docs/configuration.md` | Yapılandırma rehberi: bütçe profilleri, akış yapılandırmaları, web ayarları, önbellek anahtar kuralı |
-| `docs/state-schema-versions.md` | State/şema sürümleri ve uyumluluk kuralları |
-| `docs/evals.md` | Değerlendirme kümesi, ölçümler ve rapor sözlüğü |
-| `docs/evals-report.md` | Son koşumun raporu (üretilen; `python -m evals.run` ile yenilenir) |
-
-## Sınırlar (dürüst teslim)
-
-- Ortamda GERÇEK LLM/embedding/web-arama sağlayıcısı yoktur; tüm ölçümler
-  `provider="test_executor"` işaretlidir.
-- pgvector gerçek entegrasyonu B11 kapsamındadır (A3 şeması + adaptör
-  sözleşmesi hazır; bellek-içi indeks koşuların tamamında kullanıldı).
-- Dosya tabanlı checkpoint store tek-süreç/tek-host varsayımıyla geçerlidir (D016).
+See `docs/entry-points.md`, `docs/port-contracts.md`,
+`docs/configuration.md`, and `docs/state-schema-versions.md` for interface details.

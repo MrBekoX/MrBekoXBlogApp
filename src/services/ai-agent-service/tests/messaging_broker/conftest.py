@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -43,7 +44,7 @@ ADMIN = ("blogapp", "blogapp_dev")
 BACKEND_USER = ("backend_svc", "backend_svc_dev")
 AGENT_USER = ("agent_svc", "agent_svc_dev")
 RESTRICTED_USER = ("agent_restricted", "restricted_dev")
-RABBITMQ_CONTAINER = "blogapp-rabbitmq"
+RABBITMQ_CONTAINER = os.environ.get("RABBITMQ_DOCKER_CONTAINER") or "blogapp-rabbitmq"
 
 MAIN_QUEUES = (EXECUTE_QUEUE, CONTROL_QUEUE, CONTENT_QUEUE, BACKEND_EVENTS_QUEUE)
 ALL_PURGEABLE_QUEUES = MAIN_QUEUES + tuple(f"{q}.dlq" for q in MAIN_QUEUES)

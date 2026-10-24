@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AUTHOR_NAME } from '@/lib/site-config';
 import { fetchPosts } from '@/lib/server-api';
 import { FileText, Lock, ExternalLink, UserRound } from 'lucide-react';
 import { IdeUserFooter } from './ide-user-footer';
@@ -51,7 +52,7 @@ export async function IdeSidebarLeft() {
             >
               <UserRound className="w-3 h-3 text-ide-primary mr-2 shrink-0" />
               <span className="truncate">about.md</span>
-              <span className="sr-only"> — Who am I · Sample Author</span>
+              <span className="sr-only"> — Who am I · {AUTHOR_NAME}</span>
             </Link>
 
             {/* Post links */}

@@ -1,9 +1,4 @@
-"""tests/checkpoint yardımcıları ve yerel fixture'lar (A8).
-
-Model/iptal double'ları yereldir ve ``is_test_double`` işaretlidir; double
-sonucu gerçek sağlayıcı başarısı sayılmaz. State fabrikaları tests/state ve
-kök conftest kalıplarını izler; kök conftest'e dokunulmaz.
-"""
+"""State factories for filesystem checkpoint and schema checks."""
 
 from __future__ import annotations
 
@@ -12,7 +7,6 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Coroutine, TypeVar
 
-from agent_core.ports import CancellationToken, ModelRequest, ModelResponse, ModelUsage
 from agent_core.state import STATE_SCHEMA_VERSION
 from agent_core.state.artifacts import make_artifact_ref
 from agent_core.state.events import UsageEvent, UsageEventKind
@@ -124,34 +118,6 @@ def make_usage_event(event_id: str, action_id: str, tokens: int = 10) -> UsageEv
         total_tokens=tokens + tokens // 2,
         recorded_at=NOW,
     )
-
-
-class SlowModelProvider:
-    """Belirtilen süre kadar bekleyip yanıt döndüren model double'ı (deadline testi)."""
-
-    is_test_double = True
-
-    def __init__(self, delay_seconds: float, response_text: str = "geç yanıt") -> None:
-        self._delay = delay_seconds
-        self._text = response_text
-        self.call_count = 0
-
-    async def complete(
-        self, request: ModelRequest, *, cancel: CancellationToken | None = None
-    ) -> ModelResponse:
-        self.call_count += 1
-        await asyncio.sleep(self._delay)
-        return ModelResponse(
-            text=self._text,
-            model_name="slow-model",
-            usage=ModelUsage(prompt_tokens=5, completion_tokens=5),
-            finished_at=datetime.now(timezone.utc),
-        )
-
-    async def stream_complete(
-        self, request: ModelRequest, *, cancel: CancellationToken | None = None, on_delta: Any
-    ) -> ModelResponse:
-        return await self.complete(request, cancel=cancel)
 
 
 class Stopwatch:

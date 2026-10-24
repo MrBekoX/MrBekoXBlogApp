@@ -38,7 +38,7 @@ public sealed class AgentBrokerHealthCheck(
                     {
                         ["endpoint"] = FormattableString.Invariant(
                             $"{connection.Endpoint.HostName ?? "?"}:{connection.Endpoint.Port}"),
-                        ["client_name"] = connection.ClientProvidedName,
+                        ["client_name"] = connection.ClientProvidedName ?? "unknown",
                     });
             }
 

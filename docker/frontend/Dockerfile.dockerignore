@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+**/*.env
+**/private
+**/feature-prompts
+**/author-profile.local
+**/.agent_checkpoints
+node_modules
+.next
+coverage
+*.log
+*.tsbuildinfo
+**/*.pem
+**/*.key
+**/*.pfx

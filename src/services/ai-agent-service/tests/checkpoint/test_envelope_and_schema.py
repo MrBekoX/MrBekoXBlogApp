@@ -11,6 +11,7 @@ import pytest
 
 from agent_core.checkpoint import (
     CHECKPOINT_SCHEMA_VERSION,
+    FileCheckpointStore,
     CheckpointEnvelope,
     CheckpointKind,
     load_resume_payload,
@@ -41,11 +42,9 @@ def test_execution_id_validation_and_generation() -> None:
     assert first != second  # benzersiz; ama bir kez atılınca zincirde SABİT
 
 
-def test_save_checkpoint_binds_execution_run_and_revision() -> None:
+def test_save_checkpoint_binds_execution_run_and_revision(tmp_path) -> None:
     """Zarflı yazım: yürütme kimliği, run ve revizyon bağlamı zarfa işlenir."""
-    from agent_core.adapters.test_doubles import FakeCheckpointStore
-
-    store = FakeCheckpointStore()
+    store = FileCheckpointStore(tmp_path)
     state = make_state()
     payload = serialize_state(state)
 
@@ -74,11 +73,9 @@ def test_save_checkpoint_binds_execution_run_and_revision() -> None:
     assert loaded_payload == payload
 
 
-def test_save_checkpoint_refuses_unsupported_state_schema() -> None:
+def test_save_checkpoint_refuses_unsupported_state_schema(tmp_path) -> None:
     """Uyumsuz state şema sürümü YAZILMAZ: zarfın doğması yazım anında engellenir."""
-    from agent_core.adapters.test_doubles import FakeCheckpointStore
-
-    store = FakeCheckpointStore()
+    store = FileCheckpointStore(tmp_path)
     with pytest.raises(PortError) as excinfo:
         run(
             save_checkpoint(
@@ -94,11 +91,9 @@ def test_save_checkpoint_refuses_unsupported_state_schema() -> None:
     assert "999" in excinfo.value.message
 
 
-def test_future_envelope_version_rejected_with_clear_message() -> None:
+def test_future_envelope_version_rejected_with_clear_message(tmp_path) -> None:
     """Uyumsuz (gelecek) zarf sürümü ANLAŞILIR sonuçla reddedilir (plan A8)."""
-    from agent_core.adapters.test_doubles import FakeCheckpointStore
-
-    store = FakeCheckpointStore()
+    store = FileCheckpointStore(tmp_path)
     future = CheckpointEnvelope(
         checkpoint_id="state:exec-future",
         run_id="run-a8",
@@ -118,11 +113,9 @@ def test_future_envelope_version_rejected_with_clear_message() -> None:
     assert "v999" in message and f"v{CHECKPOINT_SCHEMA_VERSION}" in message
 
 
-def test_state_schema_version_mismatch_rejected_on_load() -> None:
+def test_state_schema_version_mismatch_rejected_on_load(tmp_path) -> None:
     """Eski/uyumsuz state şeması yüklemede anlaşılır hatayla reddedilir."""
-    from agent_core.adapters.test_doubles import FakeCheckpointStore
-
-    store = FakeCheckpointStore()
+    store = FileCheckpointStore(tmp_path)
     envelope = CheckpointEnvelope(
         checkpoint_id="state:exec-old",
         run_id="run-a8",
@@ -140,11 +133,9 @@ def test_state_schema_version_mismatch_rejected_on_load() -> None:
     assert "state şema sürümü" in excinfo.value.message
 
 
-def test_load_resume_payload_passes_through_legacy_raw_payload() -> None:
+def test_load_resume_payload_passes_through_legacy_raw_payload(tmp_path) -> None:
     """Zarfsız (A1 dönemi ham PreparedRun JSON) payload geriye dönük uyumla döner."""
-    from agent_core.adapters.test_doubles import FakeCheckpointStore
-
-    store = FakeCheckpointStore()
+    store = FileCheckpointStore(tmp_path)
     raw = b'{"context": {}, "route": {}}'  # zarf değil; PreparedRun çözümlemesi resume'da
     run(store.save("run-1", "prepared:run", raw))
 

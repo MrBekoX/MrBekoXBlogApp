@@ -36,7 +36,16 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
-        services.Configure<AdminUserSettings>(configuration.GetSection(AdminUserSettings.SectionName));
+        services.AddOptions<AdminUserSettings>()
+            .Bind(configuration.GetSection(AdminUserSettings.SectionName))
+            .PostConfigure(settings =>
+            {
+                // Keep legacy flat environment configuration compatible without
+                // reading process globals from the database bootstrapper.
+                settings.Email = configuration["ADMIN_EMAIL"] ?? settings.Email;
+                settings.UserName = configuration["ADMIN_USERNAME"] ?? settings.UserName;
+                settings.Password = configuration["ADMIN_PASSWORD"] ?? settings.Password;
+            });
 
         services.Configure<SiteSettings>(options =>
         {

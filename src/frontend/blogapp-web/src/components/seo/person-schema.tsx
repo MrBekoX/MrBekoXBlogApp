@@ -20,7 +20,7 @@ export function PersonSchema() {
     image: `${SITE_URL}/images/avatar.jpg`,
     jobTitle: AUTHOR_JOB_TITLE,
     description: AUTHOR_DESCRIPTION,
-    sameAs: SOCIAL_URLS,
+    ...(SOCIAL_URLS.length ? { sameAs: SOCIAL_URLS } : {}),
     worksFor: {
       '@type': 'Organization',
       '@id': `${SITE_URL}/#organization`,

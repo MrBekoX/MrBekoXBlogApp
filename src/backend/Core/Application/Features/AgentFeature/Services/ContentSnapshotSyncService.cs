@@ -53,17 +53,20 @@ public sealed class ContentSnapshotSyncService(
 
         // Anlık snapshot okuması (Read Committed statement-level tutarlılık; PG-ISOLATION#C1):
         // canlı değişiklikler ayrı canlı olaylarla taşındığından tek sorguluk okuma yeterlidir.
-        var snapshot = await dbContext.Posts
+        var snapshot = dbContext.Posts
             .AsNoTracking()
             .Where(p => p.Status == PostStatus.Published)
             .OrderBy(p => p.Id)
-            .Select(p => new { p.Id, p.ContentRevision, p.Content, p.Title })
-            .ToListAsync(cancellationToken);
+            .Select(p => new { p.Id, p.ContentRevision, p.Content })
+            .AsAsyncEnumerable();
 
-        var items = snapshot
-            .Select(p => (ArticleId: p.Id, Revision: p.ContentRevision,
-                ContentHash: AgentContentEventComposer.ComputeContentHash(p.Content)))
-            .ToList();
+        // Retain only small reference tuples in application state. The provider
+        // may still buffer query rows when transient database retries are enabled.
+        var items = new List<(Guid ArticleId, long Revision, string ContentHash)>();
+        await foreach (var post in snapshot.WithCancellation(cancellationToken))
+        {
+            items.Add((post.Id, post.ContentRevision, AgentContentEventComposer.ComputeContentHash(post.Content)));
+        }
 
         var totalBatches = (int)Math.Ceiling(items.Count / (double)batchSize);
         var watermark = items.Count == 0 ? 0 : items.Max(item => item.Revision);

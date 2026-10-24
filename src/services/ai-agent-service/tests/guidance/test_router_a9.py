@@ -14,7 +14,6 @@ from agent_core.models import AgentMode, RunIntent, SourceScope
 from agent_core.routing import classify_guidance_intent, route_for_context
 
 from .conftest import (
-    ExplodingModelProvider,
     make_article_bound_context,
     make_guidance_context,
     run,
@@ -23,7 +22,7 @@ from .conftest import (
 
 def decide(question: str, *, language: str = "tr", **overrides):
     context = make_guidance_context(question, language=language, **overrides)
-    return run(route_for_context(context, router_model=ExplodingModelProvider()))
+    return run(route_for_context(context))
 
 
 def test_profile_question_binds_profile_intent_with_fast_mode() -> None:

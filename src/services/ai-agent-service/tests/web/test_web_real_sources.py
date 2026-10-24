@@ -7,11 +7,12 @@ partial durum olarak kaydedilir — başarısızlık başarı gibi gösterilmez.
 
 from __future__ import annotations
 
+import os
 import socket
 
 import pytest
 
-from agent_core.adapters.test_doubles.fake_state import FakeBudgetStore
+from agent_core.budget import PolicyBudgetStore
 from agent_core.budget.guard import BudgetGuard
 from agent_core.budget.policy import BudgetPolicy
 from agent_core.errors import PortError
@@ -26,6 +27,11 @@ from agent_core.web import (
 
 from .web_helpers import run
 
+pytestmark = pytest.mark.skipif(
+    os.environ.get("AGENT_RUN_NETWORK_TESTS") != "1",
+    reason="External network checks require AGENT_RUN_NETWORK_TESTS=1",
+)
+
 REAL_SETTINGS = WebToolSettings(
     environment="production",  # loopback dahil özel adres engelli: gerçek üretim davranışı
     connect_timeout_s=10.0,
@@ -39,7 +45,7 @@ REAL_SETTINGS = WebToolSettings(
 
 def make_read_tool() -> ReadSourceTool:
     guard = BudgetGuard(
-        FakeBudgetStore(),
+        PolicyBudgetStore(BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60)),
         BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60),
         "run-a6-real",
     )

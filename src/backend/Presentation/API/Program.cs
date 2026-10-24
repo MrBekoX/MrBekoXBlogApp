@@ -20,7 +20,24 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using Serilog;
+
+// Offline deployment check: validate the mounted profile with the exact API
+// reader before constructing a host, connecting a database or starting HTTP.
+if (args.Length > 0 && args[0] == "--validate-author-profile")
+{
+    if (args.Length != 2)
+    {
+        Console.Error.WriteLine("Usage: API --validate-author-profile <private-profile-directory>");
+        Environment.ExitCode = 2;
+        return;
+    }
+    var profile = new BlogApp.Infrastructure.Services.AuthorProfile.FileAuthorProfileSource(args[1]).GetCurrent();
+    Console.WriteLine(profile.IsAvailable ? "API profile contract verified; content not logged." : "API profile validation failed; content not logged.");
+    Environment.ExitCode = profile.IsAvailable ? 0 : 1;
+    return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -188,17 +205,35 @@ else
     Log.Information("Skipping automatic migrations. Run them manually via: dotnet ef database update");
 }
 
-// Always seed in Development - even if migrations are manual
-if (app.Environment.IsDevelopment())
+// Bootstrap only creates a missing administrator. Production failures prevent
+// startup; development can still run with manually managed migrations/config.
+await using (var scope = app.Services.CreateAsyncScope())
 {
-    using (var scope = app.Services.CreateScope())
+    var seeder = scope.ServiceProvider.GetRequiredService<DbSeeder>();
+    var bootstrapSettings = scope.ServiceProvider.GetRequiredService<IOptions<AdminUserSettings>>().Value;
+    if (app.Environment.IsDevelopment()
+        && (string.IsNullOrWhiteSpace(bootstrapSettings.Email) || string.IsNullOrWhiteSpace(bootstrapSettings.Password)))
     {
-        var seeder = scope.ServiceProvider.GetRequiredService<DbSeeder>();
+        Log.Warning("Development administrator bootstrap is disabled until AdminUser:Email and AdminUser:Password are configured.");
+    }
+    else if (app.Environment.IsDevelopment())
+    {
+        try
+        {
+            await seeder.SeedAsync();
+        }
+        catch (Exception exception)
+        {
+            Log.Warning(exception, "Development administrator bootstrap was skipped; apply migrations and configure AdminUser to enable it.");
+        }
+    }
+    else
+    {
         await seeder.SeedAsync();
     }
 }
 
 Log.Information("BlogApp API starting...");
 try { await app.RunAsync(); }
-catch (Exception ex) { Log.Fatal(ex, "Application terminated unexpectedly"); }
+catch (Exception ex) { Log.Fatal(ex, "Application terminated unexpectedly"); throw; }
 finally { Log.CloseAndFlush(); }

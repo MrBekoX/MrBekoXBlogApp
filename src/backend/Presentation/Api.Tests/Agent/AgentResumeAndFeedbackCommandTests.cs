@@ -72,6 +72,28 @@ public class AgentResumeAndFeedbackCommandTests : IAsyncLifetime
 
     // --------------------------------------------------------------- resume
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(4L, 1L)]
+    [InlineData(-1L, null)]
+    [InlineData(null, -1L)]
+    public async Task Resume_RequiresExactlyOneValidExpectedVersion(long? input, long? proposal)
+    {
+        var userId = Guid.NewGuid();
+        var run = await AgentB10TestHost.SeedRunAsync(_fixture.CreateContext(), ownerKey: $"u:{userId:D}");
+        var handler = CreateResumeHandler(userId,
+            new TestResumeStateStore(run.Id, PendingWithCheckpoint(run.Id, inputVersion: 4)));
+
+        var result = await handler.Handle(new ResumeAgentRunCommandRequest
+        {
+            RunId = run.Id, ExpectedInputVersion = input, ExpectedProposalVersion = proposal,
+        }, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(Error.ErrorCategory.Validation, result.ErrorDetail!.Category);
+        Assert.False(await AnyResumeOutboxAsync(run.Id));
+    }
+
     [Fact]
     public async Task Resume_WithoutPendingState_IsConflict()
     {

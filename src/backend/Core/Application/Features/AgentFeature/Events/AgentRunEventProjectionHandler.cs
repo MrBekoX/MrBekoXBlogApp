@@ -79,7 +79,7 @@ public sealed record AgentEventProjectionResult(
 ///   REDDEDİLİR — projection'a UYGULANMAZ, payload'ı saklanmaz, inbox'a ``rejected`` (gerekçeli,
 ///   payload'sız) yazılır ve run terminal değilse güvenli biçimde Failed'a kapatılır
 ///   (backend üretimli validation_error sonucu; içerik yok). Böylece run kotayı süresiz tutmaz
-///   (backend reaper host edilmiyor), tekrar teslim inbox PK'siyle yeniden işlenmez ve ACK verilir
+///   (periyodik backend reaper'a ek savunma), tekrar teslim inbox PK'siyle yeniden işlenmez ve ACK verilir
 ///   (DLQ döngüsü kurulmaz; bilinmeyen run'daki ``quarantined`` politikasının eşdeğeri).
 /// - v2 mode_selected'ın source_scope'u run'a yazılır (etkin kapsam; terminal sonuç üzerine yazar).
 ///   run_intent mode_selected inbox payload'ında ve terminal ResultJson'da kalıcıdır (yeni kolon yok).

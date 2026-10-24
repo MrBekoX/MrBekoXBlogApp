@@ -21,6 +21,7 @@ export type ChannelState = 'connecting' | 'live' | 'polling';
 export interface RunHubConnection {
   on(methodName: string, handler: (payload: AgentRunNotification) => void): void;
   onreconnected(callback: (connectionId?: string) => void): void;
+  onreconnecting?(callback: (error?: Error) => void): void;
   onclose(callback: (error?: Error) => void): void;
   start(): Promise<void>;
   invoke(methodName: string, ...args: unknown[]): Promise<unknown>;
@@ -39,7 +40,7 @@ export interface OpenRunChannelOptions {
   /** Commit edilmiş replay'i oku (getEvents after=imleç). */
   ingest: () => Promise<void> | void;
   /** Yetkili durum/sonuç tazeleme (GET /runs/{id}). */
-  refresh: () => void;
+  refresh: () => Promise<unknown> | void;
   setChannel: (state: ChannelState) => void;
   pollMs: number;
   timers?: RunChannelTimers;
@@ -56,11 +57,49 @@ export function openRunChannel(options: OpenRunChannelOptions): () => void {
   const timers = options.timers ?? defaultTimers;
 
   let disposed = false;
-  let pollStopped = false;
+  let polling = false;
+  let pollingEpoch = 0;
   let pollTimer: unknown = null;
+  let subscriptionTimer: unknown = null;
+  let subscriptionEpoch = 0;
+  let liveStatusTimer: unknown = null;
+  let liveStatusEpoch = 0;
+
+  const stopLiveStatusRefresh = () => {
+    liveStatusEpoch += 1;
+    if (liveStatusTimer !== null) timers.clearTimeout(liveStatusTimer);
+    liveStatusTimer = null;
+  };
+
+  const startLiveStatusRefresh = () => {
+    stopLiveStatusRefresh();
+    const epoch = liveStatusEpoch;
+    const interval = Math.max(pollMs * 4, 10000);
+    const schedule = () => {
+      liveStatusTimer = timers.setTimeout(() => {
+        liveStatusTimer = null;
+        if (disposed || liveStatusEpoch !== epoch) return;
+        // Backend deadline closure and lost notifications may have no replay
+        // event. Reconcile status slowly even while group membership is healthy.
+        void Promise.resolve().then(() => {
+          if (!disposed && liveStatusEpoch === epoch) return options.refresh();
+        }).catch(() => undefined)
+          .finally(() => {
+            if (!disposed && liveStatusEpoch === epoch) schedule();
+          });
+      }, interval);
+    };
+    schedule();
+  };
+
+  const reconcile = () => Promise.allSettled([
+    Promise.resolve().then(() => options.ingest()),
+    Promise.resolve().then(() => options.refresh()),
+  ]);
 
   const stopPollingFallback = () => {
-    pollStopped = true;
+    polling = false;
+    pollingEpoch += 1;
     if (pollTimer !== null) {
       timers.clearTimeout(pollTimer);
       pollTimer = null;
@@ -68,19 +107,61 @@ export function openRunChannel(options: OpenRunChannelOptions): () => void {
   };
 
   const startPollingFallback = () => {
-    if (pollTimer !== null || pollStopped) return;
+    if (disposed || polling) return;
+    stopLiveStatusRefresh();
+    polling = true;
+    const epoch = ++pollingEpoch;
     options.setChannel('polling');
     const poll = () => {
       pollTimer = timers.setTimeout(() => {
-        void Promise.resolve()
-          .then(() => options.ingest())
-          .catch(() => undefined)
+        pollTimer = null;
+        if (disposed || !polling || pollingEpoch !== epoch) return;
+        // Status remains authoritative even when terminal replay was already consumed.
+        void reconcile()
           .finally(() => {
-            if (!pollStopped) poll();
+            if (!disposed && polling && pollingEpoch === epoch) poll();
           });
       }, pollMs);
     };
     poll();
+  };
+
+  const invalidateSubscription = () => {
+    subscriptionEpoch += 1;
+    if (subscriptionTimer !== null) timers.clearTimeout(subscriptionTimer);
+    subscriptionTimer = null;
+  };
+
+  const subscribe = () => {
+    invalidateSubscription();
+    stopLiveStatusRefresh();
+    const epoch = subscriptionEpoch;
+    let attempts = 0;
+    const isCurrent = () => !disposed && subscriptionEpoch === epoch;
+    options.setChannel('connecting');
+    const attempt = async () => {
+      if (!isCurrent()) return;
+      try {
+        await connection.invoke('SubscribeToRun', runId);
+        if (!isCurrent()) return;
+        stopPollingFallback();
+        options.setChannel('live');
+        startLiveStatusRefresh();
+        await reconcile();
+      } catch {
+        if (!isCurrent()) return;
+        // A transport connection without group membership cannot deliver this run.
+        startPollingFallback();
+        const retryDelay = [1000, 3000][attempts++];
+        if (retryDelay !== undefined) {
+          subscriptionTimer = timers.setTimeout(() => {
+            subscriptionTimer = null;
+            void attempt();
+          }, retryDelay);
+        }
+      }
+    };
+    void attempt();
   };
 
   // 1) Canlı kanal: AgentRunsHub (B5) — sahipliği backend doğrulayan grup üyeliği.
@@ -88,34 +169,32 @@ export function openRunChannel(options: OpenRunChannelOptions): () => void {
     if (disposed) return;
     // Başka run / duplicate-geç bildirim: replay imlecinden geride kalmışsa yok say.
     if (!shouldIngestNotification(payload, runId, options.getLastSequence())) return;
-    void options.ingest();
+    void Promise.resolve().then(() => options.ingest()).catch(() => undefined);
   });
 
   connection.onreconnected(() => {
     if (disposed) return;
-    // Kopukluk penceresini replay ile toparla; grup üyeliği reconnect sonrası yeniden gerekir.
-    void connection.invoke('SubscribeToRun', runId).catch(() => undefined);
-    void options.ingest();
-    options.refresh();
+    // A new connection loses its old groups. Only successful membership is live.
+    subscribe();
+  });
+
+  connection.onreconnecting?.(() => {
+    if (disposed) return;
+    invalidateSubscription();
+    startPollingFallback();
   });
 
   connection.onclose(() => {
     if (disposed) return;
     // Yeniden bağlanma denemeleri tükendi: SON ÇARE yoklama.
-    stopPollingFallback();
-    pollStopped = false;
+    invalidateSubscription();
     startPollingFallback();
   });
 
   connection
     .start()
-    .then(() => connection.invoke('SubscribeToRun', runId))
     .then(() => {
-      if (!disposed) {
-        options.setChannel('live');
-        // Bağlantı gecikmişse aradaki olayları kaçırma.
-        void options.ingest();
-      }
+      if (!disposed) subscribe();
     })
     .catch(() => {
       // Canlı kanal hiç kurulamadı: SON ÇARE replay yoklaması.
@@ -124,7 +203,9 @@ export function openRunChannel(options: OpenRunChannelOptions): () => void {
 
   return () => {
     disposed = true;
+    invalidateSubscription();
     stopPollingFallback();
+    stopLiveStatusRefresh();
     connection.stop().catch(() => undefined);
     options.setChannel('connecting');
   };

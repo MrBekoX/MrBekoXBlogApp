@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from pydantic import PositiveFloat, PositiveInt
+from pydantic import NonNegativeInt, PositiveFloat, PositiveInt
 
 from ..errors import AgentErrorCode, PortError
 from ..models import BusinessModel, BudgetProfile
@@ -30,15 +30,15 @@ class BudgetPolicy(BusinessModel):
 
     # Araştırma sınırları (plan önerisi).
     max_sub_questions: PositiveInt = 4
-    max_search_calls: PositiveInt = 8
-    max_source_pages: PositiveInt = 12
+    max_search_calls: NonNegativeInt = 8
+    max_source_pages: NonNegativeInt = 12
     max_research_rounds: PositiveInt = 2
     max_parallel_subtasks: PositiveInt = 3
 
     # Toplam sınırlar (yapılandırılabilir).
     max_model_calls: PositiveInt = 16
     max_total_tokens: PositiveInt = 200_000
-    max_tool_attempts: PositiveInt = 24
+    max_tool_attempts: NonNegativeInt = 24
     max_duration_seconds: PositiveFloat = 300.0
 
     # Sınırlı retry: tek eylem için en fazla deneme (ilk deneme dahil).
@@ -54,11 +54,23 @@ class BudgetPolicy(BusinessModel):
         merged = dict(
             max_model_calls=profile.max_model_calls,
             max_total_tokens=profile.max_total_tokens,
-            max_tool_attempts=max(profile.max_tool_calls, 1),
-            max_search_calls=max(profile.max_web_search_calls, 1),
+            max_tool_attempts=profile.max_tool_calls,
+            max_search_calls=profile.max_web_search_calls,
+            max_source_pages=min(cls.model_fields["max_source_pages"].default, profile.max_tool_calls),
             max_duration_seconds=profile.max_duration_seconds,
         )
         merged.update(overrides)
+        # QA/analysis may reserve explicitly bounded *internal* retrieval work
+        # through max_tool_attempts. External web permissions and model budgets
+        # can never be raised by a flow override, including zero/disabled caps.
+        for field, cap in (
+            ("max_search_calls", profile.max_web_search_calls),
+            ("max_source_pages", profile.max_tool_calls),
+            ("max_model_calls", profile.max_model_calls),
+            ("max_total_tokens", profile.max_total_tokens),
+            ("max_duration_seconds", profile.max_duration_seconds),
+        ):
+            merged[field] = min(merged[field], cap)
         return cls(**merged)
 
 

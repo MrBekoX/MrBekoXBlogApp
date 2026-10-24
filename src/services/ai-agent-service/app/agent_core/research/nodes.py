@@ -41,7 +41,7 @@ from typing import Any, Callable
 
 from langgraph.types import Send
 
-from ..budget.guard import BudgetGuard, CallResult, estimate_tokens
+from ..budget.guard import BudgetGuard, CallResult, estimate_model_tokens
 from ..budget.policy import BudgetPolicy, Deadline
 from ..errors import AgentErrorCode, PortError
 from ..graph.nodes import TaskContext, assistant_turn
@@ -728,21 +728,21 @@ def make_report(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
 
         async def generate_call(_attempt: int) -> CallResult:
             async def on_delta(chunk: str) -> None:
-                # Canlı parça: GENERATION_DELTA olarak akar; sink arızası
-                # üretimi kesmez (port sözleşmesi).
-                await _publish_delta(deps.progress, context.run_id, chunk)
+                # Publish only the checked report, never the unvalidated draft.
+                return None
 
             response = await deps.model.stream_complete(
                 request, cancel=deps.tasks.cancel, on_delta=on_delta
             )
-            return CallResult(value=response)
+            return CallResult(value=response, usage=response.usage, request=request, estimated=response.usage_estimated)
 
         try:
+            request = await deps.guard.prepare_model_request(request, max_output_tokens=3072)
             outcome = await deps.tasks.guarded(
                 action_id="research:report",
                 kind=BudgetKind.MODEL_CALL,
                 call=generate_call,
-                token_estimate=estimate_tokens(request.prompt),
+                token_estimate=estimate_model_tokens(request),
             )
         except PortError as error:
             if error.code in (AgentErrorCode.BUDGET_EXHAUSTED, AgentErrorCode.TIMEOUT):
@@ -855,6 +855,7 @@ def make_control(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
             language=context.language,
             generated_at=_now(),
         )
+        await _publish_delta(deps.progress, context.run_id, report_model.text)
         return {"report": report_model, "errors": errors}
 
     return control

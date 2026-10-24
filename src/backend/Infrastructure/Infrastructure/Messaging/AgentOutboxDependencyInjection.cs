@@ -3,6 +3,7 @@ using BlogApp.Core.Application.Common.Interfaces.Messaging;
 using BlogApp.Core.Application.Common.Options;
 using BlogApp.BuildingBlocks.Messaging;
 using BlogApp.Infrastructure.Persistence;
+using BlogApp.Core.Application.Features.AgentFeature.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,7 +23,13 @@ public static class AgentOutboxDependencyInjection
 {
     public static IServiceCollection AddAgentOutbox(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<AgentAcceptanceSettings>(configuration.GetSection(AgentAcceptanceSettings.SectionName));
+        services.AddOptions<AgentAcceptanceSettings>()
+            .Bind(configuration.GetSection(AgentAcceptanceSettings.SectionName))
+            .Validate(s => s.MaxActiveRunsPerOwner > 0 && s.MaxActiveRunsTotal > 0,
+                "Agent acceptance quotas must be positive.")
+            .Validate(s => s.DeadlineReaperIntervalSeconds is >= 1 and <= 300,
+                "AgentAcceptance:DeadlineReaperIntervalSeconds must be from 1 to 300.")
+            .ValidateOnStart();
         services.Configure<AgentOutboxRelaySettings>(configuration.GetSection(AgentOutboxRelaySettings.SectionName));
 
         services.AddScoped<IOutboxWriter, EfOutboxWriter>();
@@ -37,6 +44,8 @@ public static class AgentOutboxDependencyInjection
         services.AddSingleton<IAgentBrokerPublisher>(sp => sp.GetRequiredService<RabbitMqAgentPublisher>());
 
         services.AddHostedService<OutboxRelayService>();
+        services.AddScoped<AgentRunDeadlineReaper>();
+        services.AddHostedService<AgentRunDeadlineService>();
 
         return services;
     }

@@ -13,6 +13,10 @@ using BlogApp.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Data.Common;
+using BlogApp.Core.Application.Common.Interfaces.Data;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace BlogApp.Presentation.Api.Tests.Messaging.Cancel;
@@ -115,6 +119,118 @@ public class AgentBackpressureTests : IAsyncLifetime
     }
 
     // ------------------------------------------------------------------ deadline reaper
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ConcurrentAdmission_ReservesOnlyOneRemainingSlot(bool sameOwner)
+    {
+        var owner = Guid.NewGuid();
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tasks = Enumerable.Range(0, 12).Select(async index =>
+        {
+            await using var context = _fixture.CreateContext();
+            var handler = new AcceptAgentRunCommandHandler(
+                new UnitOfWork(context), context,
+                new TestCurrentUser(sameOwner ? owner : Guid.NewGuid()),
+                new EfOutboxWriter(context),
+                Options.Create(new AgentAcceptanceSettings
+                {
+                    MaxActiveRunsPerOwner = sameOwner ? 1 : 10,
+                    MaxActiveRunsTotal = sameOwner ? 100 : 1,
+                }), Options.Create(new AgentMessagingSettings()),
+                NullLogger<AcceptAgentRunCommandHandler>.Instance);
+            await start.Task;
+            return await handler.Handle(ValidAcceptRequest($"parallel-{index}"), CancellationToken.None);
+        }).ToArray();
+        start.SetResult();
+        var results = await Task.WhenAll(tasks);
+
+        Assert.Single(results, result => result.IsSuccess);
+        await using var verify = _fixture.CreateContext();
+        Assert.Equal(1, await verify.AgentRuns.CountAsync());
+        Assert.Equal(1, await verify.OutboxMessages.CountAsync());
+    }
+
+    [Fact]
+    public async Task HostedRecovery_ClosesExpiredRunWithoutWorkerEvents()
+    {
+        await using var seed = _fixture.CreateContext();
+        var run = await SeedRunAsync(seed, DateTime.UtcNow.AddMinutes(-1));
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddScoped<IApplicationDbContext>(_ => _fixture.CreateContext());
+        services.AddScoped<AgentRunDeadlineReaper>();
+        await using var provider = services.BuildServiceProvider();
+        using var hosted = new AgentRunDeadlineService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new AgentAcceptanceSettings()),
+            NullLogger<AgentRunDeadlineService>.Instance);
+        await hosted.StartAsync(CancellationToken.None);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            while (true)
+            {
+                await using var verify = _fixture.CreateContext();
+                if (await verify.AgentRuns.AsNoTracking().AnyAsync(r => r.Id == run.Id && r.Status == AgentRunStatus.Failed, timeout.Token))
+                    break;
+                await Task.Delay(25, timeout.Token);
+            }
+        }
+        finally
+        {
+            await hosted.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Reaper_DoesNotOverwriteTerminalCommittedAfterCandidateSelection()
+    {
+        await using var seed = _fixture.CreateContext();
+        var run = await SeedRunAsync(seed, DateTime.UtcNow.AddMinutes(-1));
+        var pause = new PauseCandidateRead();
+        await using var reaperContext = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(_fixture.TestConnectionString).AddInterceptors(pause).Options);
+        var reap = new AgentRunDeadlineReaper(reaperContext, NullLogger<AgentRunDeadlineReaper>.Instance)
+            .ReapExpiredAsync();
+        try
+        {
+            await pause.Selected.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await using var terminal = _fixture.CreateContext();
+            await terminal.AgentRuns.Where(r => r.Id == run.Id).ExecuteUpdateAsync(update => update
+                .SetProperty(r => r.Status, AgentRunStatus.Completed)
+                .SetProperty(r => r.ResultJson, "{\"answer\":\"completed while recovery was selecting\"}"));
+        }
+        finally
+        {
+            pause.Continue.TrySetResult();
+        }
+
+        Assert.Equal(0, await reap);
+        await using var verify = _fixture.CreateContext();
+        var saved = await verify.AgentRuns.AsNoTracking().SingleAsync(r => r.Id == run.Id);
+        Assert.Equal(AgentRunStatus.Completed, saved.Status);
+        Assert.Contains("completed while recovery", saved.ResultJson);
+    }
+
+    private sealed class PauseCandidateRead : DbCommandInterceptor
+    {
+        public TaskCompletionSource Selected { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<DbDataReader> ReaderExecutedAsync(
+            DbCommand command, CommandExecutedEventData eventData, DbDataReader result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("agent-deadline-candidates", StringComparison.Ordinal))
+            {
+                Selected.TrySetResult();
+                await Continue.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            }
+            return result;
+        }
+    }
 
     [Fact]
     public async Task Reaper_ClosesExpiredAcceptedRun_AndKeepsLiveRun()

@@ -23,11 +23,8 @@ namespace BlogApp.Core.Application.Features.AgentFeature.Services;
 ///   bile deadline geçtiyse run kapatılır; agent tarafındaki cancel akışı
 ///   terminali cancelled olarak üretirse projection günceller.
 ///
-/// Hosting notu: servis Infrastructure DI'sında hosted wrapper ile periyodik
-/// çağrılmalıdır (AddScoped + BackgroundService sarmalayıcı); B7'nin dosya
-/// kapsamı Application katmanıyla sınırlı olduğundan sarmalayıcı entegrasyon
-/// fazına bırakılmıştır. Idempotent koşullu güncelleme kullandığından sık
-/// çağrılması güvenlidir.
+/// Infrastructure hosts this service periodically. The final UPDATE rechecks status
+/// and deadline, so a terminal projection committed after candidate selection wins.
 /// </summary>
 public sealed class AgentRunDeadlineReaper(
     IApplicationDbContext dbContext,
@@ -38,26 +35,29 @@ public sealed class AgentRunDeadlineReaper(
     {
         var now = DateTime.UtcNow;
         var expired = await dbContext.AgentRuns
+            .AsNoTracking()
+            .TagWith("agent-deadline-candidates")
             .Where(r => r.Status == AgentRunStatus.Accepted && r.DeadlineAt < now)
+            .OrderBy(r => r.DeadlineAt)
             .Take(ReaperBatchLimit)
+            .Select(r => r.Id)
             .ToListAsync(cancellationToken);
         if (expired.Count == 0)
         {
             return 0;
         }
 
-        foreach (var run in expired)
-        {
-            run.Status = AgentRunStatus.Failed;
-            run.TerminalAt = now;
-            run.ResultJson = AgentDeadlineResultJson;
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var closed = await dbContext.AgentRuns
+            .Where(r => expired.Contains(r.Id)
+                        && r.Status == AgentRunStatus.Accepted && r.DeadlineAt < now)
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(r => r.Status, AgentRunStatus.Failed)
+                .SetProperty(r => r.TerminalAt, now)
+                .SetProperty(r => r.ResultJson, AgentDeadlineResultJson), cancellationToken);
         logger.LogWarning(
             "[AgentReaper] {Count} süresi geçmiş agent işi kapatıldı (örnek run {SampleRunId})",
-            expired.Count, expired[0].Id);
-        return expired.Count;
+            closed, expired[0]);
+        return closed;
     }
 
     /// <summary>Tek çevrimde kapatılacak en fazla run sayısı (uzun kilitleri önler).</summary>

@@ -13,8 +13,8 @@
   bildirilir.
   A7: makaleye bağlı deep_research çalışması ``web_tools`` (A6
   ``build_web_tools`` çıktısı) verildiğinde A7 derin araştırma graph'ını
-  koşar; ``web_tools`` verilmediğinde A5 geçiş davranışı korunur (tek
-  çağrı + web kullanılamazlık notu).
+  koşar; ``web_tools`` verilmediğinde model çağrısı yapmadan açık bir
+  ``config_error`` sonucu döner.
 - ``resume``: duraklatılmış çalışmayı checkpoint'ten yükleyip sürdürür;
   route kararını checkpoint'ten okur, yeniden model çağrısıyla hesaplamaz.
   A8: checkpoint zarf sözleşmeleri (şema sürümü, run ve kararlı yürütme
@@ -54,7 +54,9 @@ from datetime import datetime, timezone
 
 from .analysis.models import AnalysisConfig
 from .analysis.runner import run_article_analysis
-from .budget.policy import Deadline
+from .budget.guard import BudgetGuard, CallResult, estimate_model_tokens
+from .budget.policy import BudgetPolicy, Deadline
+from .budget.store import PolicyBudgetStore
 from .checkpoint.models import CheckpointKind, ResumeScope, new_execution_id
 from .checkpoint.resume import (
     evaluate_resume,
@@ -104,6 +106,8 @@ from .qa.models import QaFlowConfig
 from .qa.runner import run_article_qa
 from .research.runner import run_deep_research
 from .routing import is_multi_part_question, route_for_context
+from .state.events import usage_record_from_events
+from .web.tools import WebTools
 
 __all__ = ["PreparedRun", "ResumeRequest", "execute_plan", "prepare_and_route", "resume"]
 
@@ -455,7 +459,7 @@ async def execute_plan(
     qa_config: QaFlowConfig | None = None,
     analysis_config: AnalysisConfig | None = None,
     web_search=None,
-    web_tools: dict[str, object] | None = None,
+    web_tools: WebTools | None = None,
     profile_repository=None,
     project_repository=None,
     article_catalog: list[ArticleCatalogEntry] | None = None,
@@ -508,7 +512,7 @@ async def _dispatch_plan(
     qa_config: QaFlowConfig | None = None,
     analysis_config: AnalysisConfig | None = None,
     web_search=None,
-    web_tools: dict[str, object] | None = None,
+    web_tools: WebTools | None = None,
     profile_repository=None,
     project_repository=None,
     article_catalog: list[ArticleCatalogEntry] | None = None,
@@ -533,11 +537,9 @@ async def _dispatch_plan(
     - ``needs_clarification`` kararında model çağrısı yapılmaz; açık soruyla
       ``needs_input`` terminali döner: eksik kişisel bilgi tahminle
       tamamlanmaz (plan A5).
-    - ``deep_research`` A7 derin araştırma graph'ını koşar: koşul — makaleye
-      bağlı bağlam ve ``web_tools`` (A6 ``build_web_tools`` çıktısı)
-      verilmiş olması. ``web_tools`` verilmediğinde A5 geçiş davranışı
-      korunur: tek model çağrısı + web kullanılamazlık notu (makaleye bağlı
-      olmayan derin araştırma bu fazın kapsamı değildir).
+    - ``deep_research`` requires an article and configured web tools. Missing
+      capability fails before a model call. Production supplies a factory that
+      binds fresh tools to the research run's own guard and budget.
     - A9: ``profile``/``projects``/``content_suggestion`` niyetleri
       ``profile_repository``/``project_repository``/``article_catalog``
       onaylı kaynaklarıyla deterministik rehberlik akışında yürür; onaylı
@@ -652,7 +654,28 @@ async def _dispatch_plan(
         )
         return collab_outcome
 
-    # Plan A7: makale merkezli derin araştırma graph'ı (web araç kümesi bağlıysa).
+    # Research requires actual article content and configured evidence tools.
+    # Never substitute the legacy bare-prompt completion for missing capability.
+    if route.selected_mode is AgentMode.DEEP_RESEARCH and (
+        not _is_article_bound(prepared.context) or web_tools is None
+    ):
+        return _terminal_outcome(prepared, started_at, PortError(
+            AgentErrorCode.CONFIG_ERROR,
+            "Deep research requires an article and a configured web search provider",
+            port="execute_plan",
+        ))
+
+    if route.selected_mode is AgentMode.DEEP_RESEARCH and (
+        prepared.context.budget_profile.max_web_search_calls == 0
+        or prepared.context.budget_profile.max_tool_calls == 0
+    ):
+        return _terminal_outcome(prepared, started_at, PortError(
+            AgentErrorCode.BUDGET_EXHAUSTED,
+            "The server budget does not permit external research tools",
+            port="execute_plan",
+        ))
+
+    # Plan A7: article-centred research with run-scoped budgeted tools.
     if (
         route.selected_mode is AgentMode.DEEP_RESEARCH
         and _is_article_bound(prepared.context)
@@ -740,26 +763,32 @@ async def _dispatch_plan(
 
     await _publish(progress, run_id, ProgressKind.GENERATION_STARTED, "yanıt üretiliyor")
 
-    reservation = None
+    policy = BudgetPolicy.from_budget_profile(prepared.context.budget_profile)
+    guard = BudgetGuard(budget or PolicyBudgetStore(policy), policy, run_id)
+    events = []
     try:
-        if budget is not None:
-            reservation = await budget.reserve(run_id, BudgetKind.MODEL_CALL, 1)
+        request = await guard.prepare_model_request(_compose_prompt(prepared))
 
         async def on_delta(chunk: str) -> None:
             # Canlı parça: GENERATION_DELTA olarak akar; sink arızası üretimi kesmez.
             await _publish_delta(progress, run_id, chunk)
 
-        response = await model.stream_complete(
-            _compose_prompt(prepared), cancel=cancel, on_delta=on_delta
-        )
-        if budget is not None and reservation is not None:
-            await budget.commit(reservation, max(response.usage.total_tokens, 1))
-    except PortError as error:
-        if budget is not None and reservation is not None:
-            await budget.release(reservation)
-        return _terminal_outcome(prepared, started_at, error)
+        async def generate(_attempt: int) -> CallResult:
+            response = await model.stream_complete(request, cancel=cancel, on_delta=on_delta)
+            return CallResult(value=response, usage=response.usage, request=request,
+                              estimated=response.usage_estimated)
 
-    usage = _build_usage(prepared, started_at, model_usage=response.usage)
+        guarded = await guard.guarded(action_id="general:generate", kind=BudgetKind.MODEL_CALL,
+            call=generate, cancel=cancel, deadline=Deadline(policy.max_duration_seconds),
+            token_estimate=estimate_model_tokens(request), events_sink=events)
+        response = guarded.value
+    except PortError as error:
+        outcome = _terminal_outcome(prepared, started_at, error)
+        return outcome.model_copy(update={"usage": usage_record_from_events(run_id, events,
+            duration_seconds=max((_utcnow() - started_at).total_seconds(), 0.0))})
+
+    usage = usage_record_from_events(run_id, events,
+        duration_seconds=max((_utcnow() - started_at).total_seconds(), 0.0))
     await _publish(
         progress, run_id, ProgressKind.GENERATION_COMPLETED,
         f"yanıt üretildi ({usage.total_tokens} token)",
@@ -847,7 +876,7 @@ async def resume(
     progress: ProgressSink | None = None,
     cancel: CancellationToken | None = None,
     web_search=None,
-    web_tools: dict[str, object] | None = None,
+    web_tools: WebTools | None = None,
     profile_repository=None,
     project_repository=None,
     article_catalog: list[ArticleCatalogEntry] | None = None,

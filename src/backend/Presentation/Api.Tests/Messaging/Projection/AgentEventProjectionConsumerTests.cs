@@ -10,6 +10,8 @@ using BlogApp.Infrastructure.Persistence;
 using BlogApp.Infrastructure.Persistence.Repositories;
 using BlogApp.Presentation.Api.Tests.Messaging.Broker;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Data.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
@@ -376,7 +378,79 @@ public sealed class AgentEventProjectionConsumerTests
 
     // ------------------------------------------------------------ yardımcılar
 
-    private ServiceProvider BuildHost(RecordingNotifier notifier, MemoryLogProvider? logs = null)
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(3, false)]
+    public async Task InfrastructureFailures_RetryOriginalDelivery_ThenApplyOrDeadLetter(int failures, bool succeeds)
+    {
+        await _fixture.ResetAsync();
+        await _fixture.PurgeQueuesAsync();
+        var runId = Guid.NewGuid();
+        await SeedRunAsync(runId);
+        var messageId = Guid.NewGuid().ToString("D");
+        var notifier = new RecordingNotifier();
+        var faults = new TransientFailureInterceptor(failures);
+        await using var host = BuildHost(notifier, faults: faults);
+        var consumer = host.GetRequiredService<AgentEventProjectionConsumer>();
+        await consumer.StartAsync();
+        try
+        {
+            await PublishAsync(Guid.NewGuid(), Guid.NewGuid(), MessageType(
+                "agent.run.completed", runId, 1, CompletedPayload(runId, 1), messageId), messageId);
+            if (succeeds)
+            {
+                await WaitForAsync(async () => await RunStatusAsync(runId) == AgentRunStatus.Completed);
+                await WaitForAsync(() => Task.FromResult(notifier.Count == 1));
+            }
+            else
+            {
+                await WaitForAsync(async () => await _fixture.QueueDepthAsync(
+                    AgentMessagingTopology.DeadLetterQueueFor(AgentMessagingTopology.BackendEventsQueue)) == 1);
+            }
+        }
+        finally
+        {
+            await consumer.StopAsync();
+        }
+
+        await using var verify = _fixture.CreateContext();
+        var inbox = await verify.AgentEventInboxes.Where(i => i.RunId == runId).ToListAsync();
+        if (succeeds)
+        {
+            Assert.Equal(Guid.Parse(messageId), Assert.Single(inbox).MessageId);
+            Assert.Equal(0, await _fixture.QueueDepthAsync(
+                AgentMessagingTopology.DeadLetterQueueFor(AgentMessagingTopology.BackendEventsQueue)));
+        }
+        else
+        {
+            Assert.Empty(inbox);
+            Assert.Equal(AgentRunStatus.Accepted, await RunStatusAsync(runId));
+            Assert.Equal(0, notifier.Count);
+        }
+        Assert.Equal(failures, faults.FailuresThrown);
+    }
+
+    private sealed class TransientFailureInterceptor(int failures) : DbCommandInterceptor
+    {
+        private int _calls;
+        public int FailuresThrown { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("agent_event_inbox", StringComparison.Ordinal)
+                && Interlocked.Increment(ref _calls) <= failures)
+            {
+                FailuresThrown++;
+                throw new TimeoutException("Injected temporary projection database outage.");
+            }
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private ServiceProvider BuildHost(RecordingNotifier notifier, MemoryLogProvider? logs = null,
+        TransientFailureInterceptor? faults = null)
     {
         var services = new ServiceCollection();
         // B9 additive: consumer'ın AgentCollaborationSettings IOptions bağımlılığı için.
@@ -388,11 +462,16 @@ public sealed class AgentEventProjectionConsumerTests
                 logging.AddProvider(logs);
             }
         });
-        services.AddSingleton(_fixture.BackendSettings());
+        var brokerSettings = _fixture.BackendSettings();
+        brokerSettings.RetryTierSeconds = [1, 1];
+        services.AddSingleton(brokerSettings);
         services.AddSingleton<IRabbitMqConnectionManager, RabbitMqConnectionManager>();
         services.AddDbContext<AppDbContext>(options =>
+        {
             options.UseNpgsql(_fixture.TestConnectionString, npgsql =>
-                npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName)));
+                npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName));
+            if (faults is not null) options.AddInterceptors(faults);
+        });
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddSingleton<IAgentRunNotifier>(notifier);

@@ -49,6 +49,7 @@ class ModelResponse(BusinessModel):
     text: str
     model_name: str | None = None
     usage: ModelUsage
+    usage_estimated: bool = False
     finished_at: UtcDatetime
 
 
@@ -81,7 +82,7 @@ class ModelProvider(Protocol):
         bildirim yok); chunk sınırlaması çağıran (node publish yardımcısı)
         tarafındadır. Dönüş TAM ``ModelResponse``'dur: gerçek usage metrikleriyle
         — ``complete`` ile aynı sözleşme. Bütçe/guard muhasebesi değişmez: node
-        ``guarded`` içinde bu metodu çağırıp ``CallResult(value=response)``
+        ``guarded`` içinde bu metodu çağırıp ``CallResult(value=response, usage=response.usage)``
         döndürür.
 
         Raises:

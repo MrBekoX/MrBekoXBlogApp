@@ -151,6 +151,11 @@ public sealed class AcceptAgentRunCommandHandler(
             {
                 await using var transaction = await unitOfWork.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
 
+                // Serialize admission across API replicas. Count + insert must share a
+                // transaction lock: per-request idempotency/turn indexes do not protect
+                // the global or owner quota when distinct conversations arrive together.
+                await unitOfWork.AcquireTransactionLockAsync(0x424C4F474147454E, ct);
+
                 // 4a) Tekrarlı kabul: aynı anahtar → payload özeti karşılaştırılır.
                 var existing = await dbContext.AgentRuns
                     .AsNoTracking()

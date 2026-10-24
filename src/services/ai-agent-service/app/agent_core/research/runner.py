@@ -32,6 +32,7 @@ from ..models import AgentOutcome, ExecutionContext, RouteDecision, RunStatus, S
 from ..ports import BudgetStore, CancellationToken, ProgressSink
 from ..state.artifacts import ArtifactStore, InMemoryArtifactStore
 from ..state.events import usage_record_from_events
+from ..web.tools import WebTools
 from .models import ResearchFlowConfig, ResearchReport
 from .nodes import (
     ResearchDeps,
@@ -63,7 +64,7 @@ def research_policy_for(profile, config: ResearchFlowConfig) -> BudgetPolicy:
     """
     return BudgetPolicy.from_budget_profile(
         profile,
-        max_tool_attempts=max(profile.max_tool_calls, 1),
+        max_tool_attempts=profile.max_tool_calls,
     )
 
 
@@ -133,7 +134,7 @@ async def run_deep_research(
     route: RouteDecision | None,
     *,
     model: Any,  # noqa: ANN401 - ModelProvider portu (döngüsel import istenmedi)
-    web_tools: dict[str, Any],
+    web_tools: WebTools,
     content: Any | None = None,  # ContentRepository portu (K7)
     config: ResearchFlowConfig | None = None,
     policy: BudgetPolicy | None = None,
@@ -164,7 +165,7 @@ async def run_deep_research(
         context=context,
         route=route,
         model=model,
-        tools=web_tools,
+        tools=web_tools(guard) if callable(web_tools) else web_tools,
         content=content,
         policy=budget_policy,
         guard=guard,
@@ -200,9 +201,11 @@ async def run_deep_research(
             )
     except PortError as error:
         final_state = dict(initial)
+        final_state["usage_events"] = guard.recorded_events
         outcome = _terminal_outcome(deps, final_state, error, deadline.elapsed())
     except asyncio.CancelledError:
         final_state = dict(initial)
+        final_state["usage_events"] = guard.recorded_events
         outcome = _terminal_outcome(
             deps,
             final_state,

@@ -76,6 +76,7 @@ from typing import Any
 
 from agent_core.checkpoint.resume import load_resume_payload
 from agent_core.checkpoint.store import FileCheckpointStore
+from agent_core.web.tools import WebTools
 from agent_core.entrypoints import (
     PreparedRun,
     ResumeRequest,
@@ -218,7 +219,7 @@ class ExecutionDependencies:
     retriever: Any | None = None
     content: Any | None = None
     budget: BudgetStore | None = None
-    web_tools: dict[str, Any] | None = None
+    web_tools: WebTools | None = None
     checkpoint_store: CheckpointStorePort | None = None
     content_state: Any | None = None
     profile_repository: Any | None = None

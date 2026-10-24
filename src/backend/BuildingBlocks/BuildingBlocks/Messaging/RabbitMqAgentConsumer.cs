@@ -32,6 +32,7 @@ public abstract class RabbitMqAgentConsumer : IAgentBrokerConsumer
     private readonly string _queueName;
     private IChannel? _channel;
     private AsyncEventingBasicConsumer? _consumer;
+    private CancellationTokenSource _stopping = new();
 
     protected RabbitMqAgentConsumer(IRabbitMqConnectionManager connections, RabbitMqSettings settings, string queueName)
     {
@@ -48,8 +49,16 @@ public abstract class RabbitMqAgentConsumer : IAgentBrokerConsumer
         BasicDeliverEventArgs delivery,
         CancellationToken cancellationToken);
 
+    protected virtual bool IsRetryable(Exception error) => false;
+    protected virtual IReadOnlyList<TimeSpan> RetryDelays => [];
+
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
+        if (_stopping.IsCancellationRequested)
+        {
+            _stopping.Dispose();
+            _stopping = new CancellationTokenSource();
+        }
         var connection = await _connections.GetConnectionAsync(cancellationToken);
         _channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
         await _channel.BasicQosAsync(0, (ushort)Math.Clamp(_settings.ConsumerPrefetchCount, 1, ushort.MaxValue), false, cancellationToken);
@@ -61,6 +70,7 @@ public abstract class RabbitMqAgentConsumer : IAgentBrokerConsumer
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        await _stopping.CancelAsync();
         if (_channel is not null)
         {
             await _channel.CloseAsync(cancellationToken);
@@ -72,7 +82,9 @@ public abstract class RabbitMqAgentConsumer : IAgentBrokerConsumer
 
     private async Task OnReceivedAsync(object sender, BasicDeliverEventArgs @event)
     {
-        if (_channel is null)
+        var channel = _channel;
+        var stoppingToken = _stopping.Token;
+        if (channel is null || stoppingToken.IsCancellationRequested)
         {
             return;
         }
@@ -86,19 +98,26 @@ public abstract class RabbitMqAgentConsumer : IAgentBrokerConsumer
         }
         catch (Exception)
         {
-            await _channel.BasicNackAsync(@event.DeliveryTag, multiple: false, requeue: false);
+            await channel.BasicNackAsync(@event.DeliveryTag, multiple: false, requeue: false);
             return;
         }
 
         try
         {
-            await HandleAsync(@event.Exchange, @event.RoutingKey, body, @event, CancellationToken.None);
-            await _channel.BasicAckAsync(@event.DeliveryTag, multiple: false);
+            await ConsumerDeliveryRetry.ExecuteAsync(
+                ct => HandleAsync(@event.Exchange, @event.RoutingKey, body, @event, ct),
+                IsRetryable, RetryDelays, stoppingToken);
+            await channel.BasicAckAsync(@event.DeliveryTag, multiple: false);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Closing the channel returns the still-unacknowledged delivery to
+            // the broker. Shutdown is not a permanent processing failure.
         }
         catch (Exception)
         {
             // requeue yok: kuyruğun x-dead-letter-exchange hedefine düşer, döngü kurulmaz.
-            await _channel.BasicNackAsync(@event.DeliveryTag, multiple: false, requeue: false);
+            await channel.BasicNackAsync(@event.DeliveryTag, multiple: false, requeue: false);
         }
     }
 

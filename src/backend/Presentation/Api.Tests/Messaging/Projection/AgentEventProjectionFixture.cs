@@ -314,7 +314,7 @@ public sealed class AgentEventProjectionFixture : IAsyncLifetime
     {
         var client = new HttpClient
         {
-            BaseAddress = new Uri("http://127.0.0.1:15672/"),
+            BaseAddress = BrokerTestEnvironment.ManagementBaseAddress,
             Timeout = TimeSpan.FromSeconds(10),
         };
         var token = Convert.ToBase64String(Encoding.UTF8.GetBytes(

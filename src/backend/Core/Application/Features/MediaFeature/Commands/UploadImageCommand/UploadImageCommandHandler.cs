@@ -14,6 +14,7 @@ public class UploadImageCommandHandler(
     public async Task<Result<ImageUploadResult>> Handle(
         UploadImageCommandRequest request, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var file = request.File;
 
         if (file.Length == 0)

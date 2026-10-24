@@ -70,6 +70,7 @@ builder.Services.AddSwaggerServices();
 builder.Services.AddOutputCachePolicies(builder.Configuration);
 builder.Services.AddResponseCompressionServices();
 builder.Services.AddSecurityServices(builder.Configuration, builder.Environment);
+builder.Services.AddImageUploadAdmissionControl();
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddCorsPolicy(builder.Configuration, builder.Environment);
 builder.Services.AddHttpContextAccessor();
@@ -145,6 +146,8 @@ app.UseCors("AllowFrontend");
 app.UseIpRateLimiting();
 app.UseAuthentication();
 app.UseAuthorization();
+// Admission runs before antiforgery/form binding can buffer an upload body.
+app.UseRateLimiter();
 app.UseOutputCache();
 app.UseAntiforgery();
 

@@ -15,17 +15,27 @@ public class UploadImagesCommandHandler(
     public async Task<Result<UploadImagesResultDto>> Handle(
         UploadImagesCommandRequest request, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (request.Files.Count == 0)
             return Result<UploadImagesResultDto>.Failure(Error.Validation("No files uploaded"));
 
-        if (request.Files.Count > 10)
+        if (request.Files.Count > ImageValidation.MaxBatchSize)
             return Result<UploadImagesResultDto>.Failure(Error.Validation("Maximum 10 files at once"));
+
+        long totalLength = 0;
+        foreach (var file in request.Files)
+        {
+            if (file.Length < 0 || file.Length > ImageValidation.MaxBatchFileSize - totalLength)
+                return Result<UploadImagesResultDto>.Failure(Error.Validation("Total upload size is too large"));
+            totalLength += file.Length;
+        }
 
         var results = new List<ImageUploadResult>();
         var errors = new List<string>();
 
         foreach (var file in request.Files)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!ImageValidation.AllowedImageTypes.Contains(file.ContentType.ToLowerInvariant()))
             {
                 errors.Add($"{file.FileName}: Invalid file type");
@@ -50,7 +60,7 @@ public class UploadImagesCommandHandler(
                 var result = await fileStorageService.UploadImageAsync(file.Stream, safeFileName, cancellationToken: cancellationToken).ConfigureAwait(false);
                 results.Add(result);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.LogError(ex, "Error uploading image {FileName}", file.FileName);
                 errors.Add($"{file.FileName}: Upload failed");

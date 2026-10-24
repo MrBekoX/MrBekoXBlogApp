@@ -7,6 +7,8 @@ public static class ImageValidation
 {
     public static readonly string[] AllowedImageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     public const long MaxFileSize = 10 * 1024 * 1024; // 10MB
+    public const int MaxBatchSize = 10;
+    public const long MaxBatchFileSize = MaxBatchSize * MaxFileSize;
 
     /// <summary>
     /// Validates file content by checking magic bytes.

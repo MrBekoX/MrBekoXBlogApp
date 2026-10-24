@@ -31,8 +31,9 @@ def profile_mount(config: dict) -> tuple[str, list[str]]:
         mount = mounts[0]
         source = str(mount.get("source") or "")
         path = PurePosixPath(source)
+        bind = mount.get("bind")
         if (mount.get("type") != "bind" or not mount.get("read_only")
-                or mount.get("bind", {}).get("create_host_path") is not False
+                or not isinstance(bind, dict) or bind.get("create_host_path") is not False
                 or not path.is_absolute() or source == "/" or ".." in path.parts
                 or "\\" in source):
             errors.append(f"{service} author profile must use an explicit existing absolute Linux host path with a read-only bind")

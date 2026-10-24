@@ -22,6 +22,16 @@ for argument in "$@"; do
 done
 command -v docker >/dev/null || { echo 'Docker is required' >&2; exit 1; }
 command -v python3 >/dev/null || { echo 'Python 3 is required for preflight' >&2; exit 1; }
+# Older exporters can omit explicit create_host_path:false from normalized JSON.
+# Check the supported exporter before reading configuration or contacting Docker.
+compose_version=$(docker compose version --short)
+python3 - "$compose_version" <<'PY'
+import re
+import sys
+match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?', sys.argv[1].strip())
+if match is None or tuple(map(int, match.groups())) < (5, 6, 1):
+    raise SystemExit('Docker Compose >= 5.6.1 is required to preserve explicit private bind-mount options')
+PY
 [[ -f .env ]] || { echo 'Copy .env.example to .env and configure credentials first' >&2; exit 1; }
 # Never source .env (Compose dotenv syntax is data, not shell code).
 compose=(docker compose --env-file .env -f docker-compose.prod.yml)
@@ -31,14 +41,6 @@ DEPLOY_DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}')
     echo 'A cgroup v2 Docker host is required for predictable RAM/swap accounting' >&2; exit 1;
 }
 "${compose[@]}" config --format json | python3 preflight.py
-# Ensure bounded health waits and successful one-shot dependency support.
-compose_version=$(docker compose version --short | sed 's/^v//')
-python3 - "$compose_version" <<'PY'
-import sys
-parts = tuple(int(p) for p in sys.argv[1].split('.')[:2])
-if parts < (2, 30):
-    raise SystemExit('Docker Compose >= 2.30 is required')
-PY
 
 existing_pg=$(docker ps -aq --filter volume=deploy_postgres_data)
 pg_volume=false

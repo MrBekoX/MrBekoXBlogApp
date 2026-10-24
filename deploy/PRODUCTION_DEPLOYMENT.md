@@ -18,13 +18,19 @@ Configure an authorized registry pull identity on EC2 if images are private.
 
 ## 2. Prepare the host and TLS boundary
 
-Use a maintained 64-bit Linux image, Docker Engine with cgroup v2 and Docker Compose >= 2.30,
+Use a maintained 64-bit Linux image, Docker Engine with cgroup v2 and Docker Compose >= 5.6.1,
 Python 3, at least 5 GiB free Docker disk space (10+ GiB recommended), and room for
 database backups outside the Docker filesystem. Keep EBS encrypted. On a t3.micro
 configure **at least 2 GiB swap** on encrypted EBS before deploying; make it
 persistent across reboots and restrict the swap file to root. Do not create swap
 on an unencrypted or ephemeral volume. The script verifies configured swap and
 combined RAM/swap before any mutation, but encryption is an infrastructure check.
+
+Compose 5.6.1 is the minimum supported exporter and is pinned in CI. Older
+versions can omit an explicit `create_host_path: false` when rendering JSON;
+the private-profile gate requires this value and rejects ambiguous mount options.
+The deployment script checks the CLI version before rendering configuration or
+contacting the daemon. See the [official release](https://github.com/docker/compose/releases/tag/v5.6.1).
 
 Terminate HTTPS at an ALB with a managed certificate for `DOMAIN` and
 `www.DOMAIN`. Redirect ALB HTTP to HTTPS and forward HTTPS traffic to Nginx port 80.

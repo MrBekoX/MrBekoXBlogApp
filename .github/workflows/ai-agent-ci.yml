@@ -116,6 +116,14 @@ jobs:
       - name: Real PostgreSQL semantic-storage and migration checks
         run: python tools/verify_storage.py
 
+      - name: Set up tested Docker Compose
+        uses: docker/setup-compose-action@v2
+        with:
+          version: v5.6.1
+
+      - name: Verify tested Compose CLI
+        run: docker compose version --short
+
       - name: Deployment configuration and private-profile gates
         run: python -m unittest discover -s ../../../deploy/tests -v
 

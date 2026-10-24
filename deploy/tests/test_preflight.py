@@ -94,6 +94,12 @@ class PreflightTests(unittest.TestCase):
             lambda mount: mount.update(read_only=False),
             lambda mount: mount.update(type="volume"),
             lambda mount: mount["bind"].update(create_host_path=True),
+            # Older exporters can omit false; newer exporters can omit true.
+            # An ambiguous projection must not authorize directory creation.
+            lambda mount: mount.update(bind={}),
+            lambda mount: mount.pop("bind"),
+            lambda mount: mount.update(bind=None),
+            lambda mount: mount["bind"].update(create_host_path=None),
         ):
             config = release_config()
             mutation(config["services"]["ai-agent"]["volumes"][0])

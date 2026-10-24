@@ -16,12 +16,32 @@ namespace BlogApp.Presentation.Api.Tests.Messaging.Broker;
 /// koleksiyonunda sıraya alınmıştır (davranış değişikliği yoktur).
 /// </summary>
 [Collection("agent-rabbitmq-outbox")]
-public class AgentRabbitMqBrokerTests
+public class AgentRabbitMqBrokerTests : IAsyncLifetime
 {
     private static readonly string[] BackendPublisherExchanges =
         [AgentMessagingTopology.CommandsExchange, AgentMessagingTopology.ContentExchange];
 
-    private static CancellationToken Token => new CancellationTokenSource(TimeSpan.FromMinutes(3)).Token;
+    private readonly CancellationTokenSource _testTimeout = new(TimeSpan.FromMinutes(3));
+    private CancellationToken Token => _testTimeout.Token;
+
+    public async Task InitializeAsync()
+    {
+        // xUnit does not guarantee that the topology test runs first. Each
+        // scenario needs a real ready broker topology and its own clean queues.
+        await using var initializer = new AgentTopologyInitializer(BrokerTestEnvironment.BackendSettings());
+        await initializer.InitializeAsync(Token);
+        await PurgeAsync(
+            AgentMessagingTopology.ExecuteQueue,
+            AgentMessagingTopology.DeadLetterQueueFor(AgentMessagingTopology.ExecuteQueue),
+            AgentMessagingTopology.BackendEventsQueue,
+            AgentMessagingTopology.DeadLetterQueueFor(AgentMessagingTopology.BackendEventsQueue));
+    }
+
+    public Task DisposeAsync()
+    {
+        _testTimeout.Dispose();
+        return Task.CompletedTask;
+    }
 
     // ---------------------------------------------------------------- topology
 
@@ -34,7 +54,7 @@ public class AgentRabbitMqBrokerTests
         await initializer.InitializeAsync(Token); // tekrarlı kurulum: PRECONDITION_FAILED olmamalı
 
         // pasif doğrulama: varlıklar mevcut; Python tarafının declare ettiği kuyruk da dahil
-        var connections = new RabbitMqConnectionManager(BrokerTestEnvironment.BackendSettings());
+        await using var connections = new RabbitMqConnectionManager(BrokerTestEnvironment.BackendSettings());
         var connection = await connections.GetConnectionAsync(Token);
         await using var channel = await connection.CreateChannelAsync(cancellationToken: Token);
         foreach (var queue in new[]
@@ -49,15 +69,13 @@ public class AgentRabbitMqBrokerTests
             Assert.NotNull(ok);
         }
 
-        await connections.CloseAsync(Token);
-        await connections.DisposeAsync();
     }
 
     [Fact]
     public async Task TopologyInitializer_ArgumentMismatch_IsRejectedWithoutBreakingTopology()
     {
         var settings = BrokerTestEnvironment.AdminSettings();
-        var connections = new RabbitMqConnectionManager(settings);
+        await using var connections = new RabbitMqConnectionManager(settings);
         var connection = await connections.GetConnectionAsync(Token);
         var name = "zz.dotnet.mismatch.q";
 
@@ -76,8 +94,6 @@ public class AgentRabbitMqBrokerTests
             await cleanup.QueueDeleteAsync(name, cancellationToken: Token);
         }
 
-        await connections.CloseAsync(Token);
-        await connections.DisposeAsync();
     }
 
     // ---------------------------------------------------------------- publisher
@@ -85,7 +101,7 @@ public class AgentRabbitMqBrokerTests
     [Fact]
     public async Task Publisher_PublishesPersistentMessageWithConfirmAndAmqpProperties()
     {
-        var connections = new RabbitMqConnectionManager(BrokerTestEnvironment.BackendSettings());
+        await using var connections = new RabbitMqConnectionManager(BrokerTestEnvironment.BackendSettings());
         await using var publisher = new RabbitMqAgentPublisher(connections, BrokerTestEnvironment.BackendSettings(), BackendPublisherExchanges);
         await publisher.StartAsync(Token);
 
@@ -115,15 +131,12 @@ public class AgentRabbitMqBrokerTests
         Assert.Equal("application/json", fetched.BasicProperties.ContentType);
         Assert.Equal(DeliveryModes.Persistent, fetched.BasicProperties.DeliveryMode);
         Assert.Equal(body, fetched.Body.ToArray());
-
-        await connections.CloseAsync(Token);
-        await connections.DisposeAsync();
     }
 
     [Fact]
     public async Task Publisher_MandatoryUnroutableRoutingKey_IsReportedNotConfirmed()
     {
-        var connections = new RabbitMqConnectionManager(BrokerTestEnvironment.BackendSettings());
+        await using var connections = new RabbitMqConnectionManager(BrokerTestEnvironment.BackendSettings());
         await using var publisher = new RabbitMqAgentPublisher(connections, BrokerTestEnvironment.BackendSettings(), BackendPublisherExchanges);
         await publisher.StartAsync(Token);
 
@@ -139,16 +152,13 @@ public class AgentRabbitMqBrokerTests
         Assert.True(result.Returned, "bağlanmamış routing key başarı sayılamaz");
         Assert.False(result.Confirmed);
         Assert.Contains("unroutable", result.Detail);
-
-        await connections.CloseAsync(Token);
-        await connections.DisposeAsync();
     }
 
     [Fact]
     public async Task Publisher_RejectsBodyOverContractLimit_BeforePublish()
     {
         var settings = BrokerTestEnvironment.BackendSettings();
-        var connections = new RabbitMqConnectionManager(settings);
+        await using var connections = new RabbitMqConnectionManager(settings);
         await using var publisher = new RabbitMqAgentPublisher(connections, settings, BackendPublisherExchanges);
         await publisher.StartAsync(Token);
 
@@ -157,9 +167,6 @@ public class AgentRabbitMqBrokerTests
             "agent.execute.requested.v1",
             new byte[settings.MaxPublishBytes + 1],
             cancellationToken: Token));
-
-        await connections.CloseAsync(Token);
-        await connections.DisposeAsync();
     }
 
     // ---------------------------------------------------------------- consumer
@@ -169,14 +176,14 @@ public class AgentRabbitMqBrokerTests
     {
         var settings = BrokerTestEnvironment.BackendSettings();
         settings.ConsumerPrefetchCount = 2;
-        var connections = new RabbitMqConnectionManager(settings);
+        await using var connections = new RabbitMqConnectionManager(settings);
 
         var handled = new List<byte[]>();
         var maxInFlight = 0;
         var inFlight = 0;
         var semaphore = new SemaphoreSlim(1, 1);
 
-        var consumer = new TestConsumer(connections, settings, AgentMessagingTopology.BackendEventsQueue,
+        await using var consumer = new TestConsumer(connections, settings, AgentMessagingTopology.BackendEventsQueue,
             (_, _, body, _) =>
             {
                 semaphore.Wait();
@@ -221,8 +228,6 @@ public class AgentRabbitMqBrokerTests
         }
 
         await consumer.StopAsync(Token);
-        await connections.CloseAsync(Token);
-        await connections.DisposeAsync();
 
         Assert.Equal(4, CountOf(handled));
         Assert.InRange(maxInFlight, 1, settings.ConsumerPrefetchCount);
@@ -232,14 +237,14 @@ public class AgentRabbitMqBrokerTests
     public async Task Consumer_HandlerFailure_DeadLettersWithoutRequeueLoop()
     {
         var settings = BrokerTestEnvironment.BackendSettings();
-        var connections = new RabbitMqConnectionManager(settings);
+        await using var connections = new RabbitMqConnectionManager(settings);
 
         // önceki testlerden kalma mesajları temizle (consumer testleri yalıtılmalı)
         await PurgeAsync(AgentMessagingTopology.BackendEventsQueue,
             AgentMessagingTopology.DeadLetterQueueFor(AgentMessagingTopology.BackendEventsQueue));
 
         var attempts = 0;
-        var consumer = new TestConsumer(connections, settings, AgentMessagingTopology.BackendEventsQueue,
+        await using var consumer = new TestConsumer(connections, settings, AgentMessagingTopology.BackendEventsQueue,
             (_, _, _, _) =>
             {
                 Interlocked.Increment(ref attempts);
@@ -284,8 +289,6 @@ public class AgentRabbitMqBrokerTests
         }
 
         await consumer.StopAsync(Token);
-        await connections.CloseAsync(Token);
-        await connections.DisposeAsync();
 
         Assert.NotNull(deadBody);
         Assert.Equal("agent.run.completed.v1", deadRoutingKey); // rk korunur, hedef DLQ'ya düşer
@@ -300,13 +303,13 @@ public class AgentRabbitMqBrokerTests
 
         var settings = BrokerTestEnvironment.BackendSettings();
         settings.NetworkRecoveryIntervalSeconds = 2;
-        var connections = new RabbitMqConnectionManager(settings);
+        await using var connections = new RabbitMqConnectionManager(settings);
 
         await PurgeAsync(AgentMessagingTopology.BackendEventsQueue,
             AgentMessagingTopology.DeadLetterQueueFor(AgentMessagingTopology.BackendEventsQueue));
 
         var handled = new List<string>();
-        var consumer = new TestConsumer(connections, settings, AgentMessagingTopology.BackendEventsQueue,
+        await using var consumer = new TestConsumer(connections, settings, AgentMessagingTopology.BackendEventsQueue,
             (_, routingKey, body, _) =>
             {
                 lock (handled) { handled.Add(routingKey); }
@@ -340,8 +343,6 @@ public class AgentRabbitMqBrokerTests
         }
 
         await consumer.StopAsync(Token);
-        await connections.CloseAsync(Token);
-        await connections.DisposeAsync();
 
         lock (handled)
         {
@@ -357,7 +358,7 @@ public class AgentRabbitMqBrokerTests
     }
 
     /// <summary>Verilen kuyrukları admin bağlantısıyla boşaltır (test yalıtımı).</summary>
-    private static async Task PurgeAsync(params string[] queues)
+    private async Task PurgeAsync(params string[] queues)
     {
         await using var admin = await BrokerTestEnvironment.OpenAdminConnectionAsync(Token, "dotnet-tests-purge");
         await using var channel = await admin.CreateChannelAsync(cancellationToken: Token);

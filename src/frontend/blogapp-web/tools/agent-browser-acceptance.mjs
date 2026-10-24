@@ -5,7 +5,6 @@
  * Run: npm run test:agent-browser (CHROME_BIN may select an installed browser).
  */
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -14,6 +13,8 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { launchIsolatedChrome } from './isolated-chrome.mjs';
+import { connectCdp } from './agent-cdp.mjs';
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(webRoot, 'package.json'));
@@ -45,7 +46,7 @@ await build({ configFile: false, root: temp, envDir: temp, cacheDir: path.join(t
 const RUN = '11111111-1111-4111-8111-111111111111';
 const nonce = 'bG9jYWwtYWNjZXB0YW5jZQ==';
 let current;
-let chrome;
+let browser;
 let cdp;
 const results = [];
 const clients = new Set();
@@ -135,39 +136,32 @@ wss.on('connection', socket => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
-class Cdp {
-  constructor(socket) { this.socket = socket; this.next = 0; this.pending = new Map(); this.events = new Map();
-    socket.on('message', bytes => { const message = JSON.parse(bytes.toString());
-      if (message.id) { const pending = this.pending.get(message.id); if (!pending) return; this.pending.delete(message.id);
-        if (message.error) pending.reject(new Error(JSON.stringify(message.error))); else pending.resolve(message.result); }
-      else for (const callback of this.events.get(message.method) ?? []) callback(message.params); }); }
-  on(name, callback) { this.events.set(name, [...this.events.get(name) ?? [], callback]); }
-  send(method, params = {}) { return new Promise((resolve, reject) => { const id = ++this.next;
-    this.pending.set(id, { resolve, reject }); this.socket.send(JSON.stringify({ id, method, params })); }); }
-  async evaluate(expression) { const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails)); return result.result.value; }
-  close() { this.socket.close(); }
-}
 async function until(predicate, message, timeout = 15000) { const start = Date.now();
   while (Date.now() - start < timeout) { if (await predicate()) return; await wait(50); }
-  const state = cdp ? await cdp.evaluate('window.agentAcceptance ? {phase:window.agentAcceptance.phase,active:window.agentAcceptance.active,channel:window.agentAcceptance.channel} : null') : null;
+  let state = null;
+  if (cdp) try { state = await cdp.evaluate('window.agentAcceptance ? {phase:window.agentAcceptance.phase,active:window.agentAcceptance.active,channel:window.agentAcceptance.channel} : null', 1000); }
+  catch (error) { state = { diagnosticUnavailable: error.message }; }
   throw new Error(`Timed out: ${message}; ${JSON.stringify({ state, gets: current?.gets, posts: current?.posts, subscriptions: current?.subscribed })}`); }
 
 try {
-  chrome = spawn(chromeBin, ['--headless=new', '--no-first-run', '--no-default-browser-check',
-    '--disable-background-networking', '--disable-default-apps', '--disable-extensions', '--disable-sync',
-    `--user-data-dir=${profile}`, '--remote-debugging-port=0', 'about:blank'], { windowsHide: true, stdio: 'ignore' });
-  await until(() => existsSync(path.join(profile, 'DevToolsActivePort')), 'isolated Chrome startup');
-  const debuggingPort = (await readFile(path.join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0];
-  const browserVersion = await (await fetch(`http://127.0.0.1:${debuggingPort}/json/version`)).json();
+  console.log(`Chrome startup evidence: ${path.join(temp, 'chrome-startup.json')}`);
+  browser = await launchIsolatedChrome({ executablePath: chromeBin, profilePath: profile,
+    onAttempt: async attempts => {
+      await writeFile(path.join(temp, 'chrome-startup.json'), JSON.stringify(attempts, null, 2));
+      const latest = attempts.at(-1);
+      console.log(`Chrome startup attempt ${latest.attempt}: ${JSON.stringify(latest)}`);
+    } });
+  const debuggingOrigin = browser.origin;
+  const browserVersion = browser.version;
+  const devToolsFetch = (pathname, options = {}) => fetch(`${debuggingOrigin}${pathname}`,
+    { ...options, signal: AbortSignal.timeout(5000), redirect: 'error' });
   for (const name of ['normal', 'lost_terminal_get', 'reconnect', 'restore_research', 'provisional_recovery',
     'provisional_clock_skew', 'provisional_expiry', 'provisional_final_offline']) {
     console.log(`Browser acceptance: ${name}`);
     current = context(name);
     const ctx = current;
-    const target = await (await fetch(`http://127.0.0.1:${debuggingPort}/json/new?about:blank`, { method: 'PUT' })).json();
-    const socket = new WebSocket(target.webSocketDebuggerUrl); await new Promise(resolve => socket.once('open', resolve));
-    cdp = new Cdp(socket);
+    const target = await (await devToolsFetch('/json/new?about:blank', { method: 'PUT' })).json();
+    cdp = await connectCdp(WebSocket, target.webSocketDebuggerUrl, 5000, debuggingOrigin);
     await cdp.send('Page.enable'); await cdp.send('Runtime.enable');
     if (name === 'provisional_clock_skew') await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
       source: 'const realNow=Date.now.bind(Date); Date.now=()=>realNow()+600000;',
@@ -176,8 +170,10 @@ try {
     await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
     cdp.on('Fetch.requestPaused', event => {
       const allowed = event.request.url.startsWith(origin + '/') || event.request.url.startsWith('data:');
-      void cdp.send(allowed ? 'Fetch.continueRequest' : 'Fetch.failRequest', allowed
-        ? { requestId: event.requestId } : { requestId: event.requestId, errorReason: 'BlockedByClient' });
+      const transport = cdp;
+      void transport.send(allowed ? 'Fetch.continueRequest' : 'Fetch.failRequest', allowed
+        ? { requestId: event.requestId } : { requestId: event.requestId, errorReason: 'BlockedByClient' })
+        .catch(error => { if (!transport.closed) console.error(`CDP request interception failed: ${error.message}`); });
     });
     await cdp.send('Page.navigate', { url: `${origin}/?case=${name}` });
     await until(() => cdp.evaluate('Boolean(window.agentAcceptance)'), `${name}: real React mount`);
@@ -218,10 +214,11 @@ try {
     results.push({ case: name, passed: true, phase: finalPhase, requests: ctx.gets,
       subscriptions: ctx.subscribed, automaticImages: ctx.collected });
     for (const timer of ctx.timers) clearTimeout(timer);
-    await fetch(`http://127.0.0.1:${debuggingPort}/json/close/${target.id}`); cdp.close(); cdp = null;
+    await devToolsFetch(`/json/close/${target.id}`); cdp.close(); cdp = null;
     for (const socket of ctx.sockets) socket.terminate();
   }
-  const report = { browser: browserVersion.Browser, evidence: 'Real browser, React effects, Axios and SignalR client; loopback fixture backend.',
+  const report = { browser: browserVersion.Browser, startup: browser.attempts,
+    evidence: 'Real browser, React effects, Axios and SignalR client; loopback fixture backend.',
     cases: results, liveProviderCalls: 0, deploy: false };
   await writeFile(path.join(temp, 'acceptance.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify({ passed: results.length, report: path.join(temp, 'acceptance.json') }));
@@ -230,5 +227,9 @@ try {
   for (const socket of clients) socket.terminate();
   for (const timer of current?.timers ?? []) clearTimeout(timer);
   await new Promise(resolve => server.close(resolve)); wss.close();
-  chrome?.kill();
+  if (browser) {
+    const final = await browser.stop();
+    await writeFile(path.join(temp, 'chrome-final.json'), JSON.stringify(final, null, 2));
+    if (results.length !== 8) console.error(`Chrome process at acceptance failure: ${JSON.stringify(final)}`);
+  }
 }

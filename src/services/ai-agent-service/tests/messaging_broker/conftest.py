@@ -109,12 +109,23 @@ def provision_vhost_and_users() -> None:
       yalnız kendi olay kuyruğunu (+DLQ) okur.
     - agent_svc: yalnız kendi olaylarını yayınlar; komut/içerik kuyruklarını
       (+DLQ) tüketir; active declare yetkisi yok.
-    - agent_restricted: izin yok; hiçbir kaynakta yayın/tüketim yapamaz.
+    - agent_restricted: no vhost permission record; connection itself is denied.
     """
 
     mgmt_request("PUT", f"/vhosts/{VHOST}")
     for user, password in (BACKEND_USER, AGENT_USER, RESTRICTED_USER):
         mgmt_request("PUT", f"/users/{user}", {"password": password, "tags": "none"})
+    # An existing permission record with three empty regexes permits vhost
+    # login while denying resource operations. This user must fail the vhost
+    # connection check, including after older fixture/CI provisioning ran.
+    restricted_permissions = (
+        f"/permissions/{urllib.parse.quote(VHOST, safe='')}/{urllib.parse.quote(RESTRICTED_USER[0], safe='')}"
+    )
+    status = mgmt_try("DELETE", restricted_permissions)
+    if status not in (200, 404):
+        # Only an already absent record is idempotent. Management authentication
+        # and authorization errors must fail setup rather than pass unnoticed.
+        raise RuntimeError(f"Failed to revoke restricted user's vhost grant: HTTP {status}")
     mgmt_request(
         "PUT",
         f"/permissions/{VHOST}/{BACKEND_USER[0]}",

@@ -239,7 +239,8 @@ jobs:
           curl -sf -X PUT -H "$H1" -H "$H2" -d '{"password":"restricted_dev","tags":"none"}' "$MQ/users/agent_restricted"
           curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":".*","write":"blog\\.(agent\\.commands|content\\.events)","read":"backend\\.agent\\.events\\.q(\\.dlq)?|agent\\.(execute|control|content)\\.q"}' "$MQ/permissions/blogapp_dev/backend_svc"
           curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":"","write":"blog\\.agent\\.events","read":"agent\\.(execute|control|content)\\.q(\\.dlq)?"}' "$MQ/permissions/blogapp_dev/agent_svc"
-          curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":"","write":"","read":""}' "$MQ/permissions/blogapp_dev/agent_restricted"
+          # No vhost permission record for agent_restricted: empty resource
+          # patterns would still grant a connection to this virtual host.
 
       # B3/B5 testleri broker restart senaryosunda docker exec ile rabbitmqctl
       # kullanır (RABBITMQ_DOCKER_CONTAINER); service container adı runner'da

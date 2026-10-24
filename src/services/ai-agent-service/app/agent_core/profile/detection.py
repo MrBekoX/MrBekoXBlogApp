@@ -1,34 +1,27 @@
-"""Profil sorusu sinyalleri: blog sahibi göndermesi, ziyaretçi kimliği, soru dili.
+"""Request-local canonical owner signals, visitor identity, and question language.
 
-Routing (AUTO konu) ve profil runner'ı aynı deterministik sinyalleri kullanır.
-Tüm eşleşmeler ``content.anchors.fold_text`` ile katlanmış metinde yapılır;
-aksansız Türkçe ("egitimi", "universite") ve aksanlı yazım aynı sonucu verir.
-
-Sahip göndermesi iki sınıftır:
-
-- Güçlü: ``sample``, ``sample author``, ``mrbekox``, ``beko``, ``blog sahibi``
-  ... (canonical ``owner.aliases`` ile aynı küme + Türkçe iyelik biçimleri).
-- Zayıf: ``yazar``, ``the author``, ``blog yazarı`` — makaleye bağlı bağlamda
-  makalenin yazarı anlamına gelebileceği için yalnız makalesiz bağlamda sayılır.
-
-Sahip göndermesi tek başına profil niyeti DEĞİLDİR; biyografi/proje/bölüm
-terimiyle birleşmelidir ("Sample'ın eğitimini açıkla"). Yalnız Sample'a ait
-benzersiz proje adları (Vibeo, Emojify, XERJ ...) tek başına profil sinyalidir.
-"CQRS nedir?" gibi teknik sorular sahip göndermesi taşımadığından profil
-akışına zorlanmaz.
+Names and project aliases come from the pinned document. Generic owner/author
+phrases remain language rules, and technical questions require profile context.
+No mutable process-wide identity or personal-name defaults are used.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ..content.anchors import fold_text
 from ..content.retrieval import tokenize
 from ..models import RouteDecision, RunIntent
 
+if TYPE_CHECKING:
+    from .source import ProfileDocument
+
 __all__ = [
     "OWNER_STRONG_ALIASES",
     "OWNER_WEAK_ALIASES",
+    "ProfileIdentity",
     "VISITOR_IDENTITY_ROUTE_REASON",
     "detect_question_language",
     "is_visitor_identity_route",
@@ -39,13 +32,8 @@ __all__ = [
     "owner_name_tokens",
 ]
 
-#: Güçlü sahip takma adları (katlanmış). Türkçe ekler tolere edilir
-#: ("sample'in", "samplein", "blog sahibinin").
+#: Generic strong owner phrases; personal aliases come from ProfileIdentity.
 OWNER_STRONG_ALIASES = (
-    "sample author",
-    "sample",
-    "mrbekox",
-    "beko",
     "blog sahibi",
     "blogun sahibi",
     "site sahibi",
@@ -71,36 +59,71 @@ _ENGLISH_ALIASES = frozenset(
     {"blog owner", "owner of this blog", "owner of the blog", "the author", "author", "blog author"}
 )
 
-#: Sahip adının belirteçleri; retrieval bunları düşük ağırlıkla sayar.
-_OWNER_NAME_TOKENS = frozenset({"sample", "author", "mrbekox", "beko"})
+@dataclass(frozen=True)
+class ProfileIdentity:
+    """Immutable identity derived from one request's approved canonical source."""
 
-#: Yalnız Sample'a ait benzersiz proje/çalışma adları (tek başına profil sinyali).
-_STANDALONE_PROFILE_NAMES = (
-    "vibeo",
-    "emojify",
-    "adhan time",
-    "agentic-sdlc",
-    "agentic sdlc",
-    "root-agent-skill-framework",
-    "xerj",
-    "now-coffe",
-    "now coffe",
-    "sinav arkadasim",
-    "mrbekox.dev",
-    "auth token server",
-)
+    display_name: str
+    aliases: tuple[str, ...] = ()
+    profile_aliases: tuple[str, ...] = ()
+
+    @classmethod
+    def from_document(cls, document: "ProfileDocument") -> "ProfileIdentity":
+        aliases = tuple(dict.fromkeys(
+            value.strip() for value in (document.owner.name, *document.owner.aliases)
+            if value.strip() and fold_text(value.strip()) not in (*OWNER_STRONG_ALIASES, *OWNER_WEAK_ALIASES)
+        ))
+        project_aliases: list[str] = []
+        for section in document.retrievable_sections():
+            if section.section_id.startswith(("project-", "projects-", "ai-", "oss-")) or section.kind in {"project", "ai_work", "oss"}:
+                title_words = [" ".join(tokenize(value)) for value in section.title.values()]
+                for values in section.aliases.values():
+                    for value in values:
+                        candidate = " ".join(tokenize(value))
+                        # Broad subject aliases (architecture, article, model,
+                        # skills...) are retrieval cues, not unique project
+                        # names. Only title-backed specific aliases stand alone.
+                        generic = candidate in _PROFILE_TERMS_EN or candidate in _PROFILE_TERM_PREFIXES_TR
+                        generic = generic or (
+                            len(candidate.split()) == 1
+                            and any(candidate.startswith(prefix) for prefix in _PROFILE_TERM_PREFIXES_TR)
+                        )
+                        generic = generic or candidate in {
+                            "bu blog", "blogdaki ajan", "gunluk kullanim", "ai work", "open source", "acik kaynak",
+                        }
+                        if candidate and not generic and any(candidate in title for title in title_words):
+                            project_aliases.append(value.strip())
+                fence: str | None = None
+                for line in section.body.splitlines():
+                    marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+                    if marker:
+                        character = marker.group(1)[0]
+                        fence = None if fence == character else character if fence is None else fence
+                        continue
+                    if fence is not None:
+                        continue
+                    heading = re.match(r"^\s{0,3}#{3,6}\s+(.+?)\s*#*\s*$", line)
+                    if heading:
+                        title = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", heading.group(1)).strip(" *`_")
+                        title = re.sub(r"^\d+(?:\.\d+)*[.)]?\s+", "", title)
+                        if title:
+                            project_aliases.append(title)
+                            short_title = re.split(r"\s+[–—|]\s+|\s+-\s+|:\s+", title, maxsplit=1)[0].strip()
+                            if short_title:
+                                project_aliases.append(short_title)
+        return cls(document.owner.name, aliases, tuple(dict.fromkeys(project_aliases)))
 
 #: Biyografi/proje/bölüm terimleri — Türkçe kökler (ek toleranslı önek eşleşme).
 _PROFILE_TERM_PREFIXES_TR = (
-    "kim", "hakkinda", "tanit", "biyografi", "ozgecmis", "profil", "nereli", "yasiyor", "orneksehir",
+    "kim", "hakkinda", "tanit", "biyografi", "ozgecmis", "profil", "nereli", "yasiyor",
     "egitim", "universite", "okul", "okudu", "okumus", "mezun", "lisans", "bolum", "staj", "kariyer",
-    "deneyim", "tecrube", "meslek", "calis", "egitmen", "ogretmen", "ders", "mentor", "sample academy",
-    "sample center", "sample training", "yetenek", "yetkinlik", "beceri", "teknoloji", "programlama", "dil",
-    "biliyor", "bilir", "kullan", "uzman", "proje", "uygulama", "vibeo", "emojify", "adhan", "ezan",
-    "namaz", "sinav", "coffe", "futbol", "oyun", "kentsel", "urbansound", "ajan", "agentic", "sdlc",
-    "grok", "claude", "codex", "xerj", "corpus", "katki", "mimari", "yaklasim", "onion", "cqrs",
+    "deneyim", "tecrube", "meslek", "calis", "egitmen", "ogretmen", "ders", "mentor",
+    "yetenek", "yetkinlik", "beceri", "teknoloji", "programlama", "dil",
+    "biliyor", "bilir", "kullan", "uzman", "proje", "uygulama", "ezan",
+    "namaz", "sinav", "futbol", "oyun", "kentsel", "ajan", "agentic", "sdlc",
+    "grok", "claude", "codex", "corpus", "katki", "mimari", "yaklasim", "onion", "cqrs",
     "mediatr", "repository", "blog", "yazi", "makale", "konu", "sertifika", "iletisim", "ulas",
-    "hobi", "ilgi", "muzik", "suno", "sample sports club", "takim", "matematik", "algoritma", "github",
+    "hobi", "ilgi", "muzik", "takim", "matematik", "algoritma", "github",
     "linkedin", "twitter", "telefon", "numara", "yas", "dogum", "dogdu", "maas", "kazan", "evli",
     "bekar", "medeni", "ucret", "fiyat", "musait", "isveren", "sirket", "firma", "kurum", "musteri",
     "basvuru", "stack", "eposta",
@@ -108,7 +131,7 @@ _PROFILE_TERM_PREFIXES_TR = (
 
 #: Çok kelimeli Türkçe/İngilizce terimler (alt dizin).
 _PROFILE_TERM_PHRASES = (
-    "e-posta", "web sitesi", "acik kaynak", "root agent", "clean architecture", "now-coffe",
+    "e-posta", "web sitesi", "acik kaynak", "clean architecture",
     "calisma tarzi", "tech stack", "open source", "root agent",
 )
 
@@ -179,14 +202,17 @@ def _phrase_regex(phrase: str, *, english: bool) -> re.Pattern[str]:
 
 _STRONG_RES = tuple(_phrase_regex(alias, english=alias in _ENGLISH_ALIASES) for alias in OWNER_STRONG_ALIASES)
 _WEAK_RES = tuple(_phrase_regex(alias, english=alias in _ENGLISH_ALIASES) for alias in OWNER_WEAK_ALIASES)
-_STANDALONE_RES = tuple(_phrase_regex(name, english=False) for name in _STANDALONE_PROFILE_NAMES)
 
 
-def mentions_owner(question: str, *, allow_weak: bool = True) -> bool:
-    """Soru blog sahibine (Sample Author / MrBekoX / blog sahibi) gönderme yapıyor mu?"""
+def mentions_owner(question: str, *, allow_weak: bool = True, identity: ProfileIdentity | None = None) -> bool:
+    """Match generic owner references and this request's canonical owner aliases."""
 
     folded = fold_text(question)
     if any(pattern.search(folded) for pattern in _STRONG_RES):
+        return True
+    if identity is not None and any(
+        _phrase_regex(fold_text(alias), english=False).search(folded) for alias in identity.aliases
+    ):
         return True
     return allow_weak and any(pattern.search(folded) for pattern in _WEAK_RES)
 
@@ -203,9 +229,11 @@ def has_profile_term(question: str) -> bool:
     return any(phrase in folded for phrase in _PROFILE_TERM_PHRASES)
 
 
-def _mentions_standalone_profile_name(question: str) -> bool:
+def _mentions_standalone_profile_name(question: str, identity: ProfileIdentity | None) -> bool:
     folded = fold_text(question)
-    return any(pattern.search(folded) for pattern in _STANDALONE_RES)
+    return identity is not None and any(
+        _phrase_regex(fold_text(alias), english=False).search(folded) for alias in identity.profile_aliases
+    )
 
 
 def is_visitor_identity_question(question: str) -> bool:
@@ -215,7 +243,9 @@ def is_visitor_identity_question(question: str) -> bool:
     return any(pattern.search(folded) for pattern in _VISITOR_IDENTITY_PATTERNS)
 
 
-def is_owner_profile_question(question: str, *, article_bound: bool = False) -> bool:
+def is_owner_profile_question(
+    question: str, *, article_bound: bool = False, identity: ProfileIdentity | None = None
+) -> bool:
     """Blog sahibi hakkında biyografik/proje sorusu mu?
 
     Güçlü sahip göndermesi + profil terimi, makalesiz bağlamda zayıf sahip
@@ -225,9 +255,9 @@ def is_owner_profile_question(question: str, *, article_bound: bool = False) -> 
 
     if is_visitor_identity_question(question):
         return False
-    if _mentions_standalone_profile_name(question):
+    if _mentions_standalone_profile_name(question, identity):
         return True
-    if not mentions_owner(question, allow_weak=not article_bound):
+    if not mentions_owner(question, allow_weak=not article_bound, identity=identity):
         return False
     return has_profile_term(question)
 
@@ -244,13 +274,15 @@ def is_visitor_identity_route(route: RouteDecision) -> bool:
     return route.intent is RunIntent.GENERAL and route.brief_reason.startswith(VISITOR_IDENTITY_ROUTE_REASON)
 
 
-def owner_name_tokens() -> frozenset[str]:
+def owner_name_tokens(identity: ProfileIdentity | None = None) -> frozenset[str]:
     """Retrieval'da düşük ağırlıkla sayılan sahip adı belirteçleri (katlanmış)."""
 
-    return _OWNER_NAME_TOKENS
+    return frozenset(token for alias in identity.aliases for token in tokenize(alias)) if identity else frozenset()
 
 
-def detect_question_language(question: str, fallback: str) -> str:
+def detect_question_language(
+    question: str, fallback: str, *, identity: ProfileIdentity | None = None
+) -> str:
     """Sorunun dili: ``tr`` veya ``en``; ayırt edilemezse ``fallback``'in dili.
 
     Türkçe'ye özgü harf veya sık Türkçe belirteç → ``tr``; İngilizce işlev
@@ -258,9 +290,15 @@ def detect_question_language(question: str, fallback: str) -> str:
     belirteçlerle yakalanır.
     """
 
-    if any(char in _TURKISH_CHARS for char in question):
+    # A person's Turkish display name does not turn an English question into
+    # Turkish. Remove only this request's canonical aliases before language cues.
+    language_text = question
+    if identity is not None:
+        for alias in sorted(identity.aliases, key=len, reverse=True):
+            language_text = re.sub(re.escape(alias), " ", language_text, flags=re.IGNORECASE)
+    if any(char in _TURKISH_CHARS for char in language_text):
         return "tr"
-    tokens = tokenize(question)
+    tokens = tokenize(language_text)
     turkish = sum(1 for token in tokens if token in _TURKISH_TOKENS)
     english = sum(1 for token in tokens if token in _ENGLISH_TOKENS)
     if turkish > english:

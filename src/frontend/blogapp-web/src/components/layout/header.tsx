@@ -95,7 +95,7 @@ export function Header() {
   const socialLinks = [
     { href: GITHUB_URL, icon: Github, label: 'GitHub' },
     { href: LINKEDIN_URL, icon: Linkedin, label: 'LinkedIn' },
-  ];
+  ].filter(({ href }) => Boolean(href));
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">

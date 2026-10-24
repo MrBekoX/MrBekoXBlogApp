@@ -15,20 +15,11 @@ using Xunit;
 namespace BlogApp.Presentation.Api.Tests.Messaging.E2E;
 
 /// <summary>
-/// B11 bileşik uçtan uca (E2E) test ortamı — L009 izolasyon kuralı:
-/// broker üzerinde ÖZEL vhost <c>blogapp_w7_b11net</c> (python e2e vhost'u
-/// blogapp_w7_b11 ile ÇAKIŞMAZ) ve postgres üzerinde KOŞUM BAŞINA benzersiz
-/// scratch DB (blogdb_b11e2e_&lt;epoch-hex&gt;; B5/B9 deseni — sabit adlı iki
-/// koşum birbirinin bağlantısını kesmesin).
-///
-/// Bu ortam tek bir koşumda TAM kabloyu kullanır: gerçek AcceptAgentRunCommand
-/// (DB outbox) → gerçek OutboxRelay (confirm'lu yayın) → gerçek broker →
-/// kablodan komut doğrulaması (B1 sözleşmesi; python intake'in dayattığı
-/// doğrulama) → agent_svc rolüyle olay yayını (python AgentEventPublisher'ın
-/// kablo sözleşmesi) → gerçek AgentEventProjectionConsumer → GET run/replay
-/// sorguları. Model yolu test sağlayıcısı DEĞİL kablo taklidiyle temsil edilir
-/// (gerçek LLM yok — rapor sınırlamaları); bu yüzden suite "worker graph'ı"
-/// içermez, onun KABLO KARŞILIĞINI doğrular.
+/// Transport integration environment with a dedicated broker vhost and a
+/// unique scratch PostgreSQL database per run. Real acceptance, confirmed
+/// outbox publication, broker delivery, event projection, and read/replay
+/// queries are exercised. Event payloads are contract inputs; the fixture
+/// does not run a model or the Python worker.
 /// </summary>
 public sealed class AgentE2eFixture : IAsyncLifetime
 {

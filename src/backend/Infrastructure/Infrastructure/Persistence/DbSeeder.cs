@@ -1,3 +1,4 @@
+using System.Net.Mail;
 using BlogApp.Core.Application.Common.Options;
 using BlogApp.Core.Domain.Entities;
 using BlogApp.Core.Domain.Enums;
@@ -7,112 +8,77 @@ using Microsoft.Extensions.Options;
 
 namespace BlogApp.Infrastructure.Persistence;
 
-public class DbSeeder(
+/// <summary>Creates the first administrator without rotating or recovering existing accounts.</summary>
+public sealed class DbSeeder(
     AppDbContext context,
     IOptions<AdminUserSettings> adminUserSettings,
     ILogger<DbSeeder> logger)
 {
-    private readonly AdminUserSettings _adminSettings = adminUserSettings.Value;
+    private const long BootstrapLockKey = 0x424C4F4741444D;
 
-    public async Task SeedAsync()
+    public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        try
+        // All replicas serialize the first-account decision. The execution strategy
+        // owns the complete transaction so transient failures can safely retry it.
+        var strategy = context.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            await SeedAdminUserAsync();
-        }
-        catch (Exception ex)
-        {
-            // Tablo henüz yoksa veya bağlantı hazır değilse uygulamanın çökmesini engeller
-            logger.LogWarning("Seeding failed: {Message}. This is expected if migrations are not yet applied.", ex.Message);
-        }
-    }
+            // A failed SaveChanges can leave this bootstrapper's attempted user
+            // tracked as Added. A retry must rebuild its own fresh startup state.
+            context.ChangeTracker.Clear();
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+            await context.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock({BootstrapLockKey})", cancellationToken);
 
-    private async Task SeedAdminUserAsync()
-    {
-        // Production: .env veya appsettings'den al
-        // Development: varsayılan değerler kullan
-        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
-        var isDevelopment = environment == "Development";
-
-        // Öncelik: Environment variables > Options (appsettings)
-        var adminEmail = Environment.GetEnvironmentVariable("ADMIN_EMAIL") ?? _adminSettings.Email;
-        var adminUserName = Environment.GetEnvironmentVariable("ADMIN_USERNAME") ?? _adminSettings.UserName ?? "admin";
-        var adminPassword = Environment.GetEnvironmentVariable("ADMIN_PASSWORD") ?? _adminSettings.Password;
-
-        // SECURITY: No hardcoded fallback passwords, even for development
-        // Always require explicit configuration via environment variables
-        if (string.IsNullOrEmpty(adminEmail) || string.IsNullOrEmpty(adminPassword))
-        {
-            if (isDevelopment)
+            var administrators = context.Users.IgnoreQueryFilters().Where(user => user.Role == UserRole.Admin);
+            if (await administrators.AnyAsync(user => user.IsActive && !user.IsDeleted, cancellationToken))
             {
-                logger.LogWarning("Missing ADMIN_EMAIL and ADMIN_PASSWORD environment variables in development.");
-                logger.LogWarning("Please set these in your .env file:");
-                logger.LogWarning("  ADMIN_EMAIL=admin@localhost");
-                logger.LogWarning("  ADMIN_PASSWORD=YourSecurePassword123!@#");
+                logger.LogInformation("Administrator bootstrap skipped; existing credentials and account settings were preserved.");
+                await transaction.CommitAsync(cancellationToken);
+                return;
             }
-            else
+            if (await administrators.AnyAsync(cancellationToken))
             {
-                logger.LogError("Missing ADMIN_EMAIL and ADMIN_PASSWORD environment variables in production!");
+                throw new InvalidOperationException(
+                    "An administrator exists but is inactive or deleted. Use explicit account recovery; bootstrap does not reactivate accounts.");
             }
-            return;
-        }
 
-        // Check if admin user exists
-        var existingAdmin = await context.Users
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(u => u.Role == UserRole.Admin);
+            var settings = adminUserSettings.Value;
+            var email = settings.Email?.Trim().ToLowerInvariant();
+            var userName = string.IsNullOrWhiteSpace(settings.UserName) ? "admin" : settings.UserName.Trim();
+            if (string.IsNullOrWhiteSpace(email) || email.Length > 256
+                || !MailAddress.TryCreate(email, out var address) || address.Address != email
+                || string.IsNullOrWhiteSpace(settings.Password) || userName.Length > 50
+                || settings.FirstName.Length > 50)
+            {
+                throw new InvalidOperationException(
+                    "Creating the first administrator requires valid AdminUser:Email and AdminUser:Password settings, a username of at most 50 characters, and a valid first name.");
+            }
 
-        if (existingAdmin != null)
-        {
-            // Admin exists - sync password if changed
-            var passwordMatches = BCrypt.Net.BCrypt.Verify(adminPassword, existingAdmin.PasswordHash);
-            
-            if (!passwordMatches)
+            var normalizedUserName = userName.ToLowerInvariant();
+            if (await context.Users.IgnoreQueryFilters().AnyAsync(
+                user => user.Email.ToLower() == email || user.UserName.ToLower() == normalizedUserName,
+                cancellationToken))
             {
-                existingAdmin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword, workFactor: 12);
-                existingAdmin.UpdatedAt = DateTime.UtcNow;
-                await context.SaveChangesAsync();
-                logger.LogInformation("Admin password synced from environment variables.");
+                throw new InvalidOperationException(
+                    "Administrator bootstrap identity belongs to an existing account. Bootstrap does not promote or reuse accounts.");
             }
-            
-            // Also sync email and username if changed
-            var needsUpdate = false;
-            if (existingAdmin.Email != adminEmail.ToLower())
-            {
-                existingAdmin.Email = adminEmail.ToLower();
-                needsUpdate = true;
-            }
-            if (existingAdmin.UserName != adminUserName)
-            {
-                existingAdmin.UserName = adminUserName;
-                needsUpdate = true;
-            }
-            if (needsUpdate)
-            {
-                existingAdmin.UpdatedAt = DateTime.UtcNow;
-                await context.SaveChangesAsync();
-                logger.LogInformation("Admin user info synced from environment variables.");
-            }
-            
-            return;
-        }
 
-        // Create new admin if doesn't exist
-        var adminUser = new User
-        {
-            Id = Guid.NewGuid(),
-            UserName = adminUserName,
-            Email = adminEmail.ToLower(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword, workFactor: 12),
-            FirstName = _adminSettings.FirstName,
-            LastName = "User",
-            Role = UserRole.Admin,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await context.Users.AddAsync(adminUser);
-        await context.SaveChangesAsync();
-        logger.LogInformation("Admin user created successfully!");
+            context.Users.Add(new User
+            {
+                Id = Guid.NewGuid(),
+                UserName = userName,
+                Email = email,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(settings.Password, workFactor: 12),
+                FirstName = settings.FirstName,
+                LastName = "User",
+                Role = UserRole.Admin,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            logger.LogInformation("Initial administrator created. Subsequent startup does not rotate credentials.");
+        });
     }
 }

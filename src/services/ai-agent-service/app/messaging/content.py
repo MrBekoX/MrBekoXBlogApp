@@ -29,6 +29,7 @@ burada "son yayımlanmış an" en yüksek revision'dır.
 from __future__ import annotations
 
 import logging
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -39,11 +40,13 @@ from .contracts import ArticleContentChangedV1, ContentSnapshotBatchV1, ContentS
 from .consumer import BrokerConsumer
 from .settings import BrokerSettings
 from .topology import CONTENT_QUEUE
+from agent_core.errors import AgentErrorCode, PortError
 
 __all__ = [
     "CONTENT_MESSAGE_TYPES",
     "ContentApplyOutcome",
     "ContentIndexProjector",
+    "ContentProjectionResult",
     "ContentConsumerService",
     "ContentPolicyError",
     "ContentRevisionConflict",
@@ -138,30 +141,35 @@ class _SyncState:
     received_batches: set[int] = field(default_factory=set)
     applied_items: int = 0
     stale_items: int = 0
+    processed_items: int = 0
     completed: bool = False
     completed_item_count: int | None = None
     completed_message_id: str | None = None
 
 
 class _ContentBodyFetcher(Protocol):
-    """(article_id, revision) → makale gövdesi köprüsü (K7: içerik mesajda taşınmaz).
-
-    B8'de opsiyoneldir: verilirse updated olayı ve senkron referansı gerçek indeksleme
-    üretir; verilmezse yalnız revizyon durumu uygulanır (indeksleme yürütme anındaki
-    doğrulanmış snapshot ile A4 akışında olur).
-    """
+    """Fetch the latest published snapshot for a reference-only content event."""
 
     async def fetch(self, article_id: str, article_revision: int) -> Any:
         ...
 
 
-class ContentIndexProjector:
-    """İçerik durumunu A3 indeksine yansıtan köprü (opsiyonel).
+@dataclass(frozen=True)
+class ContentProjectionResult:
+    """Durably indexed state observed while resolving a content event."""
 
-    - Tombstone → ``remove_article``: parçalar + makale önbelleği tek çağrıda düşer.
-    - updated/senkron referansı → gövde köprüsü varsa ``index_article``; yoksa salt
-      revizyon durumu (``state_only``). Gövde hash'i olay hash'iyle doğrulanır;
-      uyuşmazlık çatışma kaydıyla görünür olur.
+    effect: str
+    revision: int
+    content_hash: str | None = None
+    removed: bool = False
+
+
+class ContentIndexProjector:
+    """Persist real content embeddings and removal tombstones before ACK.
+
+    Events carry references, so a later backend snapshot may supersede an old
+    delivery. The latest snapshot is indexed; equal-revision hash conflicts are
+    rejected and never committed to the consumer's revision state.
     """
 
     def __init__(
@@ -187,11 +195,37 @@ class ContentIndexProjector:
         content_hash: str,
         *,
         message_id: str = "",
-    ) -> str:
+    ) -> ContentProjectionResult:
         if self._content_fetcher is None:
-            return "state_only"
-        snapshot = await self._content_fetcher.fetch(article_id, revision)
-        if str(snapshot.content_hash) != content_hash:
+            raise PortError(
+                AgentErrorCode.CONFIG_ERROR,
+                "Content projection requires a real content fetcher.",
+                port="ContentIndexProjector",
+            )
+        try:
+            snapshot = await self._content_fetcher.fetch(article_id, revision)
+        except PortError as error:
+            if error.code is not AgentErrorCode.NOT_FOUND:
+                raise
+            # The backend's current published view is authoritative. Persist a
+            # tombstone before acknowledging an obsolete update/sync reference.
+            await self.on_article_removed(article_id, revision)
+            return ContentProjectionResult("missing_removed", revision, removed=True)
+        snapshot_revision = int(snapshot.article_revision)
+        if str(snapshot.article_id) != article_id:
+            raise PortError(
+                AgentErrorCode.PROVIDER_ERROR,
+                "Fetched article does not match the content reference.",
+                port="ContentIndexProjector",
+            )
+        if snapshot_revision < revision:
+            raise PortError(
+                AgentErrorCode.STALE_SNAPSHOT,
+                "Fetched article revision is older than the content event; retry after the backend catches up.",
+                port="ContentIndexProjector",
+                retryable=True,
+            )
+        if snapshot_revision == revision and str(snapshot.content_hash) != content_hash:
             state.record_conflict(
                 article_id=article_id,
                 revision=revision,
@@ -199,14 +233,21 @@ class ContentIndexProjector:
                 incoming_hash=str(snapshot.content_hash),
                 message_id=message_id or "content_fetch",
             )
-            return "hash_mismatch"
+            raise PortError(
+                AgentErrorCode.PROVIDER_ERROR,
+                "Fetched article hash conflicts with the content event at the same revision.",
+                port="ContentIndexProjector",
+            )
         result = await self._index.index_article(
             snapshot,
             embedding_provider=self._embedding_provider,
             model_config=self._model_config,
             canonical_url_template=self._canonical_url_template,
         )
-        return f"indexed:{result.chunk_count}"
+        effect = "superseded_indexed" if snapshot_revision > revision else "indexed"
+        return ContentProjectionResult(
+            f"{effect}:{result.chunk_count}", snapshot_revision, str(snapshot.content_hash)
+        )
 
     async def on_article_removed(self, article_id: str, revision: int) -> tuple[bool, int]:
         """Tombstone'u indekse uygular: (removed, removed_chunks) döndürür."""
@@ -230,6 +271,82 @@ class ContentSyncState:
         self._orphan_completions: list[str] = []
         self._profile: _ArticleState | None = None
         self._projects: dict[str, _ArticleState] = {}
+
+    def restore_articles(self, rows: Any) -> None:
+        """Restore revision/tombstone guards from the persistent content index.
+
+        Startup invokes this before accepting deliveries. Conflicting restored
+        rows fail closed instead of allowing stale commands to bypass removal.
+        """
+        for row in rows:
+            article_id = str(row["article_id"])
+            revision = int(row["revision"])
+            if revision < 0:
+                raise PortError(
+                    AgentErrorCode.CONFIG_ERROR,
+                    "Persistent content index contains a negative revision.",
+                    port="ContentSyncState",
+                )
+            if row["deleted"]:
+                self._apply_removal(article_id, revision)
+            else:
+                content_hash = row["content_hash"]
+                if not isinstance(content_hash, str) or len(content_hash) != 64 or any(
+                    value not in "0123456789abcdefABCDEF" for value in content_hash
+                ):
+                    raise PortError(
+                        AgentErrorCode.CONFIG_ERROR,
+                        "Persistent content index contains an invalid published content hash.",
+                        port="ContentSyncState",
+                    )
+                outcome = self._apply_published(article_id, revision, content_hash)
+                if outcome.reason == "revision_conflict":
+                    raise PortError(
+                        AgentErrorCode.CONFIG_ERROR,
+                        "Persistent content index has conflicting revisions; repair before starting the worker.",
+                        port="ContentSyncState",
+                    )
+
+    def preview_article_changed(self, payload: ArticleContentChangedV1) -> ContentApplyOutcome:
+        """Evaluate delivery ordering without committing an unprojected revision."""
+        article_id = str(payload.article_id)
+        revision = int(payload.article_revision)
+        if payload.action == "unpublished":
+            return self._apply_removal(article_id, revision, commit=False)
+        return self._apply_published(article_id, revision, str(payload.content_hash), commit=False)
+
+    def begin_snapshot_batch(self, payload: ContentSnapshotBatchV1) -> bool:
+        # Keep in-progress metadata so a concurrent completion received between
+        # retry attempts remains attached to this sync. No article revision or
+        # successful batch receipt is committed here.
+        sync = self._syncs.setdefault(str(payload.sync_id), _SyncState(total_batches=int(payload.total_batches)))
+        if sync.total_batches != int(payload.total_batches):
+            raise ContentPolicyError("Content sync batch count changed for the same sync ID.")
+        return int(payload.batch_index) in sync.received_batches
+
+    def record_projected_batch(
+        self, payload: ContentSnapshotBatchV1, outcomes: list[ContentApplyOutcome]
+    ) -> ContentApplyOutcome:
+        """Mark a batch received only after every reference was projected."""
+        sync_id = str(payload.sync_id)
+        batch_index = int(payload.batch_index)
+        sync = self._syncs.setdefault(sync_id, _SyncState(total_batches=int(payload.total_batches)))
+        if sync.total_batches != int(payload.total_batches):
+            raise ContentPolicyError("Content sync batch count changed for the same sync ID.")
+        if batch_index in sync.received_batches:
+            return ContentApplyOutcome("content.sync.batch", False, "duplicate_batch", sync_id, batch_index)
+        # A replay after a partly successful batch sees already persisted items
+        # as duplicates. They still count as successfully processed references.
+        applied = sum(outcome.applied or outcome.reason == "duplicate" for outcome in outcomes)
+        stale = sum(outcome.reason in {"stale_revision", "stale_after_removal"} for outcome in outcomes)
+        sync.applied_items += applied
+        sync.stale_items += stale
+        sync.processed_items += len(payload.items)
+        sync.received_batches.add(batch_index)
+        return ContentApplyOutcome(
+            "content.sync.batch", True,
+            f"batch_index={batch_index} applied={applied} stale={stale}", sync_id, batch_index,
+        )
 
     # -- okuma -----------------------------------------------------------
 
@@ -263,7 +380,7 @@ class ContentSyncState:
             item_count_mismatch=(
                 sync.completed
                 and sync.completed_item_count is not None
-                and sync.completed_item_count != sync.applied_items
+                and sync.completed_item_count != sync.processed_items
             ),
         )
 
@@ -347,6 +464,7 @@ class ContentSyncState:
                 applied += 1
             elif outcome.reason == "stale_revision":
                 stale += 1
+        sync.processed_items += len(payload.items)
         return ContentApplyOutcome(
             message_type="content.sync.batch",
             applied=True,
@@ -378,7 +496,7 @@ class ContentSyncState:
         sync.completed_message_id = message_id
         received = len(sync.received_batches)
         incomplete = received < sync.total_batches
-        mismatch = sync.completed_item_count != sync.applied_items
+        mismatch = sync.completed_item_count != sync.processed_items
         if incomplete or mismatch:
             logger.warning(
                 "senkron eksik kapandı: sync_id=%s batch=%d/%d uygulanan=%d completed_item_count=%d; "
@@ -442,6 +560,7 @@ class ContentSyncState:
         *,
         message_id: str = "",
         sync: _SyncState | None = None,
+        commit: bool = True,
     ) -> ContentApplyOutcome:
         removal = self._removals.get(article_id)
         if removal is not None and revision <= removal:
@@ -458,17 +577,21 @@ class ContentSyncState:
         if current is not None and revision == current.revision:
             if current.content_hash == content_hash:
                 return ContentApplyOutcome("content.article.changed", False, "duplicate", article_id, revision)
-            self.record_conflict(
-                article_id=article_id, revision=revision,
-                known_hash=current.content_hash, incoming_hash=content_hash, message_id=message_id,
-            )
+            if commit:
+                self.record_conflict(
+                    article_id=article_id, revision=revision,
+                    known_hash=current.content_hash, incoming_hash=content_hash, message_id=message_id,
+                )
             return ContentApplyOutcome("content.article.changed", False, "revision_conflict", article_id, revision)
-        self._articles[article_id] = _ArticleState(revision=revision, content_hash=content_hash)
+        if commit:
+            self._articles[article_id] = _ArticleState(revision=revision, content_hash=content_hash)
         if sync is not None:
             sync.applied_items += 1
         return ContentApplyOutcome("content.article.changed", True, "applied", article_id, revision)
 
-    def _apply_removal(self, article_id: str, revision: int, *, message_id: str = "") -> ContentApplyOutcome:
+    def _apply_removal(
+        self, article_id: str, revision: int, *, message_id: str = "", commit: bool = True
+    ) -> ContentApplyOutcome:
         current = self._articles.get(article_id)
         if current is not None and revision < current.revision:
             # Makale kaldırmadan SONRA yeniden yayımlanmış; eski kaldırma geçersizdir.
@@ -477,12 +600,13 @@ class ContentSyncState:
         if removal is not None and revision <= removal:
             # Tekrar teslim/idempotent: aynı veya daha eski kaldırma; indeks zaten boş.
             return ContentApplyOutcome("content.article.changed", False, "duplicate_removal", article_id, revision)
-        self._removals[article_id] = revision
-        self._articles.pop(article_id, None)
-        logger.info(
-            "kaldırma tombstone'u uygulandı: article=%s revision=%s (message_id=%s)",
-            article_id, revision, message_id,
-        )
+        if commit:
+            self._removals[article_id] = revision
+            self._articles.pop(article_id, None)
+            logger.info(
+                "kaldırma tombstone'u uygulandı: article=%s revision=%s (message_id=%s)",
+                article_id, revision, message_id,
+            )
         return ContentApplyOutcome("content.article.changed", True, "removed", article_id, revision)
 
 
@@ -503,6 +627,7 @@ class ContentConsumerService:
     ) -> None:
         self._state = state
         self._projector = projector
+        self._delivery_lock = asyncio.Lock()
 
     @property
     def state(self) -> ContentSyncState:
@@ -518,9 +643,22 @@ class ContentConsumerService:
 
     async def handle_delivery(self, raw: bytes, message: AbstractIncomingMessage) -> ContentApplyOutcome:
         parsed = parse_envelope(raw)
-        return await self.handle_parsed(parsed, message_id=_safe_message_id(message))
+        for attempt in range(3):
+            try:
+                return await self.handle_parsed(parsed, message_id=_safe_message_id(message))
+            except PortError as error:
+                if not error.retryable or attempt == 2:
+                    raise
+                await asyncio.sleep(2 ** attempt)
+        raise AssertionError("Unreachable content retry state")
 
     async def handle_parsed(self, parsed: ParsedEnvelope, *, message_id: str = "") -> ContentApplyOutcome:
+        # Broker prefetch may dispatch callbacks concurrently. Revision preview,
+        # durable projection, and in-memory commit form one serialized operation.
+        async with self._delivery_lock:
+            return await self._handle_parsed(parsed, message_id=message_id)
+
+    async def _handle_parsed(self, parsed: ParsedEnvelope, *, message_id: str = "") -> ContentApplyOutcome:
         message_type = parsed.spec.message_type
         if message_type not in CONTENT_MESSAGE_TYPES:
             raise ContentPolicyError(
@@ -529,11 +667,22 @@ class ContentConsumerService:
 
         payload = parsed.payload
         if isinstance(payload, ArticleContentChangedV1):
-            outcome = self._state.apply_article_changed(payload, message_id=message_id)
-            await self._project_article(outcome, payload, message_id=message_id)
-            return outcome
+            return await self._apply_article(payload, message_id=message_id)
         if isinstance(payload, ContentSnapshotBatchV1):
-            return self._state.apply_snapshot_batch(payload, message_id=message_id)
+            if self._state.begin_snapshot_batch(payload):
+                return ContentApplyOutcome(
+                    "content.sync.batch", False, "duplicate_batch", str(payload.sync_id), int(payload.batch_index)
+                )
+            outcomes = []
+            for item in payload.items:
+                event = ArticleContentChangedV1(
+                    article_id=item.article_id,
+                    article_revision=item.article_revision,
+                    content_hash=item.content_hash,
+                    action="updated",
+                )
+                outcomes.append(await self._apply_article(event, message_id=message_id))
+            return self._state.record_projected_batch(payload, outcomes)
         if isinstance(payload, ContentSnapshotCompletedV1):
             return self._state.apply_snapshot_completed(payload, message_id=message_id)
         if isinstance(payload, ProfileContentChangedV1):
@@ -542,15 +691,32 @@ class ContentConsumerService:
             return self._state.apply_project_changed(payload, message_id=message_id)
         raise ContentPolicyError(f"içerik kuyruğunda beklenmeyen payload türü: {type(payload).__name__}")
 
-    async def _project_article(
+    async def _apply_article(
         self,
-        outcome: ContentApplyOutcome,
         payload: ArticleContentChangedV1,
         *,
         message_id: str,
-    ) -> None:
-        if self._projector is None or not outcome.applied:
-            return
+    ) -> ContentApplyOutcome:
+        if payload.action == "updated" and payload.content_hash is None:
+            raise ContentPolicyError("Published content events require a content hash.")
+        outcome = self._state.preview_article_changed(payload)
+        if not outcome.applied:
+            # Applying a no-op records same-revision conflicts without moving
+            # the authoritative revision or touching the persistent index.
+            committed = self._state.apply_article_changed(payload, message_id=message_id)
+            if committed.reason == "revision_conflict":
+                raise PortError(
+                    AgentErrorCode.PROVIDER_ERROR,
+                    "Content delivery conflicts with the known hash at the same revision.",
+                    port="ContentConsumerService",
+                )
+            return committed
+        if self._projector is None:
+            raise PortError(
+                AgentErrorCode.CONFIG_ERROR,
+                "Content consumption requires a persistent index projector.",
+                port="ContentConsumerService",
+            )
         if outcome.reason == "removed":
             removed, chunks = await self._projector.on_article_removed(
                 str(payload.article_id), int(payload.article_revision)
@@ -560,8 +726,8 @@ class ContentConsumerService:
                 "tombstone indeks etkisi: article=%s removed=%s chunks=%s",
                 payload.article_id, removed, chunks,
             )
-            return
-        effect = await self._projector.on_article_applied(
+            return self._state.apply_article_changed(payload, message_id=message_id)
+        receipt = await self._projector.on_article_applied(
             self._state,
             str(payload.article_id),
             int(payload.article_revision),
@@ -570,7 +736,16 @@ class ContentConsumerService:
         )
         logger.info(
             "updated indeks etkisi: article=%s revision=%s effect=%s",
-            payload.article_id, payload.article_revision, effect,
+            payload.article_id, receipt.revision, receipt.effect,
+        )
+        projected_payload = payload.model_copy(update={
+            "article_revision": receipt.revision,
+            "content_hash": receipt.content_hash,
+            "action": "unpublished" if receipt.removed else "updated",
+        })
+        committed = self._state.apply_article_changed(projected_payload, message_id=message_id)
+        return ContentApplyOutcome(
+            committed.message_type, committed.applied, receipt.effect, committed.article_id, committed.revision
         )
 
 

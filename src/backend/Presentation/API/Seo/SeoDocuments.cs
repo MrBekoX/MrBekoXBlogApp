@@ -16,7 +16,7 @@ public sealed record SeoPostLink(
 public static class SeoDocuments
 {
     public const string SiteName = "MrBekoX";
-    public const string AuthorName = "Sample Author";
+    public const string AuthorName = "Blog sahibi";
     public const string SiteDescription =
         "Yazılım geliştirme yolculuğumda öğrendiklerimi, aldığım teknik notları ve proje deneyimlerimi paylaştığım kişisel blog.";
 
@@ -82,7 +82,7 @@ public static class SeoDocuments
         return new XDocument(urlset).ToString();
     }
 
-    public static string BuildLlmsTxt(string? baseUrl, IEnumerable<SeoPostLink> posts)
+    public static string BuildLlmsTxt(string? baseUrl, IEnumerable<SeoPostLink> posts, string? authorName = null)
     {
         var origin = NormalizeBaseUrl(baseUrl);
         var sb = new StringBuilder();
@@ -111,7 +111,7 @@ public static class SeoDocuments
         sb.AppendLine("## Links");
         sb.AppendLine();
         sb.AppendLine($"- [Blog]({origin}): Ana sayfa");
-        sb.AppendLine($"- [Hakkımda]({origin}/about): {AuthorName} hakkında onaylı profil");
+        sb.AppendLine($"- [Hakkımda]({origin}/about): {MarkdownLabel(string.IsNullOrWhiteSpace(authorName) ? AuthorName : authorName)} hakkında onaylı profil");
         sb.AppendLine($"- [RSS Feed]({origin}/rss): RSS 2.0 feed");
         sb.AppendLine($"- [Sitemap]({origin}/sitemap.xml): XML sitemap");
         return sb.ToString();

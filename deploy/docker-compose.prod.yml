@@ -1,0 +1,300 @@
+name: mrbekoxblogapp-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "2"
+
+x-agent-db: &agent-db
+  AGENT_DB_HOST: postgres
+  AGENT_DB_PORT: "5432"
+  AGENT_DB_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
+  AGENT_DB_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+  AGENT_DB_NAME: "${POSTGRES_DB:-blogdb}"
+  AGENT_DB_SCHEMA: agent
+  AGENT_DB_POOL_MIN: "1"
+  AGENT_DB_POOL_MAX: "3"
+
+services:
+  # No provider calls; create salted password hashes for isolated broker roles.
+  rabbitmq-definitions:
+    image: "${IMAGE_REPOSITORY:?IMAGE_REPOSITORY is required}:agent-${RELEASE_TAG:?RELEASE_TAG is required}"
+    user: "0:0"
+    command: ["python", "/bootstrap/rabbitmq-definitions.py"]
+    environment:
+      RABBITMQ_BACKEND_PASSWORD: "${RABBITMQ_BACKEND_PASSWORD:?RABBITMQ_BACKEND_PASSWORD is required}"
+      RABBITMQ_AGENT_PASSWORD: "${RABBITMQ_AGENT_PASSWORD:?RABBITMQ_AGENT_PASSWORD is required}"
+      RABBITMQ_DECLARER_PASSWORD: "${RABBITMQ_DECLARER_PASSWORD:?RABBITMQ_DECLARER_PASSWORD is required}"
+    volumes:
+      - ./rabbitmq-definitions.py:/bootstrap/rabbitmq-definitions.py:ro
+      - rabbitmq_definitions:/definitions
+    network_mode: none
+    restart: "no"
+    mem_limit: 64m
+    logging: *logging
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER is required}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      POSTGRES_DB: "${POSTGRES_DB:-blogdb}"
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=32MB", "-c", "max_connections=30", "-c", "effective_cache_size=128MB"]
+    volumes:
+      # Preserve existing PG18 external volume and PG18 parent mount path.
+      - postgres_data:/var/lib/postgresql
+    restart: unless-stopped
+    shm_size: 64m
+    mem_limit: 192m
+    memswap_limit: 384m
+    mem_reservation: 64m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    logging: *logging
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--maxmemory", "24mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    environment:
+      REDISCLI_AUTH: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    mem_limit: 48m
+    memswap_limit: 96m
+    mem_reservation: 24m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging: *logging
+
+  rabbitmq:
+    image: rabbitmq:4.3.6-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_NODENAME: rabbit@rabbitmq
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_definitions:/etc/rabbitmq/definitions:ro
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    depends_on:
+      rabbitmq-definitions:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    mem_limit: 320m
+    memswap_limit: 512m
+    mem_reservation: 128m
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+
+  agent-migrate:
+    image: "${IMAGE_REPOSITORY:?IMAGE_REPOSITORY is required}:agent-${RELEASE_TAG:?RELEASE_TAG is required}"
+    command: ["python", "-m", "alembic", "-c", "migrations/alembic.ini", "upgrade", "head"]
+    environment: *agent-db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 192m
+    memswap_limit: 384m
+    logging: *logging
+
+  api:
+    image: "${IMAGE_REPOSITORY:?IMAGE_REPOSITORY is required}:api-${RELEASE_TAG:?RELEASE_TAG is required}"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      DOTNET_GCServer: "0"
+      DOTNET_GCHeapHardLimit: "0x10000000"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-blogdb};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Maximum Pool Size=10;Minimum Pool Size=0"
+      ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD},abortConnect=false,connectTimeout=10000,syncTimeout=5000"
+      JwtSettings__Secret: "${JWT_SECRET:?JWT_SECRET is required}"
+      JwtSettings__Issuer: "${JWT_ISSUER:-BlogApp}"
+      JwtSettings__Audience: "${JWT_AUDIENCE:-BlogApp}"
+      JwtSettings__ExpirationMinutes: "${JWT_EXPIRATION_MINUTES:-60}"
+      AdminUser__Email: "${ADMIN_EMAIL:?ADMIN_EMAIL is required}"
+      AdminUser__UserName: "${ADMIN_USERNAME:-admin}"
+      AdminUser__Password: "${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}"
+      Database__RunMigrationsOnStartup: "true"
+      AllowedHosts: "${DOMAIN:?DOMAIN is required};www.${DOMAIN};api;localhost;127.0.0.1"
+      CorsOrigins__0: "https://${DOMAIN}"
+      CorsOrigins__1: "https://www.${DOMAIN}"
+      InternalHosts__0: localhost
+      InternalHosts__1: api
+      InternalHosts__2: "127.0.0.1"
+      AgentService__InternalApiKey: "${AGENT_CONTENT_SERVICE_KEY:?AGENT_CONTENT_SERVICE_KEY is required}"
+      AuthorProfile__Directory: /app/content/author-profile
+      AgentWireV2__Enabled: "true"
+      AgentContentSync__Enabled: "true"
+      AgentContentSync__BatchSize: "10"
+      AgentAcceptance__MaxActiveRunsTotal: "5"
+      AgentAcceptance__MaxActiveRunsPerOwner: "1"
+      AgentOutbox__BatchSize: "4"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__VirtualHost: blogapp_prod
+      RabbitMq__UserName: backend_svc
+      RabbitMq__Password: "${RABBITMQ_BACKEND_PASSWORD:?RABBITMQ_BACKEND_PASSWORD is required}"
+      RabbitMq__DeclarerUserName: topology_svc
+      RabbitMq__DeclarerPassword: "${RABBITMQ_DECLARER_PASSWORD:?RABBITMQ_DECLARER_PASSWORD is required}"
+      RabbitMq__ConsumerPrefetchCount: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      agent-migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./uploads:/app/uploads
+      - ./keys:/app/keys
+      - type: bind
+        source: "${AUTHOR_PROFILE_HOST_DIR:?AUTHOR_PROFILE_HOST_DIR is required}"
+        target: /app/content/author-profile
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 640m
+    mem_reservation: 128m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging: *logging
+
+  ai-agent:
+    image: "${IMAGE_REPOSITORY:?IMAGE_REPOSITORY is required}:agent-${RELEASE_TAG:?RELEASE_TAG is required}"
+    init: true
+    environment:
+      <<: *agent-db
+      AGENT_ENV_FILE: /dev/null
+      AGENT_BROKER_HOST: rabbitmq
+      AGENT_BROKER_PORT: "5672"
+      AGENT_BROKER_USERNAME: agent_svc
+      AGENT_BROKER_PASSWORD: "${RABBITMQ_AGENT_PASSWORD:?RABBITMQ_AGENT_PASSWORD is required}"
+      AGENT_BROKER_VHOST: blogapp_prod
+      AGENT_BROKER_PREFETCH: "1"
+      AGENT_TOPOLOGY_DECLARE: "false"
+      AGENT_LLM_API_KEY: "${AGENT_LLM_API_KEY:?AGENT_LLM_API_KEY is required}"
+      AGENT_LLM_BASE_URL: "${AGENT_LLM_BASE_URL:-https://api.openai.com/v1}"
+      AGENT_LLM_MODEL: "${AGENT_LLM_MODEL:?AGENT_LLM_MODEL is required}"
+      AGENT_EMBEDDING_API_KEY: "${AGENT_EMBEDDING_API_KEY:-}"
+      AGENT_EMBEDDING_BASE_URL: "${AGENT_EMBEDDING_BASE_URL:-https://api.openai.com/v1}"
+      AGENT_EMBEDDING_MODEL: text-embedding-3-small
+      AGENT_EMBEDDING_DIMENSIONS: "1536"
+      AGENT_CANONICAL_URL_TEMPLATE: "https://${DOMAIN}/posts/{slug}"
+      AGENT_CONTENT_BASE_URL: http://api:8080/api/v1
+      AGENT_CONTENT_SERVICE_KEY: "${AGENT_CONTENT_SERVICE_KEY:?AGENT_CONTENT_SERVICE_KEY is required}"
+      AGENT_PROFILE_DIR: /srv/content/author-profile
+      AGENT_WORKER_QUEUE_CLASSES: fast,research
+      AGENT_WORKER_POLL_INTERVAL: "1.0"
+      AGENT_LOG_LEVEL: INFO
+    volumes:
+      - agent_state:/srv/ai-agent-service/.agent_checkpoints
+      - type: bind
+        source: "${AUTHOR_PROFILE_HOST_DIR:?AUTHOR_PROFILE_HOST_DIR is required}"
+        target: /srv/content/author-profile
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      api:
+        condition: service_healthy
+      agent-migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 45s
+    mem_limit: 256m
+    memswap_limit: 512m
+    mem_reservation: 64m
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 120s
+    logging: *logging
+
+  frontend:
+    image: "${IMAGE_REPOSITORY:?IMAGE_REPOSITORY is required}:web-${RELEASE_TAG:?RELEASE_TAG is required}"
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=128
+      API_URL: http://api:8080/api/v1
+      REWRITE_URL: http://api:8080
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 192m
+    memswap_limit: 384m
+    mem_reservation: 64m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging: *logging
+
+  nginx:
+    image: nginx:alpine
+    environment:
+      DOMAIN: "${DOMAIN:?DOMAIN is required}"
+      NGINX_ENVSUBST_FILTER: ^DOMAIN
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/templates/nginx.conf.template:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      ai-agent:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 32m
+    memswap_limit: 64m
+    mem_reservation: 16m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+volumes:
+  postgres_data:
+    name: deploy_postgres_data
+    external: true
+  redis_data:
+    name: deploy_redis_data
+    external: true
+  rabbitmq_data:
+    name: deploy_rabbitmq_data
+  rabbitmq_definitions:
+    name: deploy_rabbitmq_definitions
+  agent_state:
+    name: deploy_agent_state

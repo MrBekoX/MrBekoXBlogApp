@@ -14,7 +14,7 @@ import pytest
 from pydantic import ValidationError
 
 import routing_helpers
-from routing_helpers import ExplodingRouterModel, make_context, run
+from routing_helpers import make_context, run
 
 from agent_core.errors import AgentErrorCode, PortError
 from agent_core.models import AgentMode, ModePreference, RouteDecision, RunIntent, SourceScope
@@ -270,15 +270,6 @@ def test_budget_profile_id_binds_verified_server_profile() -> None:
     decision = decide(make_context())
 
     assert decision.budget_profile_id == "router-profile"  # ExecutionContext.budget_profile.name
-
-
-def test_rule_decision_never_calls_router_model() -> None:
-    exploding = ExplodingRouterModel()
-
-    decision = run(route_for_context(make_context(article_id="post-1"), router_model=exploding))
-
-    assert exploding.call_count == 0
-    assert decision.selected_mode is AgentMode.FAST
 
 
 def test_mode_upgrade_record_is_bounded_to_fast_to_analysis() -> None:

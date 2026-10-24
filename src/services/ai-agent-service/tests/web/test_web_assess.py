@@ -115,7 +115,7 @@ def test_distinct_sources_are_not_duplicates() -> None:
     [
         ("https://docs.python.org/3/library/", "python.org"),
         ("https://www.python.org/psf/", "python.org"),
-        ("https://blog.example.co.uk/post", "sample.co.uk"),
+        ("https://blog.example.co.uk/post", "example.co.uk"),
         ("https://example.com/", "example.com"),
     ],
 )

@@ -87,7 +87,7 @@ APPROVED_PROJECTS: list[ProjectRecord] = [
             "A modern, full-stack blog platform with AI-powered content assistance, "
             "autonomous agent orchestration, and event-driven microservices — built "
             "with clean architecture principles. (README.md) Proje repo sahibi "
-            "Sample Author tarafından geliştirilmektedir."
+            "tarafından geliştirilmektedir."
         ),
         technologies=[
             ".NET 10",

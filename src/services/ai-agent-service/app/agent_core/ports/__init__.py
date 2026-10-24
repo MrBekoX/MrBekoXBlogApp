@@ -1,9 +1,8 @@
 """Agent çekirdeğinin 11 dış portu (plan A1, ``01-agent-gelistirme-plani.md:184``).
 
 Portlar agent paketi içindeki arayüzlerdir; somut sağlayıcı adaptörleri
-``agent_core.adapters`` altında, test double'lar ise ``agent_core.adapters.test_doubles``
-altında yaşar — ayrım kabul ölçütüdür (plan A1: "Test double ile gerçek
-sağlayıcı arasındaki ayrım açıktır"). Ortak hata sözleşmesi:
+``agent_core.adapters`` altında yaşar. Production uses configured real
+providers and fails closed when their configuration is missing. Ortak hata sözleşmesi:
 ``agent_core.errors.AgentErrorCode`` ve ``PortError``.
 """
 

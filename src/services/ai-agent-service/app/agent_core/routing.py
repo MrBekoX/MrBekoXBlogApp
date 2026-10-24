@@ -36,7 +36,7 @@ uygulama; doğrulanmış politika profiline eşle."
     retrieval derinliğini değiştirir). Router modeline danışılmaz.
   * AUTO konu (ve v1 ``None``): blog sahibi göndermesi + biyografi/proje
     terimi (``profile.detection``) "açıkla/explain/özetle" ve araştırma
-    sinyallerinin ÖNÜNDE profil niyetidir ("Sample'ın eğitimini açıkla" →
+    sinyallerinin ÖNÜNDE profil niyetidir (sahibin eğitimini sormak →
     PROFILE); "CQRS nedir?" gibi sahip göndermesiz teknik sorular etkilenmez.
     Açık makale göndermesi ("bu makalede ...") ve kişisel bağlam sinyali bu
     sınıflamayı ezer; makaleye bağlı bağlamda zayıf takma adlar ("yazar")
@@ -71,6 +71,7 @@ from .models import (
 from .ports import CancellationToken
 from .ports.model import ModelProvider, ModelRequest
 from .profile.detection import (
+    ProfileIdentity,
     VISITOR_IDENTITY_ROUTE_REASON,
     is_owner_profile_question,
     is_visitor_identity_question,
@@ -521,7 +522,7 @@ def parse_router_suggestion(text: str) -> RouterSuggestion | None:
         return None
 
 
-def profile_route_signal(context: ExecutionContext) -> str | None:
+def profile_route_signal(context: ExecutionContext, *, profile_identity: ProfileIdentity | None = None) -> str | None:
     """Who am I profil rotasının gerekçesi; profil rotası değilse ``None``.
 
     Sıra: açık ``who_am_i`` konusu (koşulsuz) → kişisel bağlam / açık makale
@@ -537,7 +538,7 @@ def profile_route_signal(context: ExecutionContext) -> str | None:
     if is_visitor_identity_question(question):
         return VISITOR_IDENTITY_ROUTE_REASON
     article_bound = bool(context.article_id or context.article_snapshot)
-    if not is_owner_profile_question(question, article_bound=article_bound):
+    if not is_owner_profile_question(question, article_bound=article_bound, identity=profile_identity):
         return None
     legacy = classify_guidance_intent(question)
     if legacy is RunIntent.COLLABORATION:
@@ -577,11 +578,13 @@ def _profile_decision(context: ExecutionContext, reason: str) -> RouteDecision:
     )
 
 
-def _rule_decision(context: ExecutionContext, *, mode: AgentMode) -> RouteDecision:
+def _rule_decision(
+    context: ExecutionContext, *, mode: AgentMode, profile_identity: ProfileIdentity | None = None
+) -> RouteDecision:
     """Kural tabanlı tam karar: 8 alan + sinyal gerekçesi."""
     # Who am I (additive): açık konu, ziyaretçi kimliği ve blog sahibi soruları
     # A5 açıklama/araştırma sinyallerinin ÖNÜNDE profil niyetidir.
-    profile_reason = profile_route_signal(context)
+    profile_reason = profile_route_signal(context, profile_identity=profile_identity)
     if profile_reason is not None:
         return _profile_decision(context, profile_reason)
     question = context.question
@@ -701,6 +704,7 @@ async def route_for_context(
     *,
     router_model: ModelProvider | None = None,
     cancel: CancellationToken | None = None,
+    profile_identity: ProfileIdentity | None = None,
 ) -> RouteDecision:
     """``ExecutionContext`` için bir kez rota kararı üretir.
 
@@ -718,7 +722,7 @@ async def route_for_context(
         has_selection=context.selected_text is not None,
         preference=context.mode_preference,
     )
-    decision = _rule_decision(context, mode=mode)
+    decision = _rule_decision(context, mode=mode, profile_identity=profile_identity)
     # Profil rotası (who_am_i / sahip sorusu / ziyaretçi kimliği) kesin karardır.
     if (
         router_model is None

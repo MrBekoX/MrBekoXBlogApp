@@ -62,7 +62,7 @@ _SERVICE_KEY_HEADER = "X-Agent-Service-Key"
 #: Varsayılan istek zaman aşımı (saniye) — ``AGENT_CONTENT_TIMEOUT_SECONDS`` boşsa.
 DEFAULT_TIMEOUT_SECONDS = 10.0
 
-#: ``PortError.port`` değeri: hata portu kendisidir (FakeContentRepository ile aynı ad).
+#: Error classification uses the ContentRepository port name.
 _PORT = "ContentRepository"
 
 

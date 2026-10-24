@@ -1,6 +1,6 @@
 # Build stage
-# Consider pinning: node:20.11.0-alpine3.19
-FROM node:20-alpine AS build
+# Node 24 LTS, matching the supported production runtime.
+FROM node:24-alpine AS build
 WORKDIR /app
 
 # Copy package files and install dependencies first (cache-friendly)
@@ -13,20 +13,33 @@ COPY . ./
 # Accept build arguments for API URLs (after npm ci to preserve cache)
 ARG NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
 ARG NEXT_PUBLIC_SIGNALR_URL=
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=
+ARG NEXT_PUBLIC_SITE_URL
+ARG NEXT_PUBLIC_AUTHOR_NAME
+ARG NEXT_PUBLIC_GITHUB_URL=
+ARG NEXT_PUBLIC_TWITTER_URL=
+ARG NEXT_PUBLIC_LINKEDIN_URL=
+ARG NEXT_PUBLIC_TWITTER_HANDLE=
 ARG API_URL=http://localhost:8080/api/v1
 ARG REWRITE_URL=http://localhost:5116
 
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_SIGNALR_URL=${NEXT_PUBLIC_SIGNALR_URL}
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+ENV NEXT_PUBLIC_AUTHOR_NAME=${NEXT_PUBLIC_AUTHOR_NAME}
+ENV NEXT_PUBLIC_GITHUB_URL=${NEXT_PUBLIC_GITHUB_URL}
+ENV NEXT_PUBLIC_TWITTER_URL=${NEXT_PUBLIC_TWITTER_URL}
+ENV NEXT_PUBLIC_LINKEDIN_URL=${NEXT_PUBLIC_LINKEDIN_URL}
+ENV NEXT_PUBLIC_TWITTER_HANDLE=${NEXT_PUBLIC_TWITTER_HANDLE}
 ENV API_URL=${API_URL}
 ENV REWRITE_URL=${REWRITE_URL}
 
 # Build application (standalone output)
-RUN npm run build
+RUN test -n "$NEXT_PUBLIC_SITE_URL" && test -n "$NEXT_PUBLIC_AUTHOR_NAME" && npm run build
 
 # Production stage
-# Consider pinning: node:20.11.0-alpine3.19
-FROM node:20-alpine AS runtime
+FROM node:24-alpine AS runtime
 WORKDIR /app
 
 # Create non-root user for security

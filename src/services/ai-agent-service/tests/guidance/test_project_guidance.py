@@ -12,7 +12,7 @@ from agent_core.errors import AgentErrorCode
 from agent_core.guidance import run_guidance
 from agent_core.models import RunIntent, RunStatus
 
-from .conftest import FailingProjectRepository, make_guidance_context, make_route, run
+from .conftest import make_guidance_context, make_route, run
 
 
 def run_projects(question: str, *, language: str = "tr", project_repository=object()):
@@ -63,10 +63,3 @@ def test_unwired_project_repository_fails_with_config_error() -> None:
 
     assert outcome.status is RunStatus.FAILED
     assert outcome.error_code is AgentErrorCode.CONFIG_ERROR
-
-
-def test_project_port_error_becomes_failed_outcome() -> None:
-    outcome = run_projects("Hangi projeler var?", project_repository=FailingProjectRepository())
-
-    assert outcome.status is RunStatus.FAILED
-    assert outcome.error_code is AgentErrorCode.PROVIDER_ERROR

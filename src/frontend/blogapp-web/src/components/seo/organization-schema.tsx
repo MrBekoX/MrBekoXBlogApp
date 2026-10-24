@@ -18,7 +18,7 @@ export function OrganizationSchema() {
       '@type': 'ImageObject',
       url: `${SITE_URL}/images/avatar.jpg`,
     },
-    sameAs: SOCIAL_URLS,
+    ...(SOCIAL_URLS.length ? { sameAs: SOCIAL_URLS } : {}),
     description: SITE_DESCRIPTION,
   } as WithContext<Organization>;
 

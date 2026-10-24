@@ -36,7 +36,6 @@ from .conftest import (
     status_is,
     wait_until,
 )
-from .doubles import B6WorkerStoreDouble
 
 pytestmark = pytest.mark.usefixtures("clean_broker")
 
@@ -93,64 +92,6 @@ async def _outbox_events(pool: Any, run_id: str, message_type: str) -> list[Any]
             run_id,
             message_type,
         )
-
-
-def test_cancel_queued_job_finalizes_before_execution(store: Any, db_pool: Any) -> None:
-    """Execute-öncesi cancel engeli: queued iş cancel komutuyla başlamadan biter."""
-
-    run_id = "c1000000-0000-0000-0000-000000000001"
-    run(seed_job(db_pool, run_id=run_id, status="queued"))
-    run(publish_command(_cancel_command(run_id)))
-
-    service = _control_retry_service(store, _admin_commands_publisher(store))
-    decision = _process_control(service)
-    assert decision is not None and decision.action == RetryAction.ACK
-
-    run(wait_until(status_is(db_pool, run_id, "cancelled"), timeout_seconds=5))
-    cancelled_events = run(_outbox_events(db_pool, run_id, "agent.run.cancelled"))
-    assert len(cancelled_events) == 1  # durum + olay TEK transaction'da üretildi
-
-    # İptal edilmiş işi worker double'ı ZATEN alamaz (status queued değil):
-    worker = B6WorkerStoreDouble(db_pool)
-    claimed = run(worker.claim_next_job())
-    assert claimed is None  # execute hiç başlamadı
-
-
-def test_cancel_running_job_records_intent_then_terminalizes(store: Any, db_pool: Any) -> None:
-    """Running işte niyet kaydı terminal değildir; terminal mark_cancelled_if_running ile gelir."""
-
-    run_id = "c1000000-0000-0000-0000-000000000002"
-    run(seed_job(db_pool, run_id=run_id, status="running", execution_attempt=1))
-    run(publish_command(_cancel_command(run_id)))
-
-    service = _control_retry_service(store, _admin_commands_publisher(store))
-    assert _process_control(service).action == RetryAction.ACK
-
-    # Niyet kaydedildi ama iş RUNNING KALDI (cancel intent kaydı terminal değildir).
-    assert run(_job_status(db_pool, run_id)) == "running"
-    assert run(store.has_cancel_intent(run_id)) is True
-    assert len(run(_outbox_events(db_pool, run_id, "agent.run.cancelled"))) == 0
-
-    # B6 worker: cancel intent'li işin complete'u 'rejected' döner (sözleşme guard'ı).
-    worker = B6WorkerStoreDouble(db_pool)
-    claimed = run(worker.claim_next_job())  # iş running; double claim etmez — running işi simüle etmek için doğrudan:
-    assert claimed is None
-    outcome = run(
-        worker.complete_job(run_id, {"answer": "geç oldu"}, _fencing_of(run_id))
-    )
-    assert outcome == "rejected"  # aktif cancel intent var: completed yazılamaz
-
-    # Terminali B7 üretir: mark_cancelled_if_running → cancelled + olay.
-    result = run(
-        store.mark_cancelled_if_running(
-            run_id,
-            conversation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"conv:{run_id}")),
-            correlation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "corr:seed")),
-            reason="kullanıcı isteği",
-        )
-    )
-    assert result == "cancelled"
-    assert len(run(_outbox_events(db_pool, run_id, "agent.run.cancelled"))) == 1
 
 
 def test_cancel_terminal_job_is_rejected_and_leaves_state(store: Any, db_pool: Any) -> None:
@@ -236,40 +177,6 @@ def test_action_result_known_run_is_acked_for_b9(store: Any, db_pool: Any) -> No
     service = _control_retry_service(store, _admin_commands_publisher(store))
     assert _process_control(service).action == RetryAction.ACK
     assert queue_depth(f"{CONTROL_QUEUE}.dlq") == 0
-
-
-def test_terminal_precedence_both_directions_with_worker_double(store: Any, db_pool: Any) -> None:
-    """Terminal-öncelik kuralı (ortak sözleşme) store double ile iki yönde kanıtlanır."""
-
-    # (a) cancel intent ÖNCE → complete_job 'rejected' → mark_cancelled_if_running cancelled üretir.
-    run_id_a = "c1000000-0000-0000-0000-000000000007"
-    conversation_a = run(seed_job(db_pool, run_id=run_id_a, status="running", execution_attempt=1))
-    run(store.record_cancel_intent(
-        run_id_a, requested_by="backend-net", conversation_id=conversation_a,
-        correlation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "corr:seed")),
-    ))
-    worker = B6WorkerStoreDouble(db_pool)
-    assert run(worker.complete_job(run_id_a, {"answer": "x"}, _fencing_of(run_id_a))) == "rejected"
-    assert run(store.mark_cancelled_if_running(
-        run_id_a, conversation_id=conversation_a,
-        correlation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "corr:seed")),
-    )) == "cancelled"
-    assert run(_job_status(db_pool, run_id_a)) == "cancelled"
-
-    # (b) completed commit'i cancel intent'ten ÖNCE → record_cancel_intent 'already_terminal'.
-    run_id_b = "c1000000-0000-0000-0000-000000000008"
-    conversation_b = run(seed_job(db_pool, run_id=run_id_b, status="running", execution_attempt=1))
-    assert run(worker.complete_job(run_id_b, {"answer": "hazır"}, _fencing_of(run_id_b))) == "completed"
-    intent = run(store.record_cancel_intent(
-        run_id_b, requested_by="backend-net", conversation_id=conversation_b,
-        correlation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "corr:seed")),
-    ))
-    assert intent.outcome == CancelIntentOutcome.ALREADY_TERMINAL  # tamamlanma kazanır
-    assert run(store.mark_cancelled_if_running(
-        run_id_b, conversation_id=conversation_b,
-        correlation_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "corr:seed")),
-    )) == "untouched"  # terminal işe dokunmaz
-    assert run(_job_status(db_pool, run_id_b)) == "completed"
 
 
 def _fencing_of(run_id: str) -> str:

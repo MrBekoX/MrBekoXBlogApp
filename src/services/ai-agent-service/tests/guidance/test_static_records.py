@@ -16,7 +16,6 @@ from agent_core.adapters import (
     StaticProfileRepository,
     StaticProjectRepository,
 )
-from agent_core.adapters.test_doubles import FakeProfileRepository, FakeProjectRepository
 from agent_core.ports import ProfileRepository, ProjectRepository
 
 

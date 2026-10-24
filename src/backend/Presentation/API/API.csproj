@@ -35,6 +35,8 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.0" />
     <PackageReference Include="System.ServiceModel.Syndication" Version="10.0.5" />
+    <!-- Override the EF design-time tooling dependency affected by CVE-2026-84008/70162. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="9.0.21" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Who am I (K2, A33): canonical yazar profili tek kaynaktan (src/content/author-profile)
@@ -65,6 +67,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Core\Application\Application.csproj" />
     <ProjectReference Include="..\..\Infrastructure\Infrastructure\Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="appsettings.*.json"
+             CopyToPublishDirectory="Never" />
   </ItemGroup>
 
 </Project>

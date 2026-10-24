@@ -1,8 +1,7 @@
 """tests/guidance yardımcıları ve yerel fixture'lar (A9).
 
-Double'lar yereldir ve ``is_test_double`` işaretlidir; double sonucu gerçek
-sağlayıcı başarısı sayılmaz. Katalog/proje girdileri AÇIK test verisidir —
-üretim onaylı kayıtları ``agent_core.adapters.static_records`` altındadır.
+Inputs below exercise deterministic guidance and extraction. Production records
+are provided by ``agent_core.adapters.static_records``.
 """
 
 from __future__ import annotations
@@ -98,63 +97,6 @@ def make_route(intent: RunIntent, *, mode: str = "fast", run_id: str = "run-1") 
         brief_reason="a9 test kararı",
         decided_at=NOW,
     )
-
-
-class ExplodingModelProvider:
-    """Rehberlik/iş birliği akışının model çağırmadığını kanıtlayan double."""
-
-    is_test_double = True
-
-    def __init__(self) -> None:
-        self.call_count = 0
-
-    async def complete(self, request, *, cancel=None):
-        self.call_count += 1
-        raise PortError(
-            AgentErrorCode.PROVIDER_ERROR,
-            "rehberlik akışı model çağırmamalıdır; bu double çağrıyı patlatır",
-            port="ModelProvider",
-        )
-
-
-class FailingProfileRepository:
-    """Port arızası simülasyonu: ``not_found`` (profil verisi yapılandırılmamış)."""
-
-    is_test_double = True
-
-    async def get_profile(self):
-        raise PortError(
-            AgentErrorCode.NOT_FOUND,
-            "profil verisi yapılandırılmamış",
-            port="ProfileRepository",
-        )
-
-
-class FailingProjectRepository:
-    """Port arızası simülasyonu: ``provider_error``."""
-
-    is_test_double = True
-
-    async def list_projects(self):
-        raise PortError(
-            AgentErrorCode.PROVIDER_ERROR,
-            "proje deposu yanıt vermiyor",
-            port="ProjectRepository",
-        )
-
-
-class RecordingProgressSink:
-    """İlerleme olaylarını kaydeden double (``ACTION_PROPOSED`` kanıtı için)."""
-
-    is_test_double = True
-
-    def __init__(self) -> None:
-        self.events: list[DomainProgress] = []
-
-    async def publish(self, event: DomainProgress) -> None:
-        if not isinstance(event, DomainProgress):
-            raise PortError(AgentErrorCode.VALIDATION_ERROR, "beklenmeyen olay tipi", port="ProgressSink")
-        self.events.append(event)
 
 
 def catalog_entry(article_id: str, title: str, url: str, topics: list[str]):

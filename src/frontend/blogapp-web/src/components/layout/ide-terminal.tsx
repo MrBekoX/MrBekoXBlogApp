@@ -46,7 +46,7 @@ const WHOAMI_LINES: OutLine[] = [
   line('out', '  location  →  Türkiye'),
   line('out', '  focus     →  .NET · Python · AI Agents · Microservices'),
   line('blank', ''),
-  line('out', '  profil    →  /about (Who am I · Sample Author)', 'text-blue-400', '/about'),
+  line('out', `  profil    →  /about (Who am I · ${AUTHOR_NAME})`, 'text-blue-400', '/about'),
   line('blank', ''),
 ];
 
@@ -86,8 +86,8 @@ const SKILLS_LINES: OutLine[] = [
 const CONTACT_LINES: OutLine[] = [
   line('out', 'Sosyal Linkler', 'text-ide-primary'),
   line('blank', ''),
-  line('out', `  GitHub    →  ${GITHUB_URL.replace('https://', '')}`, 'text-blue-400', GITHUB_URL),
-  line('out', `  LinkedIn  →  ${LINKEDIN_URL.replace('https://www.', '')}`, 'text-blue-400', LINKEDIN_URL),
+  ...(GITHUB_URL ? [line('out', `  GitHub    →  ${GITHUB_URL.replace('https://', '')}`, 'text-blue-400', GITHUB_URL)] : []),
+  ...(LINKEDIN_URL ? [line('out', `  LinkedIn  →  ${LINKEDIN_URL.replace('https://www.', '')}`, 'text-blue-400', LINKEDIN_URL)] : []),
   line('blank', ''),
 ];
 

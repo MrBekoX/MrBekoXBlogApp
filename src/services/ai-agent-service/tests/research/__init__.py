@@ -1,1 +1,1 @@
-"""A7 derin araştırma test paketi (test sahipliği: A7)."""
+"""Research evidence and provenance algorithm checks."""

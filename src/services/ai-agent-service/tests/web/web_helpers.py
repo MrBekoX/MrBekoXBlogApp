@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from agent_core.adapters.test_doubles.fake_state import FakeBudgetStore
+from agent_core.budget import PolicyBudgetStore
 from agent_core.budget.guard import BudgetGuard
 from agent_core.budget.policy import BudgetPolicy
 from agent_core.errors import AgentErrorCode, PortError
@@ -271,68 +271,9 @@ def make_guard(settings: WebToolSettings, resolver: Callable[[str], Awaitable[Se
     return UrlGuard.from_settings(settings, resolver=resolver)
 
 
-def make_read_tool(settings: WebToolSettings, store: FakeBudgetStore | None = None) -> tuple[ReadSourceTool, BudgetGuard]:
+def make_read_tool(settings: WebToolSettings, store: PolicyBudgetStore | None = None) -> tuple[ReadSourceTool, BudgetGuard]:
     """Kayıt aracını bellek içi bütçe deposuyla kurar (araç döner, koruyucu döner)."""
-    budget_store = store or FakeBudgetStore()
+    budget_store = store or PolicyBudgetStore(BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60))
     guard = BudgetGuard(budget_store, BudgetPolicy(max_attempts_per_action=2, max_duration_seconds=60), "run-web-test")
     fetcher = HttpFetcher(settings, UrlGuard.from_settings(settings))
     return ReadSourceTool(guard, fetcher, TextExtractor(settings), settings=settings), guard
-
-
-# --- Bütçe deposu test çifti ----------------------------------------------------
-
-
-class CapacityBudgetStore(FakeBudgetStore):
-    """Tür başına toplam deneme kapasitesi; aşım ``budget_exhausted`` üretir."""
-
-    is_test_double = True
-
-    def __init__(self, capacities: dict[BudgetKind, int]) -> None:
-        super().__init__()
-        self._capacities = dict(capacities)
-
-    async def reserve(self, run_id: str, kind: BudgetKind, amount: int):
-        cap = self._capacities.get(kind)
-        if cap is not None and self.committed.get(kind, 0) + amount > cap:
-            raise PortError(
-                AgentErrorCode.BUDGET_EXHAUSTED,
-                f"bütçe türü doldu: {kind.value} kapasite {cap}",
-                port="BudgetStore",
-            )
-        return await super().reserve(run_id, kind, amount)
-
-
-# --- Arama sağlayıcı test çifti ---------------------------------------------------
-
-
-class ScriptedSearchProvider:
-    """Senaryolu arama sağlayıcısı: her denemede sıradaki davranış uygulanır.
-
-    Davranışlar: sonuç listesi (başarı; dict girdiler ``WebSearchResult``'a
-    çevrilir), ``PortError`` (arıza) veya ``Exception``. Çağrılar kaydedilir.
-    """
-
-    is_test_double = True
-
-    def __init__(self, script: Sequence[Sequence[dict] | PortError | Exception]) -> None:
-        self.script = list(script)
-        self.calls: list[tuple[str, int]] = []
-
-    async def search(
-        self,
-        query: str,
-        *,
-        max_results: int = 5,
-        cancel: CancellationToken | None = None,
-    ) -> list[WebSearchResult]:
-        self.calls.append((query, max_results))
-        step = self.script.pop(0) if self.script else []
-        if isinstance(step, Exception):
-            raise step
-        if isinstance(step, PortError):
-            raise step
-        now = datetime.now(timezone.utc)
-        return [
-            item if isinstance(item, WebSearchResult) else WebSearchResult(**item, retrieved_at=now)
-            for item in step
-        ][:max_results]

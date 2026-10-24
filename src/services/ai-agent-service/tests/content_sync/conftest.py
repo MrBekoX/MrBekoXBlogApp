@@ -7,8 +7,8 @@ Ortam (L009 / W5 dispatch kuralı: her fazın broker entegrasyon testleri KENDİ
 vhost'unu kullanır):
 - Broker: ayrı vhost ``blogapp_dev_b8`` — B2/B3 (blogapp_dev), B4 (blogapp_dev_b4)
   ve B5 (blogapp_dev_b5) paketleriyle kuyruk paylaşımı yok.
-- B8 consumer projection durumu bellek-içidir (A3 InMemoryContentIndex sınır kararı;
-  gerçek pgvector B11 Docker fazının konusudur) — bu paketin scratch DB ihtiyacı yoktur.
+- These checks validate content revision state; they do not invoke an embedding
+  provider or operate the production vector index.
 - Parola KODA GİRMEZ: dev düz metin kimlikler B2'den devralınır (yalnız lokal broker).
 
 pytest-asyncio varsayımı YOKTUR: senkron testler paylaşımlı loop'ta ``run()`` ile

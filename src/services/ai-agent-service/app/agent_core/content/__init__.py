@@ -1,28 +1,16 @@
-"""A3 içerik bölümleme ve hibrit retrieval paketi.
-
-Genel akış: ``ArticleSnapshot`` → ``chunk_article`` (markdown hiyerarşi +
-kod bloğu korumalı bölümleme, ortak anchor sözleşmesi) →
-``InMemoryContentIndex.index_article`` (embedding + atomik yerleştirme,
-idempotent) → ``InMemoryContentIndex.search`` (anlamsal + anahtar kelime
-hibrit arama, filtreler skorlamadan önce) → ``remove_article`` (kaldırma iş
-modeli, önbellek geçersizleme).
-
-pgvector hedef sözleşmesi: ``pgvector.py`` + ``pgvector_schema.sql`` — B8'e
-kadar çalıştırılmaz (görev sınır kararı).
-"""
+"""Markdown chunking, durable OpenAI vectors and hybrid article retrieval."""
 
 from .anchors import EMPTY_SLUG_FALLBACK, fold_text, heading_anchor, slugify_heading
 from .chunking import PreparedChunk, chunk_article, embedded_text
 from .config import INDEX_VERSION, ChunkingConfig, EmbeddingModelConfig
 from .index import (
-    InMemoryContentIndex,
     IndexResult,
     RemovalResult,
     SearchQuery,
     build_canonical_url,
 )
 from .models import AnchorSlug, IndexedChunk
-from .pgvector import PgvectorContentIndex, PgvectorContentIndexStore
+from .postgres import PostgresContentIndex, PostgresEmbeddingCache
 from .retrieval import (
     RRF_K,
     SearchCache,
@@ -38,12 +26,11 @@ __all__ = [
     "AnchorSlug",
     "ChunkingConfig",
     "EmbeddingModelConfig",
-    "InMemoryContentIndex",
     "INDEX_VERSION",
     "IndexedChunk",
     "IndexResult",
-    "PgvectorContentIndex",
-    "PgvectorContentIndexStore",
+    "PostgresContentIndex",
+    "PostgresEmbeddingCache",
     "PreparedChunk",
     "RRF_K",
     "RemovalResult",

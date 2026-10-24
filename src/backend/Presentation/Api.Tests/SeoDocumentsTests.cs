@@ -65,4 +65,13 @@ public class SeoDocumentsTests
         Assert.DoesNotContain("# Başlık", postLine);
         Assert.DoesNotContain("\n", postLine);
     }
+
+    [Fact]
+    public void Llms_uses_the_configured_public_author_name()
+    {
+        var text = SeoDocuments.BuildLlmsTxt("https://example.com", [], "Configured Author");
+
+        Assert.Contains("Configured Author hakkında onaylı profil", text);
+        Assert.DoesNotContain("Sample Author", text);
+    }
 }

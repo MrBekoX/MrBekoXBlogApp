@@ -1,0 +1,123 @@
+name: Release image build
+
+# Preparation only: no automatic publishing or server deployment.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Immutable shared tag for API, web and agent (for example commit SHA)'
+        required: true
+        type: string
+      site_url:
+        description: 'HTTPS site origin matching production DOMAIN (no path)'
+        required: true
+        type: string
+      author_name:
+        description: 'Approved public author name (no sample identity)'
+        required: true
+        type: string
+      github_url:
+        description: 'Optional approved public GitHub HTTPS link; empty omits it'
+        required: false
+        type: string
+      twitter_url:
+        description: 'Optional approved public X/Twitter HTTPS link; empty omits it'
+        required: false
+        type: string
+      linkedin_url:
+        description: 'Optional approved public LinkedIn HTTPS link; empty omits it'
+        required: false
+        type: string
+      twitter_handle:
+        description: 'Optional approved public @handle; empty omits it'
+        required: false
+        type: string
+      push_images:
+        description: 'Publish to GHCR after the three images build successfully'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release inputs
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PUBLIC_SITE_URL: ${{ inputs.site_url }}
+          PUBLIC_AUTHOR_NAME: ${{ inputs.author_name }}
+          PUBLIC_GITHUB_URL: ${{ inputs.github_url }}
+          PUBLIC_TWITTER_URL: ${{ inputs.twitter_url }}
+          PUBLIC_LINKEDIN_URL: ${{ inputs.linkedin_url }}
+          PUBLIC_TWITTER_HANDLE: ${{ inputs.twitter_handle }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ || "$RELEASE_TAG" == latest ]]; then
+            echo 'Use a release-specific Docker tag'
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os, re
+          from urllib.parse import urlsplit
+          value = os.environ['PUBLIC_SITE_URL']
+          site = urlsplit(value)
+          if (site.scheme != 'https' or site.path not in ('', '/') or site.query or site.fragment
+              or site.username or site.password or site.port not in (None, 443)
+              or not re.fullmatch(r'(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}', site.hostname or '')):
+              raise SystemExit('site_url must be an HTTPS public site origin without path or custom port')
+          author = os.environ['PUBLIC_AUTHOR_NAME'].strip()
+          if not author or author.casefold() == 'sample author' or len(author) > 200 or '\n' in author or '\r' in author:
+              raise SystemExit('author_name must be the approved public author name')
+          for key in ('PUBLIC_GITHUB_URL', 'PUBLIC_TWITTER_URL', 'PUBLIC_LINKEDIN_URL'):
+              value = os.environ.get(key, '')
+              if not value:
+                  continue
+              link = urlsplit(value)
+              if (any(char.isspace() for char in value) or link.scheme != 'https' or link.username or link.password
+                  or link.query or link.fragment or link.port not in (None, 443)
+                  or not re.fullmatch(r'(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}', link.hostname or '')):
+                  raise SystemExit('Optional public links require HTTPS without credentials, query, fragment or custom port')
+          handle = os.environ.get('PUBLIC_TWITTER_HANDLE', '')
+          if handle and not re.fullmatch(r'@[A-Za-z0-9_]{1,15}', handle):
+              raise SystemExit('twitter_handle must be empty or an approved public @handle')
+          PY
+          echo "IMAGE_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - name: Build all images without publishing
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PUBLIC_SITE_URL: ${{ inputs.site_url }}
+          PUBLIC_AUTHOR_NAME: ${{ inputs.author_name }}
+          PUBLIC_GITHUB_URL: ${{ inputs.github_url }}
+          PUBLIC_TWITTER_URL: ${{ inputs.twitter_url }}
+          PUBLIC_LINKEDIN_URL: ${{ inputs.linkedin_url }}
+          PUBLIC_TWITTER_HANDLE: ${{ inputs.twitter_handle }}
+        run: |
+          docker build --platform linux/amd64 -t "$IMAGE_REPOSITORY:api-$RELEASE_TAG" -f docker/backend/Dockerfile .
+          docker build --platform linux/amd64 -t "$IMAGE_REPOSITORY:agent-$RELEASE_TAG" -f docker/ai-agent-service/Dockerfile .
+          docker build --platform linux/amd64 -t "$IMAGE_REPOSITORY:web-$RELEASE_TAG" -f docker/frontend/Dockerfile \
+            --build-arg NEXT_PUBLIC_API_URL=/api/v1 --build-arg NEXT_PUBLIC_SIGNALR_URL= \
+            --build-arg "NEXT_PUBLIC_SITE_URL=$PUBLIC_SITE_URL" --build-arg "NEXT_PUBLIC_AUTHOR_NAME=$PUBLIC_AUTHOR_NAME" \
+            --build-arg "NEXT_PUBLIC_GITHUB_URL=$PUBLIC_GITHUB_URL" --build-arg "NEXT_PUBLIC_TWITTER_URL=$PUBLIC_TWITTER_URL" \
+            --build-arg "NEXT_PUBLIC_LINKEDIN_URL=$PUBLIC_LINKEDIN_URL" --build-arg "NEXT_PUBLIC_TWITTER_HANDLE=$PUBLIC_TWITTER_HANDLE" \
+            --build-arg API_URL=http://api:8080/api/v1 --build-arg REWRITE_URL=http://api:8080 \
+            src/frontend/blogapp-web
+      - name: Log in to GHCR
+        if: inputs.push_images
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Publish the complete release
+        if: inputs.push_images
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          for component in api agent web; do
+            docker push "$IMAGE_REPOSITORY:$component-$RELEASE_TAG"
+          done

@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { fetchAuthorProfile } from '@/lib/server-api';
 import { datedClaimAsOf, formatProfileDate } from '@/lib/author-profile';
-import { OG_IMAGE_PATH, SITE_URL } from '@/lib/site-config';
+import { AUTHOR_NAME, OG_IMAGE_PATH, SITE_NAME, SITE_URL } from '@/lib/site-config';
 import { ProfileAgentPanel } from '@/components/agent/profile-agent-panel';
 import { ProfileMarkdown } from '@/components/profile/profile-markdown';
 import { BreadcrumbSchema } from '@/components/seo/breadcrumb-schema';
@@ -19,15 +19,15 @@ import { BreadcrumbSchema } from '@/components/seo/breadcrumb-schema';
  */
 export const dynamic = 'force-dynamic';
 
-const PAGE_TITLE = 'Who am I · Sample Author';
+const PAGE_TITLE = `Who am I · ${AUTHOR_NAME}`;
 const PAGE_DESCRIPTION =
-  "Blog sahibi Sample Author (MrBekoX) hakkında yayımlanmış profil bilgileri ve bu profile dayanarak cevap veren Who am I asistanı.";
+  `${AUTHOR_NAME} hakkında yayımlanmış profil bilgileri ve bu profile dayanarak cevap veren Who am I asistanı.`;
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
   description: PAGE_DESCRIPTION,
   openGraph: {
-    title: `${PAGE_TITLE} | MrBekoX Blog`,
+    title: `${PAGE_TITLE} | ${SITE_NAME} Blog`,
     description: PAGE_DESCRIPTION,
     url: `${SITE_URL}/about`,
     type: 'profile',
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: `${PAGE_TITLE} | MrBekoX Blog`,
+    title: `${PAGE_TITLE} | ${SITE_NAME} Blog`,
     description: PAGE_DESCRIPTION,
     images: [OG_IMAGE_PATH],
   },
@@ -67,7 +67,7 @@ export default async function AboutPage() {
         {profile ? (
           <>
             <p className="text-sm leading-relaxed text-gray-400">
-              Sample&apos;ın kendi anlatımıyla yayımlanmış profil bilgileri. Aşağıdaki asistan
+              Yazarın kendi anlatımıyla yayımlanmış profil bilgileri. Aşağıdaki asistan
               cevaplarını yalnız bu bölümlere dayandırır ve kaynak olarak ilgili bölüme bağlar.
             </p>
             {profile.contactChannels.length > 0 && (

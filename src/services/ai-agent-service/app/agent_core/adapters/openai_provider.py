@@ -7,9 +7,8 @@ YOKTUR (events.py sözleşmesi: parçalar birleştirilmiş chunk olarak akar; ü
 sınırı aşan chunk'ı bölmek çağıranın işidir). Son kullanım chunk'ındaki gerçek
 usage ile TAM ``ModelResponse`` döner.
 
-``complete`` aynı yolu deltasız yürütür (tek kod yolu; router dahil her çağrı
-aynı SSE sözleşmesinden geçer). Saat inject edilebilir (``clock``); testler
-``httpx.MockTransport`` ile scripted SSE kullanır — GERÇEK AĞ ÇAĞRISI YAPILMAZ.
+``complete`` uses the same SSE path without emitting deltas. Production always
+calls the configured remote provider; no scripted model responses are bundled.
 
 Hata sözleşmesi (ports.model): ``config_error`` — anahtar/model eksik (ayar
 katmanında); ``provider_error`` — HTTP/akış arızası (5xx/429 ``retryable``);
@@ -125,10 +124,9 @@ class OpenAiModelProvider:
                 timeout=timeout,
             ) as response:
                 if response.status_code >= 400:
-                    detail = (await response.aread()).decode("utf-8", errors="replace")[:500]
                     raise PortError(
                         AgentErrorCode.PROVIDER_ERROR,
-                        f"sağlayıcı HTTP {response.status_code} döndürdü: {detail}",
+                        f"Provider returned HTTP {response.status_code}",
                         port="OpenAiModelProvider",
                         retryable=response.status_code == 429 or response.status_code >= 500,
                     )
@@ -165,14 +163,14 @@ class OpenAiModelProvider:
         except httpx.TimeoutException as error:
             raise PortError(
                 AgentErrorCode.TIMEOUT,
-                f"sağlayıcı isteği zaman aşımına uğradı: {error}",
+                "Provider request timed out",
                 port="OpenAiModelProvider",
                 retryable=True,
             ) from None
         except httpx.HTTPError as error:
             raise PortError(
                 AgentErrorCode.PROVIDER_ERROR,
-                f"sağlayıcı isteği başarısız: {error}",
+                "Provider transport request failed",
                 port="OpenAiModelProvider",
                 retryable=True,
             ) from None

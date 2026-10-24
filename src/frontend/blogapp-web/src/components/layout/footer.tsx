@@ -9,7 +9,7 @@ export function Footer() {
   const socialLinks = [
     { href: GITHUB_URL, icon: Github, label: 'GitHub' },
     { href: LINKEDIN_URL, icon: Linkedin, label: 'LinkedIn' },
-  ];
+  ].filter(({ href }) => Boolean(href));
 
   const navigationLinks = [
     { href: '/', label: 'Ana Sayfa' },

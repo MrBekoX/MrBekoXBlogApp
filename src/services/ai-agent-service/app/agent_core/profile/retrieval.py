@@ -1,47 +1,30 @@
-"""Profil corpus'u için yerel lexical retrieval (BM25 + TR/EN alias genişletme).
+"""Canonical profile retrieval using lexical evidence and real embeddings.
 
-- Yalnız pinlenmiş belgenin ``retrievable`` (public) bölümleri indekslenir;
-  makale, web, kullanıcı geçmişi veya seçili metin bu depoya KARIŞMAZ —
-  indeks girdisi yalnız ``ProfileDocument``'tir.
-- Saf araçlar yeniden kullanılır: ``content.anchors.fold_text`` (Türkçe
-  katlama), ``content.retrieval.tokenize`` ve ``bm25_scores``.
-- Türkçe ek toleransı: belirteçler 5 karakterlik köke indirgenir
-  ("egitimini" → "egiti"; "universite"/"university" → "unive").
-- TR/EN alias genişletme: ``profile.json`` bölüm alias'ları sürümlüdür ve
-  profille birlikte gelir. Alias eşleşmesi yalnız ilgili bölümün skorunu
-  artırır; yeni olgu taşımaz (modele alias metni gönderilmez).
-- Sahip adı belirteçleri (sample, author, mrbekox) düşük ağırlıkla sayılır:
-  her soru Sample'ı anar, ayırt edici değildir.
-- Bütçe: soruya bağlı sınırlı top-k ve toplam bağlam token bütçesi
-  (fast 4/1800, analysis 6/2800, deep_research 8/3800).
-- Önbellek: indeks snapshot başına bir kez kurulur (aynı snapshot yeniden
-  indekslenmez); sorgu sonucu sınırlı LRU'dadır. Anahtarlar profile_id,
-  revision, content_hash, dil, normalize sorgu, top-k, bütçe, chunker ve
-  indeks sürümünü kapsar. Bu yol gerçek anlamsal embedding DEĞİLDİR.
-- Anlamsal genişleme portu (opsiyonel, ``ProfileEmbedding``): gerçek bir
-  ``EmbeddingProvider`` verilirse lexical adaylar RRF ile yeniden sıralanır
-  (``retrieve_async``). Yeterlilik kararı lexical kalır (embedding kanıt
-  uydurmaz); önbellek anahtarına embedding model kimliği girer. Test double /
-  hash sağlayıcısı (``is_test_double``) üretimde yok sayılır — anlamsal başarı
-  diye sunulmaz. Varsayılan kompozisyonda embedding yoktur (vector DB önkoşul
-  değildir).
+Only public sections of a pinned profile snapshot become candidates. BM25 and
+versioned TR/EN aliases establish evidence sufficiency; the production worker's
+OpenAI provider reranks candidates with reciprocal rank fusion. Semantic scores
+cannot create evidence when lexical retrieval finds no relevant source.
+
+Bounded caches distinguish profile revision/hash, embedding model/dimensions,
+and exact evidence text, including editor notes. The synchronous lexical API
+remains available for source inspection and deterministic evidence checks.
 """
 
 from __future__ import annotations
 
+import hashlib
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 
-from typing import Any
-
 from ..content.anchors import fold_text
 from ..content.config import EmbeddingModelConfig
+from ..content.postgres import validate_vectors
 from ..content.retrieval import RRF_K, bm25_scores, cosine_similarity, tokenize
 from ..models import AgentMode
-from ..ports import CancellationToken
+from ..ports import CancellationToken, EmbeddingProvider
 from .chunking import CHUNKER_VERSION, ProfileChunk, chunk_document
-from .detection import owner_name_tokens
+from .detection import ProfileIdentity, owner_name_tokens
 from .source import ProfileDocument
 
 __all__ = [
@@ -205,6 +188,7 @@ class ProfileIndex:
 
     def __init__(self, document: ProfileDocument, chunks: list[ProfileChunk]) -> None:
         self.snapshot = document.snapshot
+        self.owner_tokens = owner_name_tokens(ProfileIdentity.from_document(document))
         self.chunks = chunks
         self.section_order = {section.section_id: i for i, section in enumerate(document.sections)}
         docs: list[list[str]] = []
@@ -253,7 +237,7 @@ class ProfileIndex:
     def score(self, query: str) -> tuple[list[float], dict[str, float], int]:
         """Parça başına skor, alias artışları ve eşleşen içerik terimi sayısı."""
 
-        owner = {_stem(token) for token in owner_name_tokens()}
+        owner = {_stem(token) for token in self.owner_tokens}
         terms: dict[str, float] = {}
         for token in _content_tokens(query):
             stem = _stem(token)
@@ -274,16 +258,10 @@ class ProfileIndex:
 
 @dataclass(frozen=True)
 class ProfileEmbedding:
-    """Opsiyonel anlamsal yeniden sıralama: ``EmbeddingProvider`` + model kimliği."""
+    """Configured semantic provider and the index identity of its real vectors."""
 
-    provider: Any
+    provider: EmbeddingProvider
     model: EmbeddingModelConfig
-    #: Yalnız testlerde: test double sağlayıcıyı kullanmaya izin verir.
-    allow_test_double: bool = False
-
-    @property
-    def usable(self) -> bool:
-        return self.allow_test_double or not getattr(self.provider, "is_test_double", False)
 
 
 #: Anlamsal yeniden sıralamaya giren lexical aday çarpanı (top_k × N).
@@ -306,9 +284,7 @@ class ProfileRetriever:
         self._results: OrderedDict[tuple, RetrievalResult] = OrderedDict()
         self._chunk_vectors: OrderedDict[tuple, list[float]] = OrderedDict()
         self._lock = threading.Lock()
-        #: Test double/hash sağlayıcısı anlamsal sayılmaz: yok sayılır ve işaretlenir.
-        self._embedding = embedding if embedding is not None and embedding.usable else None
-        self.embedding_ignored = embedding is not None and self._embedding is None
+        self._embedding = embedding
         #: Kurulan indeks sayısı (aynı snapshot yeniden indekslenmez — testlerde ölçülür).
         self.index_builds = 0
 
@@ -320,6 +296,15 @@ class ProfileRetriever:
     def _index_key(document: ProfileDocument) -> tuple:
         snap = document.snapshot
         return (snap.profile_id, snap.revision, snap.content_hash, CHUNKER_VERSION, INDEX_VERSION)
+
+    @staticmethod
+    def _vector_key(index: ProfileIndex, chunk: ProfileChunk, model: EmbeddingModelConfig) -> tuple:
+        snapshot = index.snapshot
+        evidence_hash = hashlib.sha256(chunk.evidence_text.encode("utf-8")).hexdigest()
+        return (
+            model.model_id, model.dimensions, snapshot.profile_id, snapshot.revision,
+            snapshot.content_hash, chunk.source_id, evidence_hash,
+        )
 
     def index_for(self, document: ProfileDocument) -> ProfileIndex:
         key = self._index_key(document)
@@ -396,8 +381,10 @@ class ProfileRetriever:
         budget: RetrievalBudget,
         cancel: CancellationToken | None = None,
     ) -> RetrievalResult:
-        """Embedding yapılandırılmışsa lexical adayları RRF ile yeniden sıralar; yoksa ``retrieve``."""
+        """Rerank source-backed candidates with the configured semantic provider."""
 
+        if cancel is not None:
+            cancel.raise_if_cancelled()
         if self._embedding is None:
             return self.retrieve(document, query, language=language, budget=budget)
         normalized = normalize_query(query)
@@ -405,7 +392,8 @@ class ProfileRetriever:
         model_id = self._embedding.model.model_id
         cache_key = (
             snap.profile_id, snap.revision, snap.content_hash, language.casefold()[:2], normalized,
-            budget.top_k, budget.max_context_tokens, CHUNKER_VERSION, INDEX_VERSION, model_id,
+            budget.top_k, budget.max_context_tokens, CHUNKER_VERSION, INDEX_VERSION,
+            model_id, self._embedding.model.dimensions,
         )
         with self._lock:
             cached = self._results.get(cache_key)
@@ -440,16 +428,29 @@ class ProfileRetriever:
         assert embedding is not None
         model_id = embedding.model.model_id
         candidates = [item.chunk for item in lexical.chunks]
-        missing = [chunk for chunk in candidates if (model_id, chunk.source_id) not in self._chunk_vectors]
-        texts = [normalized] + [chunk.evidence_text for chunk in missing]
-        vectors = await embedding.provider.embed(texts, cancel=cancel)
-        query_vector = vectors[0]
+        keys = [self._vector_key(index, chunk, embedding.model) for chunk in candidates]
+        # Snapshot references before awaiting HTTP. Another request may evict
+        # these LRU entries while this request is producing its missing vectors.
         with self._lock:
-            for chunk, vector in zip(missing, vectors[1:]):
-                self._chunk_vectors[(model_id, chunk.source_id)] = vector
+            local_vectors = {key: self._chunk_vectors[key] for key in keys if key in self._chunk_vectors}
+            for key in local_vectors:
+                self._chunk_vectors.move_to_end(key)
+        missing = [(chunk, key) for chunk, key in zip(candidates, keys, strict=True) if key not in local_vectors]
+        texts = [normalized] + [chunk.evidence_text for chunk, _ in missing]
+        vectors = await embedding.provider.embed(texts, cancel=cancel)
+        validate_vectors(vectors, len(texts), embedding.model.dimensions)
+        if cancel is not None:
+            cancel.raise_if_cancelled()
+        query_vector = vectors[0]
+        for (_, key), vector in zip(missing, vectors[1:], strict=True):
+            local_vectors[key] = vector
+        with self._lock:
+            for key, vector in local_vectors.items():
+                self._chunk_vectors[key] = vector
+                self._chunk_vectors.move_to_end(key)
             while len(self._chunk_vectors) > self._cache_capacity * 4:
                 self._chunk_vectors.popitem(last=False)
-            chunk_vectors = [self._chunk_vectors[(model_id, chunk.source_id)] for chunk in candidates]
+        chunk_vectors = [local_vectors[key] for key in keys]
         semantic_order = sorted(
             range(len(candidates)), key=lambda i: -cosine_similarity(query_vector, chunk_vectors[i])
         )

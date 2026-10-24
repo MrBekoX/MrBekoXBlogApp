@@ -28,7 +28,7 @@ from agent_core.research.planning import build_sub_questions, extract_claims
 from agent_core.research.report import SOURCE_ID_PATTERN, strip_fabricated_sources
 from agent_core.state.artifacts import InMemoryArtifactStore
 
-from .conftest import (
+from .evidence_helpers import (
     CLAIM_1,
     CLAIM_2,
     CONFLICT_TEXT,

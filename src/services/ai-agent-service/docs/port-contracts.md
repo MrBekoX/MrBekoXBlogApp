@@ -1,26 +1,25 @@
 # Port sözleşme özeti (A10 teslimi)
 
-Kaynaklar: `app/agent_core/ports/*.py` (11 port, `Protocol`), iş modelleri
-`app/agent_core/models/*.py` (13 iş modeli + RunStatus; Pydantic v2
-`extra=forbid`). Test double'lar `adapters/test_doubles` altındadır ve
-`is_test_double=True` taşır; üretim gerçekleştirimleri bu işareti taşımaz
-(D009).
+Sources: `app/agent_core/ports/*.py` define the structural protocols;
+`app/agent_core/models/*.py` define validated business models (Pydantic v2,
+`extra=forbid`). Production adapters implement these protocols.
 
 ## Portlar
 
-| Port | Sorumluluk | Ana metotlar | Üretim/test gerçekleştirimi |
+| Port | Sorumluluk | Ana metotlar | Production implementation |
 | --- | --- | --- | --- |
-| `ModelProvider` | tek tamamlama çağrısı; kullanım döner | `complete(request, cancel)` | operatör sağlayıcısı / `FakeModelProvider`, `ScriptedModelProvider` |
-| `EmbeddingProvider` | metin→vektör kümesi | `embed(texts, cancel)` | gerçek sağlayıcı (B11 pgvector) / `FakeEmbeddingProvider` |
+| `ModelProvider` | tek tamamlama çağrısı; kullanım döner | `complete` / `stream_complete` | `OpenAiModelProvider` |
+| `EmbeddingProvider` | metin→vektör kümesi | `embed(texts, cancel)` | `OpenAiEmbeddingProvider` (`text-embedding-3-small`, 1536 dimensions) |
 | `BudgetStore` | atomik rezervasyon/commit/release + kullanım görünümü | `reserve/commit/release/usage` | `PolicyBudgetStore` (üretim; bellek-içi) |
-| `CheckpointStore` | run bazında opak payload saklama | `save/load/load_latest/list` | `FileCheckpointStore` (D016) / fake |
-| `ContentRepository` | makale içeriği getirme (K7 yalnız-referans bağlam) | `get_article(article_id)` | B8 content sync hattı / `FakeContentRepository` |
-| `ProfileRepository` | onaylı profil özeti | `get_profile()` | backend onaylı kayıt / `FakeProfileRepository` |
-| `ProjectRepository` | onaylı proje kayıtları | `list_projects()` | backend onaylı kayıt / `FakeProjectRepository` |
-| `WebSearchProvider` | kontrollü web araması | `search(query, max_results, cancel)` | operatör sağlayıcısı / scripted |
+| `CheckpointStore` | run bazında opak payload saklama | `save/load/load_latest/list` | `FileCheckpointStore` (persistent filesystem) |
+| `ContentRepository` | makale içeriği getirme (K7 yalnız-referans bağlam) | `get_article(article_id)` | `HttpContentRepository` |
+| `ProfileRepository` | onaylı profil özeti | `get_profile()` | `CanonicalProfileRepository` / canonical summary |
+| `ProfileKnowledgeRepository` | versioned profile content and provenance | `active_snapshot()` / `load(snapshot)` | `CanonicalProfileRepository` |
+| `ProjectRepository` | onaylı proje kayıtları | `list_projects()` | `StaticProjectRepository` |
+| `WebSearchProvider` | kontrollü web araması | `search(query, max_results, cancel)` | `HttpWebSearchProvider` with a configured endpoint |
 | `SourceReader` | URL'den metin çıkarma (A6 araç arkası) | `read(url, ...)` | `HttpSourceReader` (SSRF korumalı) |
-| `ProgressSink` | ilerleme olayı yayını; arızası akışı kesmez | `publish(DomainProgress)` | B5 olay yayını / `RecordingProgressSink` |
-| `CancellationToken` | iptal sinyali | `is_cancelled`, `reason`, `raise_if_cancelled` | B7 kontrol hattı / stub'lar |
+| `ProgressSink` | ilerleme olayı yayını; arızası akışı kesmez | `publish(DomainProgress)` | Worker progress sink and persistent event outbox |
+| `CancellationToken` | iptal sinyali | `is_cancelled`, `reason`, `raise_if_cancelled` | Worker cancellation and lease fencing |
 
 ## Veri tipi köprüleri (D015)
 

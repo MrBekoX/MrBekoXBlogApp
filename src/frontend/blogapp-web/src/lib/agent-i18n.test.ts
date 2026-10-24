@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AUTHOR_NAME } from './site-config';
 import { AGENT_SERVER_LANG, agentTexts, agentTopicTexts } from './agent-i18n';
 
 const NEW_KEYS = [
@@ -50,9 +51,9 @@ describe('agent i18n', () => {
     }
   });
 
-  it('konu sahibi açıkça görünür: "Who am I · Sample Author"', () => {
-    expect(agentTexts.tr.topicWhoAmI).toBe('Who am I · Sample Author');
-    expect(agentTexts.en.topicWhoAmI).toBe('Who am I · Sample Author');
+  it('konu sahibi yapılandırılmış yazar adıyla görünür', () => {
+    expect(agentTexts.tr.topicWhoAmI).toBe(`Who am I · ${AUTHOR_NAME}`);
+    expect(agentTexts.en.topicWhoAmI).toBe(`Who am I · ${AUTHOR_NAME}`);
     expect(agentTexts.tr.whoAmIUnavailable).toContain('Who am I şu an kullanılamıyor');
   });
 
@@ -65,7 +66,7 @@ describe('agent i18n', () => {
   it('konu metinleri: who_am_i öneri soruları ve makale önerileri ayrı', () => {
     const whoTr = agentTopicTexts('tr', 'who_am_i');
     expect(whoTr.suggestions).toEqual([
-      'Sample Author kimdir?',
+      `${AUTHOR_NAME} kimdir?`,
       'Hangi üniversitede okudu?',
       'Eğitmenlik deneyimi var mı?',
       'Mimari yaklaşımı nedir?',
@@ -77,7 +78,7 @@ describe('agent i18n', () => {
       agentTexts.tr.suggestionCode,
     ]);
     expect(whoTr.placeholder).not.toBe(agentTopicTexts('tr', 'auto').placeholder);
-    expect(whoTr.title).toBe('Who am I · Sample Author');
+    expect(whoTr.title).toBe(`Who am I · ${AUTHOR_NAME}`);
   });
 
   it('sunucu render dili sabit tr (hydration uyumu)', () => {

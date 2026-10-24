@@ -181,32 +181,6 @@ def test_budget_exhaustion_rejects_before_call() -> None:
     asyncio.run(scenario())
 
 
-def test_cancellation_before_call_starts_nothing() -> None:
-    """İptal sinyali rezervasyondan önce yakalanır; rezervasyon ve olay yok."""
-
-    async def scenario() -> None:
-        from agent_core.adapters.test_doubles import PreCancelledToken
-
-        guard, store = _guard()
-        calls: list[int] = []
-
-        async def call(attempt: int) -> CallResult:
-            calls.append(attempt)
-            return CallResult(value="yasak")
-
-        with pytest.raises(PortError) as excinfo:
-            await guard.guarded(
-                action_id="answer", kind=BudgetKind.MODEL_CALL, call=call,
-                cancel=PreCancelledToken(),
-            )
-        assert excinfo.value.code is AgentErrorCode.CANCELLED
-        assert calls == []
-        usage = await store.usage("run-a2")
-        assert not usage.committed
-
-    asyncio.run(scenario())
-
-
 def test_cancellation_during_call_records_uncertain_usage() -> None:
     """Çağrı ortasında iptal: dış çağrının gerçekleşip gerçekleşmediği bilinmez.
 

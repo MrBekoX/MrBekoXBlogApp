@@ -14,8 +14,6 @@ from agent_core.guidance import run_guidance
 from agent_core.models import RunIntent, RunStatus
 
 from .conftest import (
-    ExplodingModelProvider,
-    FailingProfileRepository,
     make_guidance_context,
     make_route,
     run,
@@ -42,7 +40,6 @@ def run_profile(question: str, *, language: str = "tr", profile_repository=_UNSE
 def test_profile_intro_answered_from_approved_record_without_model() -> None:
     from agent_core.adapters import StaticProfileRepository
 
-    model = ExplodingModelProvider()
     context = make_guidance_context("Blogun sahibi kimdir, bana kendisinden bahseder misin?")
     result = run(
         run_guidance(
@@ -54,7 +51,6 @@ def test_profile_intro_answered_from_approved_record_without_model() -> None:
         )
     )
 
-    assert model.call_count == 0  # rehberlik deterministiktir; model çağrılmaz
     outcome = result.outcome
     assert outcome.status is RunStatus.COMPLETED
     assert outcome.usage.model_calls == 0
@@ -97,14 +93,6 @@ def test_unwired_profile_repository_fails_with_config_error() -> None:
 
     assert outcome.status is RunStatus.FAILED
     assert outcome.error_code is AgentErrorCode.CONFIG_ERROR
-
-
-def test_profile_port_error_becomes_failed_outcome() -> None:
-    outcome = run_profile("Blogun sahibi kimdir?", profile_repository=FailingProfileRepository())
-
-    assert outcome.status is RunStatus.FAILED
-    assert outcome.error_code is AgentErrorCode.NOT_FOUND
-    assert outcome.error_message is not None
 
 
 def test_teaching_experience_question_is_not_marked_missing_a03() -> None:

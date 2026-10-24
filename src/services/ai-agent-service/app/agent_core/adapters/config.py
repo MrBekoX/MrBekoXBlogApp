@@ -1,244 +1,214 @@
-"""Sağlayıcı yapılandırma çözümlemesi.
+"""Production provider settings and fail-closed provider composition.
 
-Kabul ölçütü: "Sağlayıcı yapılandırma hataları anlaşılırdır" — her red
-``config_error`` kodlu ve insan-okur mesajlıdır; mesaj sağlayıcı adını, eksik
-alanı ve düzeltmeyi gösterir.
-
-Kritik kontrol: test sağlayıcısı üretimde etkinleştirilemez (ana prompt).
-``environment != "test"`` iken test double döndüren çözümleyici ``config_error``
-ile reddeder; ayrıca döndürdüğü her nesnenin ``is_test_double`` işareti
-üretimde yasaktır.
-
-A1'de yalnız ``test`` sağlayıcısının somut adaptörü vardır; ollama/openai/
-anthropic bilinen adlardır ve eksik-alan doğrulaması yapılır, somut
-adaptörleri sonraki fazlarda ``agent_core.adapters`` altına eklenir.
-
-Streaming sözleşmesi (additive): ``AGENT_LLM_API_KEY`` ortam değişkeni DOLU
-iken ``build_model_provider_from_env`` gerçek OpenAI-uyumlu sağlayıcıyı
-(``openai_provider.OpenAiModelProvider``) kurar; boşsa ``None`` döner —
-çağıran MEVCUT davranışıyla sürer (anahtarsız default birebir korunur).
+No resolver creates a test provider. Missing credentials prevent startup rather
+than producing synthetic model responses or deterministic substitute vectors.
 """
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from env_file import env_float
+from env_file import env_float, env_int
 
+from ..content.config import EmbeddingModelConfig
 from ..errors import AgentErrorCode, PortError
 from ..ports import EmbeddingProvider, ModelProvider, WebSearchProvider
 
 __all__ = [
+    "DEFAULT_EMBEDDING_DIMENSIONS",
+    "DEFAULT_EMBEDDING_MODEL",
+    "EmbeddingProviderSettings",
     "LlmProviderSettings",
     "ProviderSettings",
+    "build_embedding_provider_from_env",
     "build_model_provider_from_env",
     "resolve_embedding_provider",
     "resolve_model_provider",
     "resolve_web_search_provider",
 ]
 
+DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_EMBEDDING_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_EMBEDDING_DIMENSIONS = 1536
+
+
+def _config_error(message: str, port: str) -> PortError:
+    return PortError(AgentErrorCode.CONFIG_ERROR, message, port=port)
+
+
+def _validate_endpoint(base_url: str, port: str) -> None:
+    try:
+        parsed = urlsplit(base_url)
+        # Resolving .port also rejects malformed port numbers.
+        parsed.port
+        local_http = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        valid = (
+            bool(parsed.hostname)
+            and (parsed.scheme == "https" or local_http)
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.query
+            and not parsed.fragment
+        )
+    except ValueError:
+        valid = False
+    if not valid:
+        raise _config_error(
+            "Provider base URL must use HTTPS without credentials, query, or fragment "
+            "(HTTP is allowed only on the loopback interface).",
+            port,
+        )
+
+
+def _validate_timeout(value: float, name: str, port: str) -> None:
+    if not math.isfinite(value) or value <= 0:
+        raise _config_error(f"{name} must be a finite positive number of seconds.", port)
+
 
 class ProviderSettings(BaseModel):
-    """Sağlayıcı yapılandırma girdisi; bilinmeyen anahtar reddedilir (extra=forbid)."""
+    """Explicit resolver input. Only real implemented providers are accepted."""
 
     model_config = ConfigDict(extra="forbid")
 
-    provider: str = "test"
-    environment: Literal["development", "test", "production"] = "development"
-    api_key: str | None = None
+    provider: str = "openai"
+    environment: Literal["development", "test", "production"] = "production"
+    api_key: str | None = Field(default=None, repr=False, exclude=True)
     base_url: str | None = None
     model_name: str | None = None
 
 
-#: ``AGENT_LLM_BASE_URL`` verilmediğinde kullanılan OpenAI-uyumlu uç nokta.
-DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
-
-
 @dataclass(frozen=True)
 class LlmProviderSettings:
-    """Gerçek LLM sağlayıcısının (OpenAI-uyumlu) bağlantı ayarları.
+    """Real OpenAI-compatible chat provider connection settings."""
 
-    ``from_env`` anahtar boşken ``None`` döner: yapılandırılmamış, hata DEĞİL —
-    çağıran mevcut (anahtarsız) davranışıyla sürer. Anahtar dolu ama model
-    eksikse ``config_error`` yükselir (anlaşılır yapılandırma redde kuralı).
-    """
-
-    api_key: str
+    api_key: str = field(repr=False)
     model: str
     base_url: str = DEFAULT_LLM_BASE_URL
     connect_timeout_seconds: float = 10.0
     request_timeout_seconds: float = 120.0
 
+    def __post_init__(self) -> None:
+        if not self.api_key.strip():
+            raise _config_error("AGENT_LLM_API_KEY is required.", "LlmProviderSettings")
+        if not self.model.strip():
+            raise _config_error("AGENT_LLM_MODEL is required.", "LlmProviderSettings")
+        _validate_endpoint(self.base_url, "LlmProviderSettings")
+        _validate_timeout(self.connect_timeout_seconds, "AGENT_LLM_CONNECT_TIMEOUT", "LlmProviderSettings")
+        _validate_timeout(self.request_timeout_seconds, "AGENT_LLM_REQUEST_TIMEOUT", "LlmProviderSettings")
+
     @classmethod
-    def from_env(cls, environ: Mapping[str, str] | None = None) -> "LlmProviderSettings | None":
-        """Ortam değişkenlerinden ayarları okur; anahtar yoksa ``None`` döner.
-
-        Değişkenler: ``AGENT_LLM_API_KEY`` (boş → yapılandırılmamış),
-        ``AGENT_LLM_MODEL`` (anahtar doluysa zorunlu), ``AGENT_LLM_BASE_URL``
-        (default ``https://api.openai.com/v1``), ``AGENT_LLM_CONNECT_TIMEOUT``
-        ve ``AGENT_LLM_REQUEST_TIMEOUT`` (saniye).
-        """
-
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> "LlmProviderSettings":
         env = os.environ if environ is None else environ
-        api_key = env.get("AGENT_LLM_API_KEY", "")
-        if not api_key.strip():
-            return None
-        model = env.get("AGENT_LLM_MODEL", "")
-        if not model.strip():
-            raise PortError(
-                AgentErrorCode.CONFIG_ERROR,
-                "'AGENT_LLM_API_KEY' dolu ama 'AGENT_LLM_MODEL' tanımlı değil: "
-                "OpenAI-uyumlu sağlayıcı çağrılacak model adını gerektirir. "
-                "AGENT_LLM_MODEL ortam değişkenini ayarlayın.",
-                port="LlmProviderSettings",
-            )
-
         return cls(
-            api_key=api_key,
-            model=model,
-            base_url=env.get("AGENT_LLM_BASE_URL") or DEFAULT_LLM_BASE_URL,
-            # env_file yardımcıları: boş değer → kod varsayılanı; tür hatası →
-            # anlaşılır EnvConfigError (mesaj ham değeri yazmaz).
+            api_key=env.get("AGENT_LLM_API_KEY", "").strip(),
+            model=env.get("AGENT_LLM_MODEL", "").strip(),
+            base_url=env.get("AGENT_LLM_BASE_URL", "").strip() or DEFAULT_LLM_BASE_URL,
             connect_timeout_seconds=env_float("AGENT_LLM_CONNECT_TIMEOUT", 10.0, env),
             request_timeout_seconds=env_float("AGENT_LLM_REQUEST_TIMEOUT", 120.0, env),
         )
 
 
-def build_model_provider_from_env(
-    environ: Mapping[str, str] | None = None,
-) -> ModelProvider | None:
-    """``AGENT_LLM_API_KEY`` doluysa gerçek OpenAI-uyumlu sağlayıcıyı kurar.
+@dataclass(frozen=True)
+class EmbeddingProviderSettings:
+    """OpenAI embeddings settings, bounded for a small production worker.
 
-    Anahtar boşsa ``None`` döner: çağıran MEVCUT model bağlama davranışını
-    (``resolve_model_provider`` / test double enjeksiyonu) aynen kullanır —
-    anahtarsız default birebir korunur. Yerel import döngüyü kırar
-    (``openai_provider`` bu modülden beslenir).
+    The embedding endpoint deliberately does not inherit AGENT_LLM_BASE_URL:
+    a chat-only compatible provider need not offer OpenAI's embedding model.
     """
 
-    settings = LlmProviderSettings.from_env(environ)
-    if settings is None:
-        return None
+    api_key: str = field(repr=False)
+    model: str = DEFAULT_EMBEDDING_MODEL
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS
+    base_url: str = DEFAULT_EMBEDDING_BASE_URL
+    connect_timeout_seconds: float = 10.0
+    request_timeout_seconds: float = 60.0
+    batch_size: int = 32
+
+    def __post_init__(self) -> None:
+        port = "EmbeddingProviderSettings"
+        if not self.api_key.strip():
+            raise _config_error("AGENT_EMBEDDING_API_KEY or AGENT_LLM_API_KEY is required.", port)
+        if self.model != DEFAULT_EMBEDDING_MODEL:
+            raise _config_error("AGENT_EMBEDDING_MODEL must be text-embedding-3-small; changing models requires reindexing.", port)
+        if self.dimensions != DEFAULT_EMBEDDING_DIMENSIONS:
+            raise _config_error("Embedding dimensions must be 1536; changing dimensions requires reindexing.", port)
+        if isinstance(self.batch_size, bool) or not isinstance(self.batch_size, int) or not 1 <= self.batch_size <= 32:
+            raise _config_error("AGENT_EMBEDDING_BATCH_SIZE must be an integer from 1 to 32.", port)
+        _validate_endpoint(self.base_url, port)
+        _validate_timeout(self.connect_timeout_seconds, "AGENT_EMBEDDING_CONNECT_TIMEOUT", port)
+        _validate_timeout(self.request_timeout_seconds, "AGENT_EMBEDDING_REQUEST_TIMEOUT", port)
+
+    @property
+    def index_config(self) -> EmbeddingModelConfig:
+        return EmbeddingModelConfig(model_id=self.model, dimensions=self.dimensions)
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> "EmbeddingProviderSettings":
+        env = os.environ if environ is None else environ
+        key = env.get("AGENT_EMBEDDING_API_KEY", "").strip()
+        chat_endpoint = env.get("AGENT_LLM_BASE_URL", "").strip().rstrip("/") or DEFAULT_LLM_BASE_URL
+        if not key and chat_endpoint != DEFAULT_LLM_BASE_URL:
+            raise _config_error("A non-OpenAI chat endpoint requires a separate AGENT_EMBEDDING_API_KEY.", "EmbeddingProviderSettings")
+        return cls(
+            api_key=key or env.get("AGENT_LLM_API_KEY", "").strip(),
+            model=env.get("AGENT_EMBEDDING_MODEL", "").strip() or DEFAULT_EMBEDDING_MODEL,
+            dimensions=env_int("AGENT_EMBEDDING_DIMENSIONS", DEFAULT_EMBEDDING_DIMENSIONS, env),
+            base_url=env.get("AGENT_EMBEDDING_BASE_URL", "").strip() or DEFAULT_EMBEDDING_BASE_URL,
+            connect_timeout_seconds=env_float("AGENT_EMBEDDING_CONNECT_TIMEOUT", 10.0, env),
+            request_timeout_seconds=env_float("AGENT_EMBEDDING_REQUEST_TIMEOUT", 60.0, env),
+            batch_size=env_int("AGENT_EMBEDDING_BATCH_SIZE", 32, env),
+        )
+
+
+def build_model_provider_from_env(environ: Mapping[str, str] | None = None) -> ModelProvider:
     from .openai_provider import OpenAiModelProvider
 
-    return OpenAiModelProvider(settings)
+    return OpenAiModelProvider(LlmProviderSettings.from_env(environ))
 
 
-#: Bilinen sağlayıcı adları ve zorunlu ayar alanları (değerler sonraki fazlarda dolan altyapıdır).
-_KNOWN_PROVIDERS: dict[str, tuple[str, ...]] = {
-    "test": (),
-    "ollama": ("base_url", "model_name"),
-    "openai": ("api_key", "model_name"),
-    "anthropic": ("api_key", "model_name"),
-}
+def build_embedding_provider_from_env(environ: Mapping[str, str] | None = None) -> EmbeddingProvider:
+    from .openai_embedding import OpenAiEmbeddingProvider
 
-#: Bilinen adların aynası; ayar alanları embed/web varyantlarında farklılaşmaz.
-_KNOWN_EMBEDDING_PROVIDERS = ("test", "ollama", "openai")
-_KNOWN_WEB_PROVIDERS = ("test",)
+    return OpenAiEmbeddingProvider(EmbeddingProviderSettings.from_env(environ))
 
 
-def _validate_known(kind: str, provider: str, known: tuple[str, ...] | dict[str, tuple[str, ...]]) -> None:
-    names = tuple(known) if isinstance(known, dict) else known
-    if provider not in known:
-        raise PortError(
-            AgentErrorCode.CONFIG_ERROR,
-            f"Bilinmeyen {kind} sağlayıcısı '{provider}'. Bilinen sağlayıcılar: {', '.join(names)}. "
-            "ProviderSettings.provider alanını düzeltin.",
-            port="ProviderSettings",
-        )
-
-
-def _validate_required_fields(provider: str, settings: ProviderSettings, required: tuple[str, ...]) -> None:
-    missing = [
-        field for field in required
-        if getattr(settings, field) is None or (isinstance(getattr(settings, field), str) and not getattr(settings, field).strip())
-    ]
-    if missing:
-        raise PortError(
-            AgentErrorCode.CONFIG_ERROR,
-            f"'{provider}' sağlayıcısı eksik yapılandırılmış: zorunlu ayar(lar) yok: "
-            f"{', '.join(missing)}. ProviderSettings alanlarını doldurun ve sağlayıcı "
-            "kimlik bilgilerini ortam değişkenlerinden besleyin.",
-            port="ProviderSettings",
-        )
-
-
-def _reject_test_outside_test_env(settings: ProviderSettings, provider_obj: object) -> None:
-    if settings.environment != "test" and getattr(provider_obj, "is_test_double", False):
-        raise PortError(
-            AgentErrorCode.CONFIG_ERROR,
-            f"'test' sağlayıcısı yalnız environment='test' iken kullanılabilir; "
-            f"environment='{settings.environment}' için gerçek bir sağlayıcı yapılandırın. "
-            "Test double'lar üretimde asla etkinleştirilemez.",
-            port="ProviderSettings",
-        )
+def _require_openai(settings: ProviderSettings, port: str) -> None:
+    if settings.provider != "openai":
+        raise _config_error("Only the real 'openai' provider is supported; configure credentials and model settings.", port)
 
 
 def resolve_model_provider(settings: ProviderSettings) -> ModelProvider:
-    """Ayarları somut ``ModelProvider``'a çözer.
+    from .openai_provider import OpenAiModelProvider
 
-    Raises:
-        PortError: ``config_error`` — bilinmeyen sağlayıcı, eksik zorunlu ayar,
-            uygulanmamış adaptör veya test double'ın test dışı ortamda istenmesi.
-    """
-    _validate_known("model", settings.provider, _KNOWN_PROVIDERS)
-    _validate_required_fields(settings.provider, settings, _KNOWN_PROVIDERS[settings.provider])
-
-    if settings.provider == "test":
-        from .test_doubles import FakeModelProvider
-
-        provider = FakeModelProvider()
-        _reject_test_outside_test_env(settings, provider)
-        return provider
-
-    raise PortError(
-        AgentErrorCode.CONFIG_ERROR,
-        f"'{settings.provider}' model sağlayıcısının somut adaptörü bu fazda (A1) henüz uygulanmadı; "
-        "yalnız 'test' sağlayıcısı mevcuttur. Somut adaptör agent_core/adapters altına "
-        "eklenene kadar yapılandırmayı 'test' (yalnız test ortamı) olarak ayarlayın.",
-        port="resolve_model_provider",
-    )
+    _require_openai(settings, "resolve_model_provider")
+    return OpenAiModelProvider(LlmProviderSettings(
+        api_key=settings.api_key or "",
+        model=settings.model_name or "",
+        base_url=settings.base_url or DEFAULT_LLM_BASE_URL,
+    ))
 
 
 def resolve_embedding_provider(settings: ProviderSettings) -> EmbeddingProvider:
-    """Ayarları somut ``EmbeddingProvider``'a çözer; hata sözleşmesi model çözücü ile aynıdır."""
-    _validate_known("embedding", settings.provider, _KNOWN_EMBEDDING_PROVIDERS)
-    if settings.provider != "test":
-        _validate_required_fields(settings.provider, settings, _KNOWN_PROVIDERS[settings.provider])
+    from .openai_embedding import OpenAiEmbeddingProvider
 
-    if settings.provider == "test":
-        from .test_doubles import FakeEmbeddingProvider
-
-        provider = FakeEmbeddingProvider()
-        _reject_test_outside_test_env(settings, provider)
-        return provider
-
-    raise PortError(
-        AgentErrorCode.CONFIG_ERROR,
-        f"'{settings.provider}' embedding sağlayıcısının somut adaptörü bu fazda (A1) henüz uygulanmadı; "
-        "yalnız 'test' sağlayıcısı mevcuttur. A3 öncesi sağlayıcı kararı tamamlandığında "
-        "agent_core/adapters altına eklenecektir.",
-        port="resolve_embedding_provider",
-    )
+    _require_openai(settings, "resolve_embedding_provider")
+    return OpenAiEmbeddingProvider(EmbeddingProviderSettings(
+        api_key=settings.api_key or "",
+        model=settings.model_name or DEFAULT_EMBEDDING_MODEL,
+        base_url=settings.base_url or DEFAULT_EMBEDDING_BASE_URL,
+    ))
 
 
 def resolve_web_search_provider(settings: ProviderSettings) -> WebSearchProvider:
-    """Ayarları somut ``WebSearchProvider``'a çözer; hata sözleşmesi model çözücü ile aynıdır."""
-    _validate_known("web arama", settings.provider, _KNOWN_WEB_PROVIDERS)
-
-    if settings.provider == "test":
-        from .test_doubles import FakeWebSearchProvider
-
-        provider = FakeWebSearchProvider()
-        _reject_test_outside_test_env(settings, provider)
-        return provider
-
-    raise PortError(
-        AgentErrorCode.CONFIG_ERROR,
-        f"'{settings.provider}' web arama sağlayıcısı bilinmiyor; bilinen: test.",
-        port="resolve_web_search_provider",
+    raise _config_error(
+        "No production web search adapter is configured. Disable web search until a real provider is implemented.",
+        "resolve_web_search_provider",
     )

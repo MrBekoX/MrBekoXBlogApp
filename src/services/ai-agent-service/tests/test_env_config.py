@@ -329,9 +329,11 @@ def test_env_bool_invalid_value_names_variable_only() -> None:
 # ------------------------------------------------------- (g) LlmProviderSettings
 
 
-def test_llm_settings_from_env_without_key_returns_none() -> None:
-    assert LlmProviderSettings.from_env({}) is None
-    assert LlmProviderSettings.from_env({"AGENT_LLM_API_KEY": ""}) is None
+def test_llm_settings_without_key_are_configuration_errors() -> None:
+    for values in ({}, {"AGENT_LLM_API_KEY": ""}):
+        with pytest.raises(PortError) as excinfo:
+            LlmProviderSettings.from_env(values)
+        assert excinfo.value.code is AgentErrorCode.CONFIG_ERROR
 
 
 def test_llm_settings_with_key_but_no_model_raises_config_error() -> None:
@@ -361,7 +363,7 @@ def test_llm_settings_valid_environ_maps_fields() -> None:
         {
             "AGENT_LLM_API_KEY": "sk-test-fake-anahtar-degil",
             "AGENT_LLM_MODEL": "test-model",
-            "AGENT_LLM_BASE_URL": "http://llm.test/v1",
+            "AGENT_LLM_BASE_URL": "https://llm.test/v1",
             "AGENT_LLM_CONNECT_TIMEOUT": "3.5",
             "AGENT_LLM_REQUEST_TIMEOUT": "60",
         }
@@ -369,7 +371,7 @@ def test_llm_settings_valid_environ_maps_fields() -> None:
 
     assert settings is not None
     assert settings.model == "test-model"
-    assert settings.base_url == "http://llm.test/v1"
+    assert settings.base_url == "https://llm.test/v1"
     assert settings.connect_timeout_seconds == 3.5
     assert settings.request_timeout_seconds == 60.0
 

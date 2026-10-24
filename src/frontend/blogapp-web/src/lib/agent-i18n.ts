@@ -1,3 +1,5 @@
+import { AUTHOR_NAME } from './site-config';
+
 /**
  * Agent paneli iki dilli metinleri (B10: "Türkçe/İngilizce metinler").
  * Mevcut site tek dillidir (lang="tr"); global i18n çerçevesi kurulmadan
@@ -98,17 +100,17 @@ const tr = {
   // Who am I konusu (K7): konu seçici, çalışma tercihinden AYRI kavramdır
   topicLabel: 'Konu',
   topicAuto: 'Otomatik',
-  topicWhoAmI: 'Who am I · Sample Author',
+  topicWhoAmI: `Who am I · ${AUTHOR_NAME}`,
   topicHint: 'Konu değişince yeni bir sohbet başlar.',
   topicLockedHint: 'Çalışma sürerken konu değiştirilemez.',
   topicChanged: 'Konu değişti; yeni sohbet başladı.',
-  whoAmITitle: 'Who am I · Sample Author',
-  whoAmIAskTitle: 'Sample Author hakkında sorun',
+  whoAmITitle: `Who am I · ${AUTHOR_NAME}`,
+  whoAmIAskTitle: `${AUTHOR_NAME} hakkında sorun`,
   whoAmIPanelDescription:
-    'Sample Author hakkında yayımlanmış profil bilgilerine dayanarak cevap verir; kaynaklar profil bölümlerine bağlanır.',
-  whoAmIInputPlaceholder: 'Sample Author hakkında sorun... (Enter gönderir)',
+    `${AUTHOR_NAME} hakkında yayımlanmış profil bilgilerine dayanarak cevap verir; kaynaklar profil bölümlerine bağlanır.`,
+  whoAmIInputPlaceholder: `${AUTHOR_NAME} hakkında sorun... (Enter gönderir)`,
   whoAmIScopeNote: 'Yalnız yayımlanmış profil kullanılır; makale bağlamı ve web araştırması bu konuda kapalıdır.',
-  whoAmISuggestionWho: 'Sample Author kimdir?',
+  whoAmISuggestionWho: `${AUTHOR_NAME} kimdir?`,
   whoAmISuggestionEducation: 'Hangi üniversitede okudu?',
   whoAmISuggestionTeaching: 'Eğitmenlik deneyimi var mı?',
   whoAmISuggestionArchitecture: 'Mimari yaklaşımı nedir?',
@@ -200,7 +202,7 @@ const en: AgentTexts = {
   statusNeedsInput: 'Waiting for input', // B9: run is not terminal, awaits extra input
   statusGenerating: 'Writing the answer...', // live generation_delta indicator
   resumeAction: 'Resume',
-  suggestionsLabel: 'For sample:',
+  suggestionsLabel: 'For example:',
   suggestionSummary: 'Summarize this article briefly',
   suggestionMainIdea: 'What is the main idea of this article?',
   suggestionCode: 'Explain the code sample',
@@ -212,20 +214,20 @@ const en: AgentTexts = {
   // Who am I topic (K7): the topic selector is SEPARATE from the execution preference
   topicLabel: 'Topic',
   topicAuto: 'Automatic',
-  topicWhoAmI: 'Who am I · Sample Author',
+  topicWhoAmI: `Who am I · ${AUTHOR_NAME}`,
   topicHint: 'Changing the topic starts a new conversation.',
   topicLockedHint: 'The topic cannot be changed while a run is active.',
   topicChanged: 'Topic changed; a new conversation started.',
-  whoAmITitle: 'Who am I · Sample Author',
-  whoAmIAskTitle: 'Ask about Sample Author',
+  whoAmITitle: `Who am I · ${AUTHOR_NAME}`,
+  whoAmIAskTitle: `Ask about ${AUTHOR_NAME}`,
   whoAmIPanelDescription:
-    "Answers from Sample Author's published profile; sources link to profile sections.",
-  whoAmIInputPlaceholder: 'Ask about Sample Author... (Enter to send)',
+    `Answers from ${AUTHOR_NAME}'s published profile; sources link to profile sections.`,
+  whoAmIInputPlaceholder: `Ask about ${AUTHOR_NAME}... (Enter to send)`,
   whoAmIScopeNote: 'Only the published profile is used; article context and web research are off for this topic.',
-  whoAmISuggestionWho: 'Who is Sample Author?',
-  whoAmISuggestionEducation: 'Which university did he attend?',
-  whoAmISuggestionTeaching: 'Does he have teaching experience?',
-  whoAmISuggestionArchitecture: 'What is his architectural approach?',
+  whoAmISuggestionWho: `Who is ${AUTHOR_NAME}?`,
+  whoAmISuggestionEducation: 'Which university did they attend?',
+  whoAmISuggestionTeaching: 'Do they have teaching experience?',
+  whoAmISuggestionArchitecture: 'What is their architectural approach?',
   whoAmIStatusStarted: 'Reviewing profile sections',
   whoAmIVerifiedAnswerNote: 'The answer is shown at once after source validation.',
   whoAmIUnavailable: 'Who am I is currently unavailable. Please try again later.',

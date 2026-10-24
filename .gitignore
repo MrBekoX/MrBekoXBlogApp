@@ -20,7 +20,27 @@ deploy/.env
 # AGENTS.md
 
 #deploy files
-deploy/
+deploy/*
+!deploy/docker-compose.prod.yml
+!deploy/.gitattributes
+!deploy/.env.example
+!deploy/nginx.conf
+!deploy/rabbitmq.conf
+!deploy/rabbitmq-definitions.py
+!deploy/preflight.py
+!deploy/profile_bundle.py
+!deploy/deploy.sh
+!deploy/deploy-to-hub.ps1
+!deploy/README.md
+!deploy/VALIDATION.md
+!deploy/PRODUCTION_DEPLOYMENT.md
+!deploy/QUICK_DEPLOY.md
+!deploy/DOCKER_HUB_DEPLOYMENT.md
+!deploy/tests/
+deploy/tests/*
+!deploy/tests/test_preflight.py
+!deploy/tests/test_profile_bundle.py
+!deploy/tests/test_compose_config.py
 
 #docs files
 docs/
@@ -37,7 +57,11 @@ chroma_data/
 **/chroma.sqlite3
 
 #CI/CD Pipeline
-.github
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/ai-agent-ci.yml
+!.github/workflows/image-build.yml
 ci-cd.yml
 
 # PowerShell scripts (utility/ops scripts)
@@ -215,6 +239,10 @@ feature-prompts/who-am-i/
 **/.env.*
 !**/.env.example
 !**/.env.template
+!deploy/tests/
+!deploy/tests/test_preflight.py
+!deploy/tests/test_profile_bundle.py
+!deploy/tests/test_compose_config.py
 **/TestResults/
 **/.agent_checkpoints/
 **/author-profile.local/

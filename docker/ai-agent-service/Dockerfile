@@ -17,14 +17,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /srv/ai-agent-service
 
 COPY src/services/ai-agent-service/pyproject.toml ./
+COPY src/services/ai-agent-service/requirements.lock ./
 COPY src/services/ai-agent-service/app ./app
 COPY src/services/ai-agent-service/migrations ./migrations
-RUN pip install .
+RUN pip install --require-hashes -r requirements.lock \
+    && pip install --no-deps .
 
 COPY src/content/author-profile /srv/content/author-profile
 
 RUN groupadd -g 1001 agent && useradd -u 1001 -g agent -s /usr/sbin/nologin agent \
+    && mkdir -p /srv/ai-agent-service/.agent_checkpoints \
     && chown -R agent:agent /srv
 USER agent
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=120s --retries=4 \
+    CMD python -m app.healthcheck
 
 CMD ["python", "-m", "app.service_main"]

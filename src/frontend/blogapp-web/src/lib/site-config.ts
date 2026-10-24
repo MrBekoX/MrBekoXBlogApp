@@ -1,3 +1,5 @@
+import { safeExternalHttpUrl } from './safe-url';
+
 // =============================================================================
 // Merkezi site konfigurasyonu — tum hardcoded degerler buradan okunur
 // Her deger NEXT_PUBLIC_* env var ile override edilebilir
@@ -16,20 +18,19 @@ export const OG_IMAGE_PATH = '/opengraph-image.png';
 export const SITE_LOCALE = process.env.NEXT_PUBLIC_SITE_LOCALE || 'tr_TR';
 
 // --- Author / Person ---
-export const AUTHOR_NAME = process.env.NEXT_PUBLIC_AUTHOR_NAME || 'Sample Author';
+export const AUTHOR_NAME = process.env.NEXT_PUBLIC_AUTHOR_NAME?.trim() || 'Blog sahibi';
 export const AUTHOR_JOB_TITLE = process.env.NEXT_PUBLIC_AUTHOR_JOB_TITLE || 'Software Developer';
 export const AUTHOR_DESCRIPTION =
   process.env.NEXT_PUBLIC_AUTHOR_DESCRIPTION ||
   'Backend geliştirme, yazılım mimarisi ve AI teknolojileri üzerine uzmanlaşmış yazılım geliştirici.';
 
 // --- Social URLs ---
-export const GITHUB_URL = process.env.NEXT_PUBLIC_GITHUB_URL || 'https://example.invalid/author';
-export const TWITTER_URL = process.env.NEXT_PUBLIC_TWITTER_URL || 'https://example.invalid/social';
-export const LINKEDIN_URL =
-  process.env.NEXT_PUBLIC_LINKEDIN_URL || 'https://example.invalid/author';
-export const TWITTER_HANDLE = process.env.NEXT_PUBLIC_TWITTER_HANDLE || '@sample';
+export const GITHUB_URL = safeExternalHttpUrl(process.env.NEXT_PUBLIC_GITHUB_URL) ?? '';
+export const TWITTER_URL = safeExternalHttpUrl(process.env.NEXT_PUBLIC_TWITTER_URL) ?? '';
+export const LINKEDIN_URL = safeExternalHttpUrl(process.env.NEXT_PUBLIC_LINKEDIN_URL) ?? '';
+export const TWITTER_HANDLE = process.env.NEXT_PUBLIC_TWITTER_HANDLE?.trim() || '';
 
-export const SOCIAL_URLS = [GITHUB_URL, TWITTER_URL, LINKEDIN_URL];
+export const SOCIAL_URLS = [GITHUB_URL, TWITTER_URL, LINKEDIN_URL].filter(Boolean);
 
 // --- Timeouts (ms) ---
 export const API_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || '15000');
@@ -41,7 +42,7 @@ export const POST_CONTENT_MAX_LENGTH = Number(process.env.NEXT_PUBLIC_POST_CONTE
 
 // --- SEO Keywords ---
 export const SITE_KEYWORDS: string[] = (process.env.NEXT_PUBLIC_SITE_KEYWORDS || [
-  'Sample Author',
+  AUTHOR_NAME,
   'MrBekoX',
   'backend development',
   'yazılım mimarisi',

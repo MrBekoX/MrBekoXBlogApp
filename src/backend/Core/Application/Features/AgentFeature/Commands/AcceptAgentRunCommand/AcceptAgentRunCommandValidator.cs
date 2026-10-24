@@ -65,7 +65,7 @@ public sealed class AcceptAgentRunCommandValidator : AbstractValidator<AcceptAge
     }
 
     public const string WhoAmIArticleMessage =
-        "Who am I konusu makale bağlamı taşıyamaz: yanıtlar yalnız Sample Author'ın onaylı profilinden üretilir. articleId göndermeyin veya Otomatik konuyu seçin.";
+        "Who am I konusu makale bağlamı taşıyamaz: yanıtlar yalnız blog sahibinin onaylı profilinden üretilir. articleId göndermeyin veya Otomatik konuyu seçin.";
 
     public const string WhoAmISelectedTextMessage =
         "Who am I konusu seçili metin taşıyamaz: seçili metin profil kaynağı değildir. selectedText göndermeyin veya Otomatik konuyu seçin.";

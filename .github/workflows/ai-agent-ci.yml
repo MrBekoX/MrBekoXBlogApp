@@ -1,0 +1,277 @@
+# B11 — AI agent entegrasyon CI'ı (additive; mevcut ci-cd.yml dağıtım hattına dokunmaz)
+#
+# Katmanlar (görev: "dotnet build+test job'ı ve python pytest job'ı (broker'sız
+# hızlı katman + opsiyonel docker-broker entegrasyon job'ı)"):
+#   1. dotnet-fast   : build + broker/postgres GEREKTİRMEYEN test alt kümesi.
+#   2. python-fast   : broker/postgres GEREKTİRMEYEN pytest alt kümesi.
+#   3. integration   : OPSİYONEL — GERÇEK RabbitMQ 4.3.6 + PostgreSQL 18 service
+#                      container'larıyla TAM suite (dotnet → python SIRALI; L009:
+#                      iki suite aynı broker'ı paylaşamaz, blogapp_dev vhost'u
+#                      ortaktır).
+#
+# NOT: Bu workflow bu teslimde GitHub Actions'ta ÇALIŞTIRILMADI (yerel ortamda
+# Actions yok). YAML sözdizimi doğrulandı ve her adımın komutu yerel ortamda
+# aynı biçimde koşuldu (B11 raporu §CI). İlk push'ta 'integration' adımı
+# izlenmeli; service container port bekleme süreleri runner hızına göre
+# ayarlanabilir.
+name: AI Agent CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_integration:
+        description: "Gerçek broker+postgres entegrasyon suite'ini de koş"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ai-agent-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────
+  # 1. dotnet hızlı katman: build + broker'sız testler
+  #    (sözleşme ayna/kural testleri + sunum kuralı; broker/DB yok)
+  # ────────────────────────────────────────────────────────────────────
+  dotnet-fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('src/backend/**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Restore
+        run: dotnet restore src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj
+
+      - name: Build
+        run: dotnet build src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj -c Release --no-restore
+
+      # Broker/postgres gerektirmeyen sınıflar (B11 envanteri + sonraki teslimlerin
+      # saf kural testleri; fixture'sız sınıf listesi raporda). Who am I: v1/v2/v3
+      # sözleşme ayna + fixture + kural testleri ve WhoAmI ad alanındaki saf testler.
+      # Agent/Comments/Staleness altındaki saf sınıflar (sunum bütünlüğü, content-gap
+      # kümeleme/sanitizer/term, editorial hash, PII maskeleme, slot hesabı) broker/DB
+      # istemez — yerelde Release build + aynı filter ile doğrulandı. Diğer her sınıf
+      # gerçek broker/DB ister.
+      - name: Test (brokerless subset)
+        run: >
+          dotnet test src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj
+          -c Release --no-build --nologo -v q
+          --filter "FullyQualifiedName~BlogApp.Presentation.Api.Tests.SeoDocumentsTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentStartupConfigurationTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResumeEnvelopeComposerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResultIntegrityPolicyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapClustererTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapSanitizerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapTermExtractorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.EditorialDraftFieldsHashTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Comments.CommentPiiRedactorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Staleness.StalenessSlotCalculatorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Broker.AgentMessagingBrokerContractMirrorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Content.AgentContentEventServiceTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Projection.AgentRunProjectionRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentContract|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentMessagingRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.WhoAmI"
+
+  # ────────────────────────────────────────────────────────────────────
+  # 2. python hızlı katman: broker'sız pytest alt kümesi
+  # ────────────────────────────────────────────────────────────────────
+  python-fast:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/services/ai-agent-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: src/services/ai-agent-service/pyproject.toml
+
+      - name: Install service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,storage-test]"
+
+      # Broker/DB gerektiren paket dizinleri dışlanır (her biri kendi
+      # conftest'inde gerçek broker/postgres ister — sahte başarı yok).
+      - name: Test (brokerless subset)
+        run: >
+          python -m pytest tests -q
+          --ignore=tests/messaging_broker
+          --ignore=tests/intake
+          --ignore=tests/worker
+          --ignore=tests/control
+          --ignore=tests/events
+          --ignore=tests/content_sync
+          --ignore=tests/integration
+
+      # Validate canonical source content independently of any model.
+      - name: Canonical profile manifest check
+        run: python ../../content/author-profile/tools/update_manifest.py --check
+
+      - name: Real PostgreSQL semantic-storage and migration checks
+        run: python tools/verify_storage.py
+
+      - name: Deployment configuration and private-profile gates
+        run: python -m unittest discover -s ../../../deploy/tests -v
+
+
+  # ────────────────────────────────────────────────────────────────────
+  # 2b. frontend hızlı katman: Vitest + build (+ lint, bilgilendirici)
+  # ────────────────────────────────────────────────────────────────────
+  frontend-fast:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend/blogapp-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: src/frontend/blogapp-web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Test (Vitest)
+        run: npm test
+
+      # /about force-dynamic: build zamanında backend gerekmez.
+      - name: Build
+        run: npm run build
+
+      # Who am I teslimi anında depoda bu değişiklikten bağımsız 8 lint hatası
+      # vardı (dokunulmayan dosyalarda); düzeltilene kadar bilgilendirici.
+      - name: Lint (informational)
+        run: npm run lint
+        continue-on-error: true
+
+  # ────────────────────────────────────────────────────────────────────
+  # 3. OPSİYONEL entegrasyon: gerçek broker + postgres, TAM suite SIRALI
+  #    (L009: dotnet blogapp_dev + blogapp_dev_b5net, python kendi
+  #    vhost'larını kullanır; iki suite aynı broker'da ASLA paralel koşmaz)
+  # ────────────────────────────────────────────────────────────────────
+  integration:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_integration)
+    needs: [dotnet-fast, python-fast]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    services:
+      rabbitmq:
+        image: rabbitmq:4.3.6-management
+        ports:
+          - 5672:5672
+          - 15672:15672
+        env:
+          RABBITMQ_DEFAULT_USER: blogapp
+          RABBITMQ_DEFAULT_PASS: blogapp_dev
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 20
+          --health-start-period 30s
+      postgres:
+        image: postgres:18-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: blogapp_user
+          POSTGRES_PASSWORD: ci-postgres-pass
+          POSTGRES_DB: blogdb_dev
+        options: >-
+          --health-cmd "pg_isready -U blogapp_user -d blogdb_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 20s
+
+    env:
+      RABBITMQ_HOST: 127.0.0.1
+      RABBITMQ_PORT: "5672"
+      BLOGAPP_TEST_PG_CONNECTION: "Host=127.0.0.1;Port=5432;Database=blogdb_dev;Username=blogapp_user;Password=ci-postgres-pass"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: src/services/ai-agent-service/pyproject.toml
+
+      # blogapp_dev vhost'u + servis kullanıcıları (python messaging_broker
+      # conftest'inin provizyonu ile AYNI izin regex'leri; declarer=backend_svc,
+      # events write yalnız agent_svc — D013 izin modeli).
+      - name: Provision broker vhost and users
+        run: |
+          set -e
+          MQ=http://127.0.0.1:15672/api
+          AUTH=$(printf 'blogapp:blogapp_dev' | base64)
+          H1="Authorization: Basic $AUTH"
+          H2="content-type: application/json"
+          for i in $(seq 1 30); do
+            curl -sf -H "$H1" "$MQ/overview" > /dev/null && break
+            sleep 2
+          done
+          curl -sf -X PUT -H "$H1" "$MQ/vhosts/blogapp_dev"
+          curl -sf -X PUT -H "$H1" -H "$H2" -d '{"password":"backend_svc_dev","tags":"none"}' "$MQ/users/backend_svc"
+          curl -sf -X PUT -H "$H1" -H "$H2" -d '{"password":"agent_svc_dev","tags":"none"}' "$MQ/users/agent_svc"
+          curl -sf -X PUT -H "$H1" -H "$H2" -d '{"password":"restricted_dev","tags":"none"}' "$MQ/users/agent_restricted"
+          curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":".*","write":"blog\\.(agent\\.commands|content\\.events)","read":"backend\\.agent\\.events\\.q(\\.dlq)?|agent\\.(execute|control|content)\\.q"}' "$MQ/permissions/blogapp_dev/backend_svc"
+          curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":"","write":"blog\\.agent\\.events","read":"agent\\.(execute|control|content)\\.q(\\.dlq)?"}' "$MQ/permissions/blogapp_dev/agent_svc"
+          curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":"","write":"","read":""}' "$MQ/permissions/blogapp_dev/agent_restricted"
+
+      # B3/B5 testleri broker restart senaryosunda docker exec ile rabbitmqctl
+      # kullanır (RABBITMQ_DOCKER_CONTAINER); service container adı runner'da
+      # değişkendir — ada göre bulunur.
+      - name: Export broker container name
+        run: |
+          CID=$(docker ps -q --filter "ancestor=rabbitmq:4.3.6-management" | head -1)
+          echo "RABBITMQ_DOCKER_CONTAINER=$CID" >> "$GITHUB_ENV"
+
+      - name: Restore
+        run: dotnet restore src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj
+
+      - name: Build
+        run: dotnet build src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj -c Release --no-restore
+
+      # TAM dotnet suite (broker+postgres senaryoları dahil; xunit seriler —
+      # xunit.runner.json parallelizeAssembly/TestCollections=false).
+      - name: Dotnet full suite (real broker + postgres)
+        timeout-minutes: 60
+        run: dotnet test src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj -c Release --no-build --nologo -v q
+
+      - name: Install python service
+        working-directory: src/services/ai-agent-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # Python infrastructure checks use real broker and PostgreSQL instances.
+      # conftest'ler Postgres kimliğini REPO_KÖKÜ/docker/.env'den okur (sır
+      # kuralı: parola koda girmez); CI'da bu dosya service container
+      # kimlikleriyle OLUŞTURULUR — üretim sırrı taşımaz.
+      - name: Write docker/.env for test conftests
+        run: |
+          printf 'POSTGRES_USER=blogapp_user\nPOSTGRES_PASSWORD=ci-postgres-pass\n' > docker/.env
+
+      - name: Python full suite (real broker + postgres)
+        working-directory: src/services/ai-agent-service
+        timeout-minutes: 60
+        run: python -m pytest tests -q

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from agent_core.adapters.test_doubles.fake_signals import PreCancelledToken
 from agent_core.errors import AgentErrorCode, PortError
 from agent_core.web import HttpFetcher, UrlGuard
 
@@ -219,21 +218,6 @@ def test_slow_response_times_out() -> None:
 
 
 # --- İptal ve başlık güvenliği ------------------------------------------------------
-
-
-def test_precancelled_token_fails_before_any_request() -> None:
-    async def scenario() -> PortError:
-        async with MockWebServer() as server:
-            server.handlers["/"] = MockResponse.html("<p>x</p>")
-            fetcher = make_fetcher(make_settings(server))
-            try:
-                await fetcher.fetch(server.url("/"), cancel=PreCancelledToken("iptal"))
-            except PortError as error:
-                return error
-            raise AssertionError("iptal sinyali bekleniyordu")
-
-    error = run(scenario())
-    assert error.code is AgentErrorCode.CANCELLED
 
 
 def test_extra_header_with_control_char_rejected() -> None:

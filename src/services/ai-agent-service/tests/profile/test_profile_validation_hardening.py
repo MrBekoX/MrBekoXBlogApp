@@ -13,6 +13,7 @@ import pytest
 from agent_core.profile import load_profile_source, resolve_profile_dir
 from agent_core.profile.chunking import chunk_document
 from agent_core.profile.policy import evaluate_policy
+from agent_core.profile.detection import ProfileIdentity
 from agent_core.profile.validation import EvidenceEntry, validate_model_output
 
 DOCUMENT = load_profile_source(resolve_profile_dir())
@@ -76,11 +77,11 @@ def test_bold_or_www_channel_links_are_allowed() -> None:
     ["How old is Vibeo?", "What is the rate limiting approach in his projects?", "Which rates does Redis use here?"],
 )
 def test_technical_questions_do_not_trigger_unknown_field_notes(question: str) -> None:
-    verdict = evaluate_policy(question, DOCUMENT.privacy)
+    verdict = evaluate_policy(question, DOCUMENT.privacy, identity=ProfileIdentity.from_document(DOCUMENT))
     assert not verdict.unknown, verdict
 
 
 @pytest.mark.parametrize("question", ["How old is Sample?", "What are his hourly rates?", "When was he born?"])
 def test_personal_unknown_fields_are_still_detected(question: str) -> None:
-    verdict = evaluate_policy(question, DOCUMENT.privacy)
+    verdict = evaluate_policy(question, DOCUMENT.privacy, identity=ProfileIdentity.from_document(DOCUMENT))
     assert verdict.unknown, question

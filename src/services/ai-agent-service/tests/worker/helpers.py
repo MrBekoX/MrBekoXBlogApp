@@ -1,4 +1,4 @@
-"""B6 worker test yardımcıları: loop, tohumlama, worker kurulumu, model double'ları.
+"""Database job seeding and event-loop helpers for real store integration checks.
 
 Bu modül ``tests/worker`` paketi içindedir; testler ``from worker.helpers import ...``
 ile kullanır (pytest prepend modunda ``tests/`` sys.path'e eklenir, paket adı
@@ -14,13 +14,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from agent_core.adapters.test_doubles.fake_model import FakeModelProvider
-from agent_core.checkpoint.store import FileCheckpointStore
-from agent_core.ports import CancellationToken, ModelRequest, ModelResponse, ModelUsage
 
 from messaging import AgentEventPublisher, JobStore, OutboxRelay
 from messaging.contracts import SCHEMA_VERSION, AgentEnvelope, Producer
-from messaging.worker import ExecutionDependencies, ExecutionWorker, WorkerSettings
 
 # --------------------------------------------------------------------------
 # Paylaşımlı loop (pytest-asyncio'suz; B4 conftest'teki gerekçe aynen geçerli)
@@ -215,129 +211,3 @@ async def pending_outbox_events(pool: Any, run_id: str) -> list[Any]:
             run_id,  # zarf alanı metindir (jsonb ->>)
         )
         return [r["envelope"] for r in rows]
-
-
-# --------------------------------------------------------------------------
-# Model test double'ları (worker senaryoları)
-# --------------------------------------------------------------------------
-
-
-class KillModel:
-    """İlk çağrıda süreç çökmesini simüle eder: istisna yükselir, iş yarıda kalır."""
-
-    is_test_double = True
-
-    def __init__(self) -> None:
-        self.call_count = 0
-
-    async def complete(
-        self, request: ModelRequest, *, cancel: CancellationToken | None = None
-    ) -> ModelResponse:
-        self.call_count += 1
-        raise RuntimeError("worker süreci model çağrısı sırasında çöktü (senaryo)")
-
-    async def stream_complete(
-        self, request: ModelRequest, *, cancel: CancellationToken | None = None, on_delta: Any
-    ) -> ModelResponse:
-        return await self.complete(request, cancel=cancel)
-
-
-class GateModel:
-    """Çağrıya girip ``release`` bekleyen model: eşzamanlılık/lease senaryoları.
-
-    Uyanırken iptal sinyalini denetler: lease kaybında yürütmenin CANCELLED
-    ile kesildiğini gözlemlenebilir kılar.
-    """
-
-    is_test_double = True
-
-    def __init__(self, response_text: str = "gate yanıtı") -> None:
-        self.response_text = response_text
-        self.entered = asyncio.Event()
-        self.release = asyncio.Event()
-        self.requests: list[ModelRequest] = []
-        self.cancelled_while_waiting = False
-
-    async def complete(
-        self, request: ModelRequest, *, cancel: CancellationToken | None = None
-    ) -> ModelResponse:
-        self.requests.append(request)
-        self.entered.set()
-        await self.release.wait()
-        if cancel is not None and cancel.is_cancelled():
-            self.cancelled_while_waiting = True
-            cancel.raise_if_cancelled()
-        return ModelResponse(
-            text=self.response_text,
-            model_name="gate-model",
-            usage=ModelUsage(prompt_tokens=7, completion_tokens=3),
-            finished_at=datetime.now(timezone.utc),
-        )
-
-    async def stream_complete(
-        self, request: ModelRequest, *, cancel: CancellationToken | None = None, on_delta: Any
-    ) -> ModelResponse:
-        return await self.complete(request, cancel=cancel)
-
-
-# --------------------------------------------------------------------------
-# Worker / relay kurulumu
-# --------------------------------------------------------------------------
-
-
-def make_worker(
-    store: JobStore,
-    pool: Any,
-    *,
-    worker_id: str,
-    model: Any | None = None,
-    budget: Any | None = None,
-    queue_classes: tuple[str, ...] = ("fast",),
-    lease_seconds: float = 1.2,
-    renew_interval_seconds: float | None = None,
-    checkpoint_dir: str | None = None,
-    publisher: AgentEventPublisher | None = None,
-    max_execution_attempts: int = 3,
-    control_store: Any | None = None,
-    content_state: Any | None = None,
-) -> ExecutionWorker:
-    """Test worker'ı kurar; kısa lease/poll ile senaryolar hızlıdır.
-
-    ``checkpoint_dir`` verilmezse GEÇİCİ bir dizin kullanılır: worker'ın
-    varsayılan deposu cwd'ye yazmasın (repo kökü temiz kalsın — A8 dev
-    deposunun varsayılanı ``.agent_checkpoints``'tir).
-
-    ``control_store`` (W5 bulgusu 1b): B7 terminal üretim bağlantısı —
-    complete/fail 'cancel_requested' reddinde ``mark_cancelled_if_running``.
-    ``content_state`` (W5 bulgusu 4ii): B8 stale komut projection'u —
-    ``ensure_execution_allowed`` yürütme öncesi denetimi.
-    """
-
-    import tempfile
-
-    deps = ExecutionDependencies(
-        model=model or FakeModelProvider(), budget=budget, content_state=content_state
-    )
-    settings = WorkerSettings(
-        worker_id=worker_id,
-        queue_classes=queue_classes,
-        lease_seconds=lease_seconds,
-        renew_interval_seconds=renew_interval_seconds,
-        poll_interval_seconds=0.05,
-        max_execution_attempts=max_execution_attempts,
-    )
-    resolved_checkpoint = checkpoint_dir or tempfile.mkdtemp(prefix="b6_worker_ckpt_")
-    return ExecutionWorker(
-        store,
-        deps,
-        settings=settings,
-        publisher=publisher,
-        checkpoint_store=FileCheckpointStore(resolved_checkpoint),
-        control_store=control_store,
-    )
-
-
-def make_relay(store: JobStore, agent_publisher: Any) -> OutboxRelay:
-    """Outbox → gerçek broker relay'i (terminal olayın kuyruğa düşmesi için)."""
-
-    return OutboxRelay(store, agent_publisher, batch_size=32, lease_seconds=30.0)

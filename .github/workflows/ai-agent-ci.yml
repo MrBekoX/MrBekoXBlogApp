@@ -1,19 +1,15 @@
-# B11 — AI agent entegrasyon CI'ı (additive; mevcut ci-cd.yml dağıtım hattına dokunmaz)
+# AI agent build and test checks; no deployment, image publication or model calls.
+# Fast checks and isolated infrastructure integration run on pull requests/main.
+# Manual dispatch runs integration only when run_integration is selected.
 #
-# Katmanlar (görev: "dotnet build+test job'ı ve python pytest job'ı (broker'sız
-# hızlı katman + opsiyonel docker-broker entegrasyon job'ı)"):
+# Katmanlar:
 #   1. dotnet-fast   : build + broker/postgres GEREKTİRMEYEN test alt kümesi.
 #   2. python-fast   : broker/postgres GEREKTİRMEYEN pytest alt kümesi.
-#   3. integration   : OPSİYONEL — GERÇEK RabbitMQ 4.3.6 + PostgreSQL 18 service
+#   3. integration   : GERÇEK RabbitMQ 4.3.6 + PostgreSQL 18 service
 #                      container'larıyla TAM suite (dotnet → python SIRALI; L009:
 #                      iki suite aynı broker'ı paylaşamaz, blogapp_dev vhost'u
 #                      ortaktır).
 #
-# NOT: Bu workflow bu teslimde GitHub Actions'ta ÇALIŞTIRILMADI (yerel ortamda
-# Actions yok). YAML sözdizimi doğrulandı ve her adımın komutu yerel ortamda
-# aynı biçimde koşuldu (B11 raporu §CI). İlk push'ta 'integration' adımı
-# izlenmeli; service container port bekleme süreleri runner hızına göre
-# ayarlanabilir.
 name: AI Agent CI
 
 on:
@@ -71,7 +67,7 @@ jobs:
         run: >
           dotnet test src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj
           -c Release --no-build --nologo -v q
-          --filter "FullyQualifiedName~BlogApp.Presentation.Api.Tests.SeoDocumentsTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentStartupConfigurationTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResumeEnvelopeComposerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResultIntegrityPolicyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapClustererTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapSanitizerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapTermExtractorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.EditorialDraftFieldsHashTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Comments.CommentPiiRedactorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Staleness.StalenessSlotCalculatorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Broker.AgentMessagingBrokerContractMirrorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Content.AgentContentEventServiceTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Projection.AgentRunProjectionRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentContract|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentMessagingRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.WhoAmI"
+          --filter "FullyQualifiedName~BlogApp.Presentation.Api.Tests.SeoDocumentsTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentStartupConfigurationTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResumeEnvelopeComposerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResultIntegrityPolicyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapClustererTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapSanitizerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapTermExtractorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.EditorialDraftFieldsHashTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Comments.CommentPiiRedactorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Staleness.StalenessSlotCalculatorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Broker.AgentMessagingBrokerContractMirrorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Content.AgentContentEventServiceTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Projection.AgentRunProjectionRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentContract|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentMessagingRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.E2E.QueueCountsParserTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.WhoAmI"
 
   # ────────────────────────────────────────────────────────────────────
   # 2. python hızlı katman: broker'sız pytest alt kümesi
@@ -163,12 +159,12 @@ jobs:
         continue-on-error: true
 
   # ────────────────────────────────────────────────────────────────────
-  # 3. OPSİYONEL entegrasyon: gerçek broker + postgres, TAM suite SIRALI
+  # 3. PR/main integration: real broker + postgres, full suites run sequentially.
   #    (L009: dotnet blogapp_dev + blogapp_dev_b5net, python kendi
   #    vhost'larını kullanır; iki suite aynı broker'da ASLA paralel koşmaz)
   # ────────────────────────────────────────────────────────────────────
   integration:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_integration)
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.run_integration)
     needs: [dotnet-fast, python-fast]
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -243,7 +239,8 @@ jobs:
           curl -sf -X PUT -H "$H1" -H "$H2" -d '{"password":"restricted_dev","tags":"none"}' "$MQ/users/agent_restricted"
           curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":".*","write":"blog\\.(agent\\.commands|content\\.events)","read":"backend\\.agent\\.events\\.q(\\.dlq)?|agent\\.(execute|control|content)\\.q"}' "$MQ/permissions/blogapp_dev/backend_svc"
           curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":"","write":"blog\\.agent\\.events","read":"agent\\.(execute|control|content)\\.q(\\.dlq)?"}' "$MQ/permissions/blogapp_dev/agent_svc"
-          curl -sf -X PUT -H "$H1" -H "$H2" -d '{"configure":"","write":"","read":""}' "$MQ/permissions/blogapp_dev/agent_restricted"
+          # No vhost permission record for agent_restricted: empty resource
+          # patterns would still grant a connection to this virtual host.
 
       # B3/B5 testleri broker restart senaryosunda docker exec ile rabbitmqctl
       # kullanır (RABBITMQ_DOCKER_CONTAINER); service container adı runner'da
@@ -263,7 +260,7 @@ jobs:
       # xunit.runner.json parallelizeAssembly/TestCollections=false).
       - name: Dotnet full suite (real broker + postgres)
         timeout-minutes: 60
-        run: dotnet test src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj -c Release --no-build --nologo -v q
+        run: dotnet test src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj -c Release --no-build --nologo --logger "console;verbosity=normal"
 
       - name: Install python service
         working-directory: src/services/ai-agent-service

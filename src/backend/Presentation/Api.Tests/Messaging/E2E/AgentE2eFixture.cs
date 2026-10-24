@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -280,23 +281,100 @@ public sealed class AgentE2eFixture : IAsyncLifetime
         return (int)declared.MessageCount;
     }
 
-    /// <summary>Yönetim API üzerinden kuyruğun ready/unacked sayaçlarını okur.
-    /// Passive declare yalnız READY mesajı sayar; teslim alınıp ACK'lanmamış
-    /// (unacked) mesajlar sayımda görünmez — commit→ACK yarışı doğrulaması için
-    /// unacked sayımı şart (AMQP protocol: kapanışta unacked mesaj requeue edilir).</summary>
+    /// <summary>
+    /// Read ready/unacknowledged counts directly from the live queue process.
+    /// Management HTTP metrics are sampled and cannot establish an ACK barrier.
+    /// The integration suite already requires this owned Docker broker for outage tests.
+    /// </summary>
     public async Task<(int Ready, int Unacked)> QueueCountsAsync(string queue)
     {
-        using var client = CreateManagementClient();
-        var response = await client.GetAsync(
-            $"api/queues/{Uri.EscapeDataString(TestVirtualHost)}/{Uri.EscapeDataString(queue)}");
-        response.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = document.RootElement;
-        var ready = root.TryGetProperty("messages_ready", out var readyElement)
-            ? readyElement.GetInt32() : 0;
-        var unacked = root.TryGetProperty("messages_unacknowledged", out var unackedElement)
-            ? unackedElement.GetInt32() : 0;
-        return (ready, unacked);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "docker",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var argument in new[]
+        {
+            "exec", BrokerTestEnvironment.RabbitMqContainer,
+            "rabbitmqctl", "-q", "--timeout", "5", "list_queues",
+            "-p", TestVirtualHost, "name", "messages_ready", "messages_unacknowledged",
+            "--formatter=json",
+        })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start the live broker queue-count probe.");
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException exception) when (timeout.IsCancellationRequested)
+        {
+            // Terminate only the child process created above. The broker RPC
+            // itself has its own five-second timeout inside the test container.
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (InvalidOperationException)
+            {
+                // The owned process exited between HasExited and Kill.
+            }
+            throw new TimeoutException("Live broker queue-count probe exceeded ten seconds.", exception);
+        }
+
+        var output = await outputTask.WaitAsync(TimeSpan.FromSeconds(2));
+        var error = await errorTask.WaitAsync(TimeSpan.FromSeconds(2));
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException($"Live broker queue-count probe failed ({process.ExitCode}): {error.Trim()}");
+        return ParseQueueCounts(output, queue);
+    }
+
+    internal static (int Ready, int Unacked) ParseQueueCounts(string output, string queue)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(output);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException("Live broker queue-count output must be a JSON array.");
+
+            var matches = document.RootElement.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.Object
+                    && item.TryGetProperty("name", out var name)
+                    && name.ValueKind == JsonValueKind.String
+                    && string.Equals(name.GetString(), queue, StringComparison.Ordinal))
+                .ToArray();
+            if (matches.Length != 1)
+                throw new InvalidDataException($"Live broker queue-count output must contain exactly one entry for {queue}.");
+
+            return (ReadCount(matches[0], "messages_ready"), ReadCount(matches[0], "messages_unacknowledged"));
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("Live broker queue-count output is not valid JSON.", exception);
+        }
+
+        static int ReadCount(JsonElement item, string field)
+        {
+            if (!item.TryGetProperty(field, out var value)
+                || value.ValueKind != JsonValueKind.Number
+                || !value.TryGetInt32(out var count)
+                || count < 0)
+            {
+                throw new InvalidDataException($"Live broker queue-count field {field} must be an explicit nonnegative integer.");
+            }
+            return count;
+        }
     }
 
     private async Task ProvisionVirtualHostAsync()

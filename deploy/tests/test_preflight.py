@@ -32,8 +32,16 @@ def release_config() -> dict:
             "AGENT_CONTENT_BASE_URL": "http://api:8080/api/v1", "AGENT_CONTENT_SERVICE_KEY": "i" * 48,
             "AGENT_TOPOLOGY_DECLARE": "false"}},
         "frontend": {"image": "registry/blog:web-1234567"},
-        "nginx": {"environment": {"DOMAIN": "blog.test"}},
+        "nginx": {"environment": {"DOMAIN": "blog.test"},
+                  "networks": {"proxy-api": {"ipv4_address": "172.30.250.2"}, "proxy-web": {}},
+                  "volumes": [{"type": "volume", "source": "edge", "target": "/etc/nginx/trusted", "read_only": True}]},
+        "edge-config": {"network_mode": "none", "environment": {"ALB_TRUSTED_CIDRS": "10.0.1.0/24"},
+                        "volumes": [{"type": "volume", "source": "edge", "target": "/edge-config"}]},
     }}
+    config["networks"] = {"proxy-api": {"internal": True, "ipam": {"config": [{"subnet": "172.30.250.0/29"}]}}}
+    config["services"]["api"]["networks"] = {"default": {}, "proxy-api": {"ipv4_address": "172.30.250.3"}}
+    config["services"]["api"]["environment"].update({
+        "ForwardedHeaders__Enabled": "true", "ForwardedHeaders__KnownProxies__0": "172.30.250.2"})
     for service, target in (("api", "/app/content/author-profile"),
                             ("ai-agent", "/srv/content/author-profile")):
         config["services"][service]["volumes"] = [{

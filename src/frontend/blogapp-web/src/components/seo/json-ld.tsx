@@ -1,3 +1,4 @@
+import { headers } from 'next/headers';
 import { Thing, WithContext } from 'schema-dts';
 
 interface JsonLdProps {
@@ -14,12 +15,14 @@ function escapeJsonLd(value: string): string {
     .replace(/\u2029/g, '\\u2029');
 }
 
-export function JsonLd({ data }: JsonLdProps) {
+export async function JsonLd({ data }: JsonLdProps) {
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   const jsonString = escapeJsonLd(JSON.stringify(data));
 
   return (
     <script
       type="application/ld+json"
+      nonce={nonce}
       dangerouslySetInnerHTML={{
         __html: jsonString,
       }}

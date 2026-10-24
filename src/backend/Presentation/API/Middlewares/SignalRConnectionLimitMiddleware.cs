@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Timers;
+using BlogApp.Presentation.Api.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -86,8 +87,7 @@ public class SignalRConnectionLimitMiddleware
 
     private static string GetClientIpAddress(HttpContext context)
     {
-        // Use RemoteIpAddress which is already set correctly by ForwardedHeaders middleware
-        return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return ClientIpAddress.Get(context) ?? "unknown";
     }
 
     private static void CleanupStaleConnections(object? sender, ElapsedEventArgs e)

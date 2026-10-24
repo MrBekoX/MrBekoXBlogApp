@@ -6,7 +6,7 @@ services:
   # PostgreSQL 18 — Primary Database
   # ==========================================
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
     container_name: blogapp-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
@@ -31,7 +31,7 @@ services:
   # Redis 8 — L1/L2 Hybrid Cache
   # ==========================================
   redis:
-    image: redis:8.0-alpine
+    image: redis:8.0-alpine@sha256:5f61955be8ab2ccee9372b84ae4d4da2e2b156f87281e3f218544055e7ee04d4
     container_name: blogapp-redis
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
@@ -64,7 +64,7 @@ services:
   # (operations/topoloji-ve-surum-kilidi.md §4).
   #
   rabbitmq:
-    image: rabbitmq:4.3.6-management
+    image: rabbitmq:4.3.6-management@sha256:54cb013d76cd1fd6c0a0708f34062ad61c452bb6f016b434c6c33f1a765d2b58
     container_name: blogapp-rabbitmq
     environment:
       # Explicit local credentials; production uses isolated runtime roles.

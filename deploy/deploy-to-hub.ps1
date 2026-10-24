@@ -1,10 +1,10 @@
-# Build all release images from the same checkout. Publishing is opt-in.
+# Build release images locally. The manual GHCR workflow is the only publisher.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')][string]$ReleaseTag,
     [Parameter(Mandatory = $true)][string]$SiteUrl,
     [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$AuthorName,
-    [string]$ImageRepository = 'mrbeko/blog-app',
+    [string]$ImageRepository = 'blogapp-local',
     [string]$PublicSignalRUrl = '',
     [string]$TurnstileSiteKey = '',
     [string]$GitHubUrl = '',
@@ -16,7 +16,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($ReleaseTag -eq 'latest') { throw 'Use a release-specific tag (for example a commit hash), not latest' }
-if ($SkipBuild -and -not $Push) { throw '-SkipBuild requires -Push' }
+if ($Push) { throw 'Registry publication is only supported by the manual Release image build GHCR workflow. This script builds local images only.' }
+if ($SkipBuild) { throw '-SkipBuild is unavailable for the local-build-only command' }
 $siteUri = $null
 if (-not [Uri]::TryCreate($SiteUrl, [UriKind]::Absolute, [ref]$siteUri) -or
     $siteUri.Scheme -ne 'https' -or $siteUri.AbsolutePath -ne '/' -or
@@ -54,14 +55,7 @@ $Images = @(
     @{ Name = "${ImageRepository}:agent-${ReleaseTag}"; Dockerfile = "$ProjectRoot/docker/ai-agent-service/Dockerfile"; Context = $ProjectRoot; Extra = @() }
 )
 foreach ($Image in $Images) {
-    if (-not $SkipBuild) {
-        Invoke-Docker -Arguments (@('build', '--platform', 'linux/amd64', '--tag', $Image.Name, '--file', $Image.Dockerfile) + $Image.Extra + @($Image.Context))
-    }
-    if ($Push) { Invoke-Docker -Arguments @('push', $Image.Name) }
+    Invoke-Docker -Arguments (@('build', '--platform', 'linux/amd64', '--tag', $Image.Name, '--file', $Image.Dockerfile) + $Image.Extra + @($Image.Context))
     Write-Output $Image.Name
 }
-if ($Push) {
-    Write-Output 'Three release images published. No server deployment was performed.'
-} else {
-    Write-Output 'Three release images built locally. Registry publishing requires -Push.'
-}
+Write-Output 'Three release images built locally. Use the manual GHCR workflow for separately authorized publication.'

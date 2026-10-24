@@ -24,7 +24,7 @@ class ComposeConfigTests(unittest.TestCase):
             AGENT_CONTENT_SERVICE_KEY="c" * 64, AGENT_LLM_API_KEY="k" * 48, AGENT_LLM_MODEL="ci-selected-chat-model",
             AGENT_LLM_BASE_URL="https://api.openai.com/v1", AGENT_EMBEDDING_API_KEY="",
             RABBITMQ_BACKEND_PASSWORD="b" * 32, RABBITMQ_AGENT_PASSWORD="a" * 32, RABBITMQ_DECLARER_PASSWORD="t" * 32,
-            AUTHOR_PROFILE_HOST_DIR="/opt/blogapp-private/author-profile")
+            AUTHOR_PROFILE_HOST_DIR="/opt/blogapp-private/author-profile", ALB_TRUSTED_CIDRS="10.0.1.0/24,10.0.2.0/24")
         result = subprocess.run(["docker", "compose", "--env-file", str(DEPLOY / ".env.example"),
             "-f", str(DEPLOY / "docker-compose.prod.yml"), "config", "--format", "json", "--no-path-resolution"],
             env=env, capture_output=True, text=True, check=True, timeout=30)

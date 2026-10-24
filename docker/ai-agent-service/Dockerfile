@@ -7,7 +7,7 @@
 # AGENT_PROFILE_DIR ile bağlanır; çalışma zamanı cwd'ye veya geliştirici
 # dosya yoluna bağlı değildir. Backend imajı aynı commit'ten derlenmelidir
 # (profil revision/hash uyumu; bkz. src/content/author-profile/README.md).
-FROM python:3.13-slim AS runtime
+FROM python:3.13-slim@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

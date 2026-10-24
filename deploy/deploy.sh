@@ -80,12 +80,16 @@ if "$first_install"; then
     docker volume create deploy_redis_data >/dev/null
 fi
 # Explicitly rerun bootstrap and migration on every release (even with unchanged image IDs).
+"${compose[@]}" up --no-deps --force-recreate --abort-on-container-exit --exit-code-from edge-config edge-config
 "${compose[@]}" up --no-deps --force-recreate --abort-on-container-exit --exit-code-from rabbitmq-definitions rabbitmq-definitions
 "${compose[@]}" up -d --wait --wait-timeout 240 postgres redis
 # Reimport role definitions on broker restart, including explicitly rotated credentials.
 "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 240 rabbitmq
 "${compose[@]}" up --no-deps --force-recreate --abort-on-container-exit --exit-code-from agent-migrate agent-migrate
-"${compose[@]}" up -d --wait --wait-timeout 300 api ai-agent frontend nginx
+"${compose[@]}" up -d --wait --wait-timeout 300 api ai-agent frontend
+# Generated trust/header files are read at startup, not watched by Nginx.
+# Recreate even for the same release so changed/revoked ALB trust takes effect.
+"${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 120 nginx
 "${compose[@]}" exec -T api curl -fsS http://localhost:8080/health/agent >/dev/null
 "${compose[@]}" exec -T ai-agent python -m app.healthcheck
 "${compose[@]}" ps

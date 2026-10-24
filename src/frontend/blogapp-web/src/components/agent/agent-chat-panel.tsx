@@ -115,7 +115,7 @@ export function AgentChatPanel({
         topic,
         question: request.question,
         language: lang,
-        modePreference,
+        modePreference: request.modePreference ?? modePreference,
         deepResearch: request.deepResearch,
         idempotencyKey: request.idempotencyKey,
         conversationId: request.conversationId,
@@ -152,6 +152,8 @@ export function AgentChatPanel({
     activeTurn,
     isRunActive,
     activeWaitingInput,
+    activeIsProvisional,
+    finalVerificationUnavailable,
   } = session;
 
   useEffect(() => {
@@ -346,7 +348,18 @@ export function AgentChatPanel({
                     <p className="text-sm text-red-400">{t.statusFailed}</p>
                   )}
 
-                  {isLatest && isTerminalPhase(turn.phase) && turn.phase === 'failed' && (
+                  {isLatest && activeIsProvisional && (
+                    <p role="status" className="text-xs text-amber-400">{t.provisionalTerminalHint}</p>
+                  )}
+                  {isLatest && finalVerificationUnavailable && (
+                    <div className="space-y-2">
+                      <p role="status" className="text-xs text-amber-400">{t.finalVerificationUnavailable}</p>
+                      <Button type="button" variant="outline" size="sm" onClick={() => void session.checkFinalResult()}>
+                        {t.checkFinalResult}
+                      </Button>
+                    </div>
+                  )}
+                  {isLatest && !activeIsProvisional && !finalVerificationUnavailable && isTerminalPhase(turn.phase) && turn.phase === 'failed' && (
                     <div className="flex flex-wrap gap-2 pt-1">
                       <Button
                         type="button"
@@ -360,7 +373,7 @@ export function AgentChatPanel({
                     </div>
                   )}
 
-                  {isLatest && isTerminalPhase(turn.phase) && (
+                  {isLatest && !activeIsProvisional && !finalVerificationUnavailable && isTerminalPhase(turn.phase) && (
                     <FeedbackRow key={turn.runId} runId={turn.runId} lang={lang} />
                   )}
                 </AssistantBubble>
@@ -406,7 +419,9 @@ export function AgentChatPanel({
       </div>
 
       {/* Besteci: soru girişi (çalışırken İPTAL kontrolü ayrı) */}
-      {isRunActive ? (
+      {activeIsProvisional ? (
+        <p className="text-xs text-amber-400">{t.statusReconciling}</p>
+      ) : isRunActive ? (
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"

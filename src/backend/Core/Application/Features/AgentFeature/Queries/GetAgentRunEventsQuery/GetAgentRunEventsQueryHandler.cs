@@ -4,10 +4,12 @@ using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Models;
+using BlogApp.Core.Application.Common.Options;
 using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunQuery;
 using BlogApp.Core.Application.Features.AgentFeature.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunEventsQuery;
 
@@ -53,7 +55,9 @@ public sealed record AgentRunEventDto
 /// </summary>
 public sealed class GetAgentRunEventsQueryHandler(
     IApplicationDbContext dbContext,
-    ICurrentUserService currentUser) : IRequestHandler<GetAgentRunEventsQueryRequest, Result<AgentRunEventsDto>>
+    ICurrentUserService currentUser,
+    IAgentResultPresentationGuard presentationGuard,
+    IOptions<AgentAcceptanceSettings>? acceptanceOptions = null) : IRequestHandler<GetAgentRunEventsQueryRequest, Result<AgentRunEventsDto>>
 {
     /// <summary>Tek replay sayfasının üst sınırı; sınırsız akış üretilmez.</summary>
     public const int MaxPageSize = 200;
@@ -88,7 +92,7 @@ public sealed class GetAgentRunEventsQueryHandler(
 
         var pageSize = request.Limit is > 0 and <= MaxPageSize ? request.Limit.Value : MaxPageSize;
 
-        var rows = await dbContext.AgentEventInboxes
+        var replayQuery = dbContext.AgentEventInboxes
             .AsNoTracking()
             .Where(i => i.ConsumerName == AgentRunEventProjectionHandler.ConsumerName
                         && i.RunId == request.RunId
@@ -104,11 +108,25 @@ public sealed class GetAgentRunEventsQueryHandler(
                 OccurredAt = new DateTimeOffset(i.CreatedAt, TimeSpan.Zero),
                 PayloadJson = i.PayloadJson,
                 ProgressMessage = i.ProgressMessage,
-            })
-            .ToListAsync(cancellationToken);
+            });
+        var rows = await replayQuery.ToListAsync(cancellationToken);
+        var settings = acceptanceOptions?.Value ?? new();
 
+        // Replay can contain the full generated answer in progress bodies. Apply
+        // the same current-source policy as terminal GET, including active runs.
+        var presentation = await presentationGuard.CheckAsync(
+            new AgentRunResultContext(run.Id, run.ArticleId, run.ResultJson, run.ContextSnapshotJson), cancellationToken);
+        var stable = await AgentTerminalRecoveryPolicy.StabilizeExpiredAsync(dbContext.AgentRuns, run, settings, cancellationToken);
+        if (!ReferenceEquals(stable, run))
+        {
+            run = stable;
+            rows = await replayQuery.ToListAsync(cancellationToken);
+            presentation = await presentationGuard.CheckAsync(
+                new AgentRunResultContext(run.Id, run.ArticleId, run.ResultJson, run.ContextSnapshotJson), cancellationToken);
+        }
         var suppressDeltaBodies = ShouldSuppressDeltaBodies(run.ContextSnapshotJson, run.SourceScope);
-        var events = rows.Select(row => MapToEventDto(row, suppressDeltaBodies)).ToList();
+        var events = rows.Select(row => MapToEventDto(row, suppressDeltaBodies, !presentation.IsPresentable)).ToList();
+        var recovery = AgentTerminalRecoveryPolicy.Evaluate(run, settings, DateTimeOffset.UtcNow);
 
         return Result<AgentRunEventsDto>.Success(new AgentRunEventsDto
         {
@@ -116,6 +134,9 @@ public sealed class GetAgentRunEventsQueryHandler(
             RunStatus = run.Status.ToString(),
             LastEventSequence = run.LastEventSequence,
             HasMore = events.Count == pageSize,
+            IsProvisionalTerminal = recovery.IsProvisionalTerminal,
+            ReconciliationUntil = recovery.ReconciliationUntil,
+            ReconciliationRemainingSeconds = recovery.ReconciliationRemainingSeconds,
             Events = events,
         });
     }
@@ -145,7 +166,7 @@ public sealed class GetAgentRunEventsQueryHandler(
         AgentRunWireContext.Parse(contextSnapshotJson).IsWhoAmI
         || string.Equals(runSourceScope, "profile", StringComparison.Ordinal);
 
-    private static AgentRunEventDto MapToEventDto(ReplayRow row, bool suppressDeltaBodies)
+    private static AgentRunEventDto MapToEventDto(ReplayRow row, bool suppressDeltaBodies, bool suppressAllBodies)
     {
         // Progressed: kind/message/detail payload'tan; diğer türlerde null.
         string? kind = null;
@@ -171,7 +192,7 @@ public sealed class GetAgentRunEventsQueryHandler(
             kind = DeriveSuffixKind(row.MessageType);
         }
 
-        if (suppressDeltaBodies && kind == "generation_delta")
+        if (suppressAllBodies || (suppressDeltaBodies && kind == "generation_delta"))
         {
             message = null;
             detail = null;

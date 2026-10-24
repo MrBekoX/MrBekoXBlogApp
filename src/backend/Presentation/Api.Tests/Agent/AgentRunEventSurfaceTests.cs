@@ -30,7 +30,8 @@ public class AgentRunEventSurfaceTests : IAsyncLifetime
     public Task DisposeAsync() => Task.CompletedTask;
 
     private GetAgentRunEventsQueryHandler CreateHandler(Guid userId) =>
-        new(_fixture.CreateContext(), new TestCurrentUser(userId));
+        new(_fixture.CreateContext(), new TestCurrentUser(userId),
+            new BlogApp.Core.Application.Features.AgentFeature.Services.AgentResultPresentationGuard(_fixture.CreateContext()));
 
     // ------------------------------------------------- progressed: kind/message/detail
 

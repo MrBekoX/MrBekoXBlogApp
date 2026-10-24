@@ -64,8 +64,11 @@ def evaluate_sufficiency(question: str, retrieved: list[IndexedChunk]) -> Suffic
             reason=f"{len(matched)} bölüm soru terimlerini taşıyor",
             matched_chunk_indexes=matched,
         )
+    # A semantic hit can be a faithful translation or paraphrase without shared
+    # surface words. Candidate availability is not a factual-support verdict;
+    # generated sentences must pass the bounded semantic/provenance verifier.
     return SufficiencyVerdict(
-        sufficient=False,
-        reason="getirilen bölümlerde sorunun terimlerine rastlanmadı",
-        matched_chunk_indexes=[],
+        sufficient=bool(retrieved),
+        reason="semantic candidates require answer-level evidence verification" if retrieved else "no article evidence candidates",
+        matched_chunk_indexes=[record.chunk_index for record in retrieved],
     )

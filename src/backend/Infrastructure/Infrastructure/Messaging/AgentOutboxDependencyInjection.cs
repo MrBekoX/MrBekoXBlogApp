@@ -29,6 +29,8 @@ public static class AgentOutboxDependencyInjection
                 "Agent acceptance quotas must be positive.")
             .Validate(s => s.DeadlineReaperIntervalSeconds is >= 1 and <= 300,
                 "AgentAcceptance:DeadlineReaperIntervalSeconds must be from 1 to 300.")
+            .Validate(s => s.TerminalRecoveryGraceSeconds is >= 0 and <= 1800,
+                "AgentAcceptance:TerminalRecoveryGraceSeconds must be from 0 to 1800.")
             .ValidateOnStart();
         services.Configure<AgentOutboxRelaySettings>(configuration.GetSection(AgentOutboxRelaySettings.SectionName));
 

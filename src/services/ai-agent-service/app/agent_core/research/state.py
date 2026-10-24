@@ -81,6 +81,7 @@ class ResearchState(TypedDict, total=False):
     comparison: list[ComparisonNote]
     findings: Annotated[list[ResearchFinding], merge_by_id("finding_id")]
     draft_summary: str | None
+    semantic_evidence: list[ClaimEvidenceRecord]
     report: ResearchReport | None
 
     #: Terminal sonuç ve koleksiyon kanalları.

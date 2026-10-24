@@ -93,6 +93,11 @@ export interface AgentRunStatus {
   deadlineAt: string;
   terminalAt?: string | null;
   lastEventSequence: number;
+  /** Backend deadline closure may be superseded within this bounded window. */
+  isProvisionalTerminal?: boolean;
+  reconciliationUntil?: string | null;
+  /** Relative server time avoids depending on the browser's wall clock. */
+  reconciliationRemainingSeconds?: number;
   result?: AgentRunResult | null;
 }
 

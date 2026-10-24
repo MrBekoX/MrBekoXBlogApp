@@ -34,6 +34,7 @@ public sealed record CollaborationRunState(
     Guid ConversationId,
     string OwnerKey,
     bool IsTerminal,
+    DateTime DeadlineAt,
     int WireVersion = 1);
 
 /// <summary>Proposal'ın güncel (en yüksek sürümlü) kaydının okuma görünümü.</summary>

@@ -571,7 +571,8 @@ def db_pool() -> Any:
 def truncated_db(db_pool: Any) -> Any:
     async def _truncate() -> None:
         async with db_pool.acquire() as conn:
-            await conn.execute("TRUNCATE agent.inbox_messages, agent.jobs, agent.outbox_events")
+            await conn.execute("TRUNCATE agent.budget_reservations, agent.run_budgets, "
+                               "agent.inbox_messages, agent.jobs, agent.outbox_events")
 
     run(_truncate())
     return db_pool

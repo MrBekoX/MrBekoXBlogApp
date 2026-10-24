@@ -14,6 +14,7 @@ import type {
   AgentRunEvent,
   AgentRunNotification,
   AgentRunStatus,
+  AgentModePreference,
 } from '@/types/agent';
 import { foldDeltaText } from '@/components/agent/agent-steps-model';
 import { normalizeTopic } from './topic';
@@ -27,6 +28,20 @@ export function isTerminalPhase(phase: AgentPhase): boolean {
 
 export function isActivePhase(phase: AgentPhase): boolean {
   return ACTIVE_PHASES.includes(phase);
+}
+
+/** Preserve the original request preference, rather than the router's outcome. */
+export function originalModePreference(status: Pick<AgentRunStatus, 'modePreference'>): AgentModePreference {
+  return ['auto', 'fast', 'analysis', 'deep_research'].includes(status.modePreference)
+    ? status.modePreference as AgentModePreference : 'auto';
+}
+
+/** Bound a server window using a relative duration when supported by the backend. */
+export function provisionalGraceMs(status: AgentRunStatus): number {
+  const seconds = status.reconciliationRemainingSeconds;
+  if (typeof seconds === 'number' && Number.isFinite(seconds)) return Math.min(Math.max(seconds, 0), 1800) * 1000;
+  const until = Date.parse(status.reconciliationUntil ?? '');
+  return Number.isFinite(until) ? Math.min(Math.max(until - Date.now(), 0), 1800000) : 0;
 }
 
 /** GET /runs/{id} durumunu faz makinesine çevirir (eski panel ile aynı eşleme). */

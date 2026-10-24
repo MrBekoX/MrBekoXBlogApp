@@ -28,6 +28,9 @@ export function AgentChatMarkdown({ content }: AgentChatMarkdownProps) {
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={{
+          // Model output must not cause an automatic browser request. Preserve
+          // the image's text alternative without emitting img/srcset/preloads.
+          img: ({ alt }) => alt ? <span>{alt}</span> : null,
           // Sohbet balonunda makale sarmalayıcısını gereksiz kenar boşlukları bırakma
           p: ({ children }) => <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>,
           ul: ({ children }) => <ul className="my-1.5 list-disc pl-5 first:mt-0 last:mb-0">{children}</ul>,

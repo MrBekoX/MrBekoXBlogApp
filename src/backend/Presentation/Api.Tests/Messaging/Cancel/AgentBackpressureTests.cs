@@ -340,6 +340,33 @@ public class AgentBackpressureTests : IAsyncLifetime
         return run;
     }
 
+    [Theory]
+    [InlineData(1, AgentEventDecision.Apply)]
+    [InlineData(301, AgentEventDecision.Stale)]
+    public async Task ActualTerminalOnlyReplacesBackendTimeoutInsideBoundedGrace(int elapsedSeconds, AgentEventDecision expected)
+    {
+        Guid runId;
+        await using (var context = _fixture.CreateContext())
+        {
+            var run = await SeedRunAsync(context, DateTime.UtcNow.AddSeconds(-elapsedSeconds));
+            runId = run.Id; run.LastEventSequence = 1; await context.SaveChangesAsync();
+            await new AgentRunDeadlineReaper(context, NullLogger<AgentRunDeadlineReaper>.Instance).ReapExpiredAsync();
+        }
+        await using var projection = _fixture.CreateContext();
+        var handler = new AgentRunEventProjectionHandler(new UnitOfWork(projection), projection,
+            NoOpCollaborationStore.Instance, new AgentResultPresentationGuard(projection), NullLogger<AgentRunEventProjectionHandler>.Instance);
+        var result = await handler.ApplyAsync(CompletedEvent(runId, sequence: 2));
+        Assert.Equal(expected, result.Decision);
+        await using var verify = _fixture.CreateContext();
+        var persisted = await verify.AgentRuns.SingleAsync(r => r.Id == runId);
+        Assert.Equal(expected == AgentEventDecision.Apply ? AgentRunStatus.Completed : AgentRunStatus.Failed, persisted.Status);
+        if (expected == AgentEventDecision.Stale)
+        {
+            Assert.Equal(1, persisted.LastEventSequence);
+            Assert.Contains("grace expired", (await verify.AgentEventInboxes.SingleAsync(i => i.RunId == runId)).Detail);
+        }
+    }
+
     private static AgentRunEventProjectionEvent CancelledEvent(Guid runId, long sequence) =>
         EnvelopeEvent("agent.run.cancelled", runId, new Dictionary<string, object?>
         {

@@ -100,24 +100,30 @@ def build_findings(
         related = evidence_for(index)
         supporting = [r for r in related if r.support is SupportKind.SUPPORTS]
         contradicting = [r for r in related if r.support is SupportKind.CONTRADICTS]
-        if not related:
-            continue  # kanıtsız alt soru bulgu üretmez; belirsizlik bölümüne düşer
-        groups = {publisher_group_of(entries_by_id[r.source_id].final_url) for r in supporting}
+        if not supporting and not contradicting:
+            continue  # Unclear-only records remain uncertainties, never empty findings.
+        supporting_ids = {record.source_id for record in supporting}
+        contradicting_ids = {record.source_id for record in contradicting}
+        # Source IDs include access time: another fetch or claim binding does
+        # not turn the same final page into an additional independent source.
+        supporting_pages = {entries_by_id[source_id].final_url.split("#", 1)[0] for source_id in supporting_ids}
+        contradicting_pages = {entries_by_id[source_id].final_url.split("#", 1)[0] for source_id in contradicting_ids}
+        groups = {publisher_group_of(url) for url in supporting_pages}
         if len(groups) >= 2:
             confidence = "high"
-        elif len(supporting) >= 1:
+        elif supporting_pages:
             confidence = "medium"
         else:
             confidence = "low"
         if is_tr:
-            summary = f"{len(supporting)} bağımsız kaynak iddiayı destekliyor"
+            summary = f"{len(groups)} bağımsız yayıncı grubu ({len(supporting_pages)} kaynak sayfası) destekleyici kanıt sağlıyor"
             if contradicting:
-                summary += f"; {len(contradicting)} kaynak çelişiyor"
+                summary += f"; {len(contradicting_pages)} kaynak sayfası çelişiyor"
             summary += "."
         else:
-            summary = f"{len(supporting)} independent source(s) support the claim"
+            summary = f"{len(groups)} independent publisher group(s) ({len(supporting_pages)} source page(s)) provide supporting evidence"
             if contradicting:
-                summary += f"; {len(contradicting)} contradict it"
+                summary += f"; {len(contradicting_pages)} source page(s) contradict it"
             summary += "."
         ordered = supporting + contradicting
         findings.append(

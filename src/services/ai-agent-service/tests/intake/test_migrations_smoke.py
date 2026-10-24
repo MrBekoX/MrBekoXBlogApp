@@ -45,6 +45,8 @@ def test_agent_schema_is_at_alembic_head(db_pool: Any) -> None:
     assert version == expected_head
     assert "wire_version" in job_columns
     assert set(tables) >= {
+        "run_budgets",
+        "budget_reservations",
         "inbox_messages",
         "jobs",
         "outbox_events",

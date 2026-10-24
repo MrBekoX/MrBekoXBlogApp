@@ -68,6 +68,7 @@ public sealed class EfAgentCollaborationStore(AppDbContext context) : IAgentColl
     public async Task<CollaborationRunState?> GetRunStateAsync(Guid runId, CancellationToken cancellationToken = default)
     {
         var run = await context.AgentRuns
+            .FromSql($"SELECT * FROM agent_runs WHERE \"Id\" = {runId} FOR UPDATE")
             .AsNoTracking()
             .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
         if (run is null)
@@ -81,6 +82,7 @@ public sealed class EfAgentCollaborationStore(AppDbContext context) : IAgentColl
             run.ConversationId,
             run.OwnerKey,
             run.Status.IsTerminal(),
+            run.DeadlineAt,
             AgentRunWireContext.Parse(run.ContextSnapshotJson).WireVersion);
     }
 

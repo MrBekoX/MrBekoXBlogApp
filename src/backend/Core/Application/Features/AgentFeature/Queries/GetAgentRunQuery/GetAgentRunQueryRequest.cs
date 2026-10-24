@@ -51,6 +51,11 @@ public sealed record AgentRunStatusDto
 
     public DateTimeOffset? TerminalAt { get; init; }
 
+    public bool IsProvisionalTerminal { get; init; }
+
+    public DateTimeOffset? ReconciliationUntil { get; init; }
+    public int ReconciliationRemainingSeconds { get; init; }
+
     /// <summary>Projection'ın uyguladığı en büyük olay sırası; istemci replay
     /// imleci (``after``) bununla ilerletilir.</summary>
     public long LastEventSequence { get; init; }

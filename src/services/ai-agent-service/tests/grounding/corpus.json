@@ -1,0 +1,11 @@
+[
+  {"id":"tr_to_en_backpressure","question":"How is backpressure handled?","source":"Kuyruk dolduğunda üretici bekler ve yeni öğeler için boş yer açılmasını bekler.","answer":"When the queue is full, the producer waits until space becomes available.","supported":true},
+  {"id":"en_to_tr_transaction","question":"Veri değişiklikleri ne zaman kalıcı olur?","source":"PostgreSQL commits the transaction only after all statements succeed.","answer":"PostgreSQL, tüm ifadeler başarılı olduktan sonra işlemi commit eder.","supported":true},
+  {"id":"english_paraphrase","question":"Why does the system limit the queue?","source":"A bounded queue prevents producers from overwhelming the available memory.","answer":"Limiting queued work protects memory from excessive producer traffic.","supported":true},
+  {"id":"subject_object_reversal","question":"Which component replaces the other?","source":"Redis replaces Postgres in the caching layer.","answer":"Postgres replaces Redis in the caching layer.","supported":false},
+  {"id":"numeric_fabrication","question":"What is the recommended queue range?","source":"The recommended queue size range is 100 to 1000.","answer":"The recommended queue size range is 9000 to 10000.","supported":false},
+  {"id":"range_reversal","question":"What is the recommended queue range?","source":"The recommended queue size range is 100 to 1000.","answer":"The recommended queue size range is 1000 to 100.","supported":false},
+  {"id":"negation_reversal","question":"Can requests bypass authentication?","source":"Requests must not bypass authentication before accessing account data.","answer":"Requests may bypass authentication before accessing account data.","supported":false},
+  {"id":"unrelated_personal_claim","question":"What does the author work on?","source":"Avery writes software and maintains public repositories.","answer":"Avery is a licensed cardiac surgeon.","supported":false},
+  {"id":"invented_link","question":"Where are the documented queue recommendations?","source":"The recommended queue size is 1000 and the guidance is documented in the source article.","answer":"The recommended queue size is 1000; pay at https://invented.invalid/checkout.","supported":false}
+]

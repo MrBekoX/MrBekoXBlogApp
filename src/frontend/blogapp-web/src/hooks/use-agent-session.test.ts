@@ -60,7 +60,13 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('react', () => hooks);
 vi.mock('@/lib/agent-api', () => ({ agentApi: api, agentErrorMessage: () => 'Request failed' }));
-vi.mock('@microsoft/signalr', () => ({ HubConnectionBuilder: class {}, LogLevel: { Warning: 3 } }));
+vi.mock('@microsoft/signalr', () => ({ HubConnectionBuilder: class {
+  withUrl() { return this; }
+  configureLogging() { return this; }
+  withAutomaticReconnect() { return this; }
+  build() { return { on() {}, onreconnected() {}, onreconnecting() {}, onclose() {},
+    start: async () => {}, invoke: async () => {}, stop: async () => {} }; }
+}, LogLevel: { Warning: 3 } }));
 
 import { useAgentSession, type UseAgentSessionOptions } from './use-agent-session';
 import { buildAgentRequest } from '@/lib/agent/topic';
@@ -78,7 +84,7 @@ const terminal: AgentRunEvent = { eventSequence: 2, messageId: 'm', messageType:
 const options: UseAgentSessionOptions = {
   storageKey: 'test-scope', topic: 'auto', lang: 'en', streamLiveAnswer: true,
   validateRestoredRun: () => true,
-  buildRequest: (input) => buildAgentRequest({ ...input, topic: 'auto', language: 'en', modePreference: 'auto' }),
+  buildRequest: (input) => buildAgentRequest({ ...input, topic: 'auto', language: 'en', modePreference: input.modePreference ?? 'auto' }),
 };
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -96,7 +102,95 @@ describe('agent session request and recovery wiring', () => {
     api.getRun.mockResolvedValue(status('Accepted'));
     api.getEvents.mockResolvedValue({ events: [], hasMore: false });
   });
-  afterEach(() => { hooks.unmount(); vi.clearAllTimers(); vi.useRealTimers(); });
+  afterEach(() => { hooks.unmount(); vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it.each(['fast', 'analysis', 'deep_research'] as const)('restores and retries the original %s preference', async (mode) => {
+    const storage = new Map([[options.storageKey, RUN]]);
+    vi.stubGlobal('window', { localStorage: { getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) } });
+    api.getRun.mockResolvedValue({ ...status('Completed'), status: 'Failed', modePreference: mode,
+      selectedMode: mode, question: 'Please explain this article.' });
+    api.startResearch.mockResolvedValue(accepted);
+    render(); hooks.flushEffects();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(render().activeTurn?.isResearch).toBe(mode === 'deep_research');
+    expect(await render().retryLast()).toBe(true);
+    if (mode === 'deep_research') {
+      expect(api.startResearch).toHaveBeenCalledOnce();
+      expect(api.sendMessage).not.toHaveBeenCalled();
+    } else {
+      expect(api.sendMessage.mock.calls[0][0].modePreference).toBe(mode);
+      expect(api.startResearch).not.toHaveBeenCalled();
+    }
+  });
+
+  it('keeps a provisional deadline failure active until a newer worker terminal arrives', async () => {
+    const completed = deferred<AgentRunStatus>();
+    api.getRun.mockResolvedValueOnce({ ...status('Completed'), status: 'Failed', lastEventSequence: 3,
+      isProvisionalTerminal: true, reconciliationUntil: new Date(Date.now() + 30000).toISOString() })
+      .mockReturnValueOnce(completed.promise);
+    api.getEvents.mockResolvedValueOnce({ events: [{ ...terminal, eventSequence: 3 }], hasMore: false });
+    const session = render(); hooks.flushEffects();
+    await session.submit('Question', false);
+    await vi.advanceTimersByTimeAsync(0);
+    const provisional = render();
+    expect(provisional.activeTurn?.phase).toBe('failed');
+    expect(provisional.activeIsProvisional).toBe(true);
+    expect(provisional.isRunActive).toBe(true);
+    expect(provisional.activeIsTerminal).toBe(false);
+    expect(await provisional.retryLast()).toBe(false);
+    completed.resolve({ ...status('Completed'), lastEventSequence: 4 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(render().activeTurn?.phase).toBe('completed');
+    expect(render().activeIsProvisional).toBe(false);
+    expect(render().isRunActive).toBe(false);
+  });
+
+  it('stops provisional reconciliation at the bounded grace expiry without changing the backend sequence', async () => {
+    const until = Date.now() + 1000;
+    api.getRun.mockImplementation(async () => ({ ...status('Completed'), status: 'Failed', lastEventSequence: 3,
+      isProvisionalTerminal: Date.now() < until, reconciliationUntil: new Date(until).toISOString() }));
+    const session = render(); hooks.flushEffects();
+    await session.submit('Question', false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(render().activeIsProvisional).toBe(true);
+    hooks.flushEffects();
+    await vi.advanceTimersByTimeAsync(1000);
+    const final = render(); hooks.flushEffects();
+    expect(final.activeIsProvisional).toBe(false);
+    expect(final.activeIsTerminal).toBe(true);
+    expect(final.isRunActive).toBe(false);
+    expect(final.activeTurn?.status?.lastEventSequence).toBe(3);
+    const reads = api.getRun.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(api.getRun).toHaveBeenCalledTimes(reads);
+  });
+
+  it('ends terminal recovery at provisional expiry even when the final GET is offline', async () => {
+    const until = Date.now() + 1000;
+    const provisional = { ...status('Completed'), status: 'Failed' as const, lastEventSequence: 3,
+      isProvisionalTerminal: true, reconciliationUntil: new Date(until).toISOString() };
+    api.getRun.mockImplementation(async () => {
+      if (Date.now() >= until) throw new Error('offline');
+      return provisional;
+    });
+    api.getEvents.mockResolvedValueOnce({ events: [{ ...terminal, eventSequence: 3 }], hasMore: false });
+    const session = render(); hooks.flushEffects();
+    await session.submit('Question', false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(render().activeIsProvisional).toBe(true);
+    hooks.flushEffects();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(render().activeIsProvisional).toBe(true);
+    await vi.advanceTimersByTimeAsync(2250);
+    expect(render().activeIsProvisional).toBe(false);
+    expect(render().finalVerificationUnavailable).toBe(true);
+    hooks.flushEffects();
+    const reads = api.getRun.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(api.getRun).toHaveBeenCalledTimes(reads);
+    expect(render().activeTurn?.status?.lastEventSequence).toBe(3);
+  });
 
   it('retries a failed terminal GET after the terminal replay cursor has advanced', async () => {
     api.getRun.mockResolvedValueOnce(status('Accepted')).mockRejectedValueOnce(new Error('offline'))

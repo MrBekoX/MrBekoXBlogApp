@@ -32,6 +32,7 @@ from ..budget.policy import BudgetPolicy, Deadline
 from ..content.models import IndexedChunk
 from ..errors import AgentErrorCode, PortError
 from ..graph.nodes import TaskContext, assistant_turn
+from ..grounding import GroundingEvidence, verify_answer
 from ..models import (
     AgentMode,
     AgentOutcome,
@@ -50,7 +51,6 @@ from .guardrails import (
     append_source_block,
     build_citations,
     build_section_refs,
-    ground_answer,
 )
 from .models import QaFlowConfig
 from .retrieval import ArticleRetriever
@@ -437,7 +437,13 @@ def make_control(deps: QaDeps) -> Callable[[QaState], Any]:
                 port="qa.control",
             )
         retrieved = list(state.get("retrieved") or [])
-        controlled, cited, removed = ground_answer(draft, retrieved, min_overlap=deps.config.min_citation_overlap)
+        evidence = [GroundingEvidence(f"S{index}", record.chunk.content,
+                    (record.canonical_url,) if record.canonical_url else ())
+                    for index, record in enumerate(retrieved, start=1)]
+        checked = await verify_answer(answer=draft, question=context.question, evidence=evidence,
+            model=deps.model, guard=deps.guard, action_id="qa:verify", cancel=deps.tasks.cancel, deadline=deps.deadline)
+        controlled, removed = checked.answer, len(checked.rejected)
+        cited = [record for index, record in enumerate(retrieved, start=1) if f"S{index}" in checked.labels]
         if not controlled:
             controlled = _localized(context.language,
                 tr="Bu soruya makaledeki kanıtlarla doğrulanmış bir yanıt veremiyorum.",
@@ -464,7 +470,8 @@ def make_control(deps: QaDeps) -> Callable[[QaState], Any]:
         body = "\n\n".join(parts)
         answer = append_source_block(body, sections)
         await _publish_delta(deps.progress, context.run_id, answer)
-        return {"answer": answer, "citations": build_citations(cited), "sections": sections}
+        return {"answer": answer, "citations": build_citations(cited), "sections": sections,
+                "usage_events": checked.events}
 
     return control
 

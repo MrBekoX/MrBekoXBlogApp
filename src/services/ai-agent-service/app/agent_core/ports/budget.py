@@ -55,6 +55,9 @@ class BudgetUsage(BusinessModel):
 
     run_id: Identifier
     committed: dict[BudgetKind, int] = {}
+    reserved: dict[BudgetKind, int] = {}
+    uncertain: dict[BudgetKind, int] = {}
+    limits: dict[BudgetKind, int] = {}
 
 
 @runtime_checkable

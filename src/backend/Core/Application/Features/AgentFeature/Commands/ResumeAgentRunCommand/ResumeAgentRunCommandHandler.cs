@@ -207,6 +207,20 @@ public sealed class ResumeAgentRunCommandHandler(
             {
                 await using var transaction = await unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, ct);
 
+                // Serialize with projection, collaboration and deadline recovery.
+                // The preflight state may have changed while this request waited.
+                var lockedRun = await dbContext.AgentRuns
+                    .FromSql($"SELECT * FROM agent_runs WHERE \"Id\" = {request.RunId} FOR UPDATE")
+                    .AsNoTracking().FirstOrDefaultAsync(ct);
+                if (lockedRun is null || lockedRun.OwnerKey != ownerKey || lockedRun.Status.IsTerminal()
+                    || lockedRun.DeadlineAt <= DateTime.UtcNow)
+                    return Result<AgentRunResumeDto>.Failure(Error.Conflict("Çalışma artık devam ettirilebilir durumda değil."));
+                var lockedPending = await resumeStateStore.GetPendingAsync(request.RunId, ct);
+                if (lockedPending is null || string.IsNullOrWhiteSpace(lockedPending.CheckpointReference)
+                    || (request.ExpectedInputVersion.HasValue && lockedPending.InputVersion != request.ExpectedInputVersion)
+                    || (request.ExpectedProposalVersion.HasValue && lockedPending.ProposalVersion != request.ExpectedProposalVersion))
+                    return Result<AgentRunResumeDto>.Failure(Error.Conflict("Beklenen devam sürümü artık güncel değil."));
+
                 var openResumeExists = await dbContext.OutboxMessages
                     .AsNoTracking()
                     .AnyAsync(m => m.RunId == request.RunId
@@ -234,7 +248,7 @@ public sealed class ResumeAgentRunCommandHandler(
                     correlationId,
                     requestedAt,
                     producer: messagingOptions.Value.ProducerName,
-                    checkpointReference: pending.CheckpointReference,
+                    checkpointReference: lockedPending.CheckpointReference,
                     userRef: userRef,
                     schemaVersion: wireVersion);
 

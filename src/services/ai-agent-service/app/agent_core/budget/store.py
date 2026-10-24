@@ -128,4 +128,6 @@ class PolicyBudgetStore:
             return BudgetUsage(
                 run_id=run_id,
                 committed={kind: total for kind, total in self._committed.items() if total},
+                reserved={kind: total for kind, total in self._reserved.items() if total},
+                limits=dict(self._caps),
             )

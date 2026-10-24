@@ -33,4 +33,8 @@ public sealed class AgentAcceptanceSettings
 
     /// <summary>Interval for backend recovery of expired accepted runs.</summary>
     public int DeadlineReaperIntervalSeconds { get; set; } = 15;
+
+    /// <summary>Bounded interval after DeadlineAt during which a real terminal
+    /// event may replace a backend-only timeout. Zero makes timeout final immediately.</summary>
+    public int TerminalRecoveryGraceSeconds { get; set; } = 300;
 }

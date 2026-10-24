@@ -14,7 +14,8 @@ public interface IAgentCollaborationStore
     /// no-op'tur (idempotent). Yeni sürümde Version monoton artar.</summary>
     Task<ProposalUpsertResult> UpsertProposalAsync(AgentProposalUpsert upsert, CancellationToken cancellationToken = default);
 
-    /// <summary>Run'ın sahiplik + terminal bilgisi; run yoksa null (sahiplik backend kaydından).</summary>
+    /// <summary>Lock the run until the caller's transaction completes and return
+    /// ownership, terminal state and deadline. Run must be locked before proposal transitions.</summary>
     Task<CollaborationRunState?> GetRunStateAsync(Guid runId, CancellationToken cancellationToken = default);
 
     /// <summary>Proposal'ın güncel (en yüksek sürümlü) kaydı; yoksa null.</summary>

@@ -227,6 +227,7 @@ class ExecutionDependencies:
     article_catalog: Any | None = None
     profile_knowledge: Any | None = None
     profile_retriever: Any | None = None
+    budget_factory: Callable[[ExecutionContext, int], BudgetStore] | None = None
 
 
 @dataclass(frozen=True)
@@ -1057,7 +1058,7 @@ class ExecutionWorker:
             model=metered,
             retriever=self._deps.retriever,
             content=self._deps.content,
-            budget=self._deps.budget,
+            budget=self._budget_for(stored.context, claimed.fencing_token),
             progress=sink,
             cancel=cancel,
             # Profil run'ına dış kaynak kapasitesi port düzeyinde verilmez (K5).
@@ -1086,11 +1087,11 @@ class ExecutionWorker:
             model=metered,
             retriever=self._deps.retriever,
             content=self._deps.content,
-            budget=self._deps.budget,
+            budget=self._budget_for(prepared.context, claimed.fencing_token),
             progress=sink,
             cancel=cancel,
             # Profil run'ına web/arama/kaynak okuyucu araçları HİÇ verilmez (K5):
-            # BudgetPolicy web limitini >=1'e çekebildiğinden limit yetmez.
+            # Profile execution receives no external tool handles at all.
             web_tools=None if sink.profile_guard else self._deps.web_tools,
             profile_repository=self._deps.profile_repository,
             project_repository=self._deps.project_repository,
@@ -1100,6 +1101,11 @@ class ExecutionWorker:
             profile_knowledge=self._deps.profile_knowledge,
             profile_retriever=self._deps.profile_retriever,
         )
+
+    def _budget_for(self, context: ExecutionContext, fencing_token: int) -> BudgetStore | None:
+        if self._deps.budget_factory is not None:
+            return self._deps.budget_factory(context, fencing_token)
+        return self._deps.budget
 
     # ------------------------------------------------- iptal terminali + guard
 

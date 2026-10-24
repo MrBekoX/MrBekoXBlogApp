@@ -204,6 +204,37 @@ public class AgentCollaborationResumeTests : IAsyncLifetime
         Assert.False(await context.OutboxMessages.AsNoTracking().AnyAsync(m => m.RunId == runId));
     }
 
+    [Theory]
+    [InlineData(AgentRunStatus.Cancelled)]
+    [InlineData(AgentRunStatus.Failed)]
+    [InlineData(AgentRunStatus.Completed)]
+    public async Task Resume_TerminalRunDoesNotTransitionProposalOrWriteOutbox(AgentRunStatus status)
+    {
+        var (runId, proposalId, hash) = await SeedConfirmedProposalAsync();
+        await using var context = _fixture.CreateContext();
+        await context.AgentRuns.Where(r => r.Id == runId).ExecuteUpdateAsync(update => update.SetProperty(r => r.Status, status));
+        var result = await CreateService(context).ResumeRequestAsync(runId, proposalId, hash, "u:b9-owner");
+        Assert.Equal(CollaborateResumeOutcome.RejectedVersion, result.Outcome);
+        Assert.False(await context.OutboxMessages.AnyAsync(m => m.RunId == runId));
+        Assert.Equal(AgentProposalStatus.Confirmed, (await context.AgentProposals.SingleAsync(p => p.ProposalId == proposalId)).Status);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Resume_ExpiredProposalOrRunDeadlineIsRejected(bool expiredRun)
+    {
+        var (runId, proposalId, hash) = await SeedConfirmedProposalAsync();
+        await using var context = _fixture.CreateContext();
+        if (expiredRun)
+            await context.AgentRuns.Where(r => r.Id == runId).ExecuteUpdateAsync(update => update.SetProperty(r => r.DeadlineAt, DateTime.UtcNow.AddSeconds(-1)));
+        else
+            await context.AgentProposals.Where(p => p.ProposalId == proposalId).ExecuteUpdateAsync(update => update.SetProperty(p => p.ExpiresAt, DateTimeOffset.UtcNow.AddSeconds(-1)));
+        var result = await CreateService(context).ResumeRequestAsync(runId, proposalId, hash, "u:b9-owner");
+        Assert.Equal(CollaborateResumeOutcome.RejectedVersion, result.Outcome);
+        Assert.False(await context.OutboxMessages.AnyAsync(m => m.RunId == runId));
+    }
+
     [Fact]
     public async Task Resume_WithTamperedHash_IsRejected()
     {

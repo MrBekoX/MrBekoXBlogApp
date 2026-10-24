@@ -154,8 +154,11 @@ class BudgetGuard:
         The following guarded reservation is still atomic: concurrent callers
         may be rejected before sending when another caller reserves first.
         """
-        consumed = (await self.usage()).committed.get(BudgetKind.TOKEN, 0)
-        available_output = self.policy.max_total_tokens - consumed - estimate_model_input_tokens(request)
+        usage = await self.usage()
+        consumed = sum(totals.get(BudgetKind.TOKEN, 0)
+                       for totals in (usage.committed, usage.reserved, usage.uncertain))
+        limit = min(self.policy.max_total_tokens, usage.limits.get(BudgetKind.TOKEN, self.policy.max_total_tokens))
+        available_output = limit - consumed - estimate_model_input_tokens(request)
         if available_output < 1:
             raise PortError(AgentErrorCode.BUDGET_EXHAUSTED,
                             "The remaining model budget cannot cover the input and an output token",
@@ -331,15 +334,19 @@ class BudgetGuard:
                         usage = ModelUsage(prompt_tokens=token_reservation.reserved_amount, completion_tokens=0)
                     estimated = True  # sağlayıcı kullanım bilgisi yok: tahmin
                 assert token_reservation is not None
-                await self.commit(token_reservation, max(usage.total_tokens, 1))
-            elif token_reservation is not None:  # pragma: no cover - yalnız MODEL_CALL açar
-                await self.release(token_reservation)
-            await self.commit(call_reservation, 1)
+            # The provider result is already known. Preserve its usage before a
+            # ledger write whose acknowledgement could fail or be cancelled.
+            # Such failure must not retry the provider or erase billed work.
             self._emit(
                 events, events_sink,
                 self._event(action_id=action_id, kind=kind, attempt=attempt,
                             outcome="success", usage=usage, estimated=estimated),
             )
+            if kind is BudgetKind.MODEL_CALL:
+                await self.commit(token_reservation, max(usage.total_tokens, 1))
+            elif token_reservation is not None:  # pragma: no cover
+                await self.release(token_reservation)
+            await self.commit(call_reservation, 1)
             return GuardedOutcome(
                 value=result.value,
                 usage=usage,

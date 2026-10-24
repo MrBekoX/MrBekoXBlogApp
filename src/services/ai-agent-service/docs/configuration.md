@@ -72,6 +72,107 @@ When a provider omits usage, conservative estimates are marked as estimates.
 This is not a currency cap across all providers: separately billed embedding
 requests have their own bounded input/batch sizes and persistent cache.
 
+## Durable run budgets and recovery
+
+Migration `0007` adds the PostgreSQL run budget and reservation ledger. Apply the
+normal Alembic `upgrade head` step before starting this worker version. Startup
+checks both ledger tables. Preparing this source change does not run migrations
+on any server.
+
+Production creates a budget store for the run and its current fencing token on
+both fresh execution and checkpoint resume. The first limits remain pinned;
+another process cannot create a fresh allowance for the same run. Reservations
+are persisted before external work. An older attempt's outstanding reservations
+become conservative `uncertain` charges; a stale or expired lease cannot refund
+them. Recovery of a legacy attempt with no ledger exhausts its unknown allowance
+instead of assuming it was free. The ledger stores counts, never prompts,
+answers, credentials or private profile content.
+
+The backend exposes provisional timeout state separately from answer content:
+`isProvisionalTerminal`, `reconciliationUntil`, and server-computed
+`reconciliationRemainingSeconds`. `AgentAcceptance:TerminalRecoveryGraceSeconds`
+defaults to 300 (valid range 0-1800); Compose maps it from
+`AGENT_TERMINAL_RECOVERY_GRACE_SECONDS`. A later terminal event can reconcile a
+backend timeout only within that window. After it closes the backend preserves
+the final decision and records the late event as stale. The browser performs a
+final authoritative read, with bounded retries, rather than assuming its own
+clock establishes the server's final state. Offline final verification is shown
+as unknown and requires an explicit status check, never silent resubmission.
+
+## Acceptance evidence
+
+### Development sequence
+
+The current phase is bug fixing and development, with offline regression tests,
+isolated PostgreSQL/RabbitMQ checks and loopback browser fixtures. Model-backed
+acceptance is deferred until development is complete; the planned first target
+is local Ollama. No model server, model download or provider evaluation is
+started as part of this phase.
+
+The chat configuration accepts loopback HTTP endpoints, but actual Ollama SSE,
+usage and generation/verifier behavior must be checked in that later phase. The
+current full-pipeline runner intentionally retains the production embedding
+model `text-embedding-3-small` and its 1536-dimensional index. Testing local
+embeddings will require an explicit Ollama model/dimension choice and an isolated
+index; existing vectors must not be relabeled or mixed with another model. A
+local acceptance mode must be kept separate from paid-provider opt-in gates.
+This records the planned work, not a claim that Ollama acceptance has passed.
+
+These checks cover separate layers; passing one layer does not certify another:
+
+| Layer | Evidence | External calls |
+| --- | --- | --- |
+| Contracts, guards, storage and races | Python/.NET regression suites and disposable PostgreSQL/RabbitMQ | Test infrastructure only |
+| Real browser lifecycle | `npm run test:agent-browser` in the frontend | Loopback HTTP/WebSocket fixture only; external requests blocked |
+| Grounding verifier quality | `python tools/evaluate_grounding.py --scope verifier` | Explicit paid-provider opt-in required |
+| Generated answers and retrieval | `python tools/evaluate_grounding.py --scope full-pipeline` | Explicit paid opt-in plus dedicated disposable PostgreSQL and real embeddings |
+| EC2 capacity and operational objectives | `tools/operational_acceptance.py` with measured target evidence | Tool itself sends no traffic and performs no deployment |
+
+The browser runner uses an isolated temporary profile and build, does not load
+developer dotenv files, and fails if Chrome is unavailable. It exercises real
+React effects, Axios and the SignalR client, not the .NET hub's authentication;
+backend WebSocket integration tests cover that layer separately.
+
+The public quality corpus covers Turkish/English, paraphrases, role/relationship
+reversals, numbers, negation, links and abstention. Checking the corpus makes no
+provider request. Live evaluation must be separately authorized and opt in
+through both the CLI and `AGENT_RUN_PAID_TESTS=1`; full-pipeline evaluation also
+requires `AGENT_ACCEPTANCE_DISPOSABLE_DB=1` and a migrated loopback test database
+whose name starts with `blogdb_agent_quality_test`. The runner does not discover
+dotenv files and reports public case IDs, aggregate metrics and public fixture
+outputs, never credentials or real profile text. Semantic verification remains a
+fallible model judgment; exact segment coverage, source quotes, URLs and numbers
+are also checked locally. It does not establish a universal truth guarantee.
+Runtime generation is followed by bounded semantic verification using the same
+configured chat provider. These are additional billable calls within the same
+durable run budget. Unavailable verification budget yields abstention or a
+partial result, never an unchecked answer presented as verified.
+
+For a separately approved load scenario on the intended EC2 host, memory can be
+sampled without starting services or sending requests:
+
+```bash
+python tools/operational_acceptance.py collect-memory --seconds 120 --output /tmp/agent-memory.json
+```
+
+Combine that measurement with terminal run durations/statuses and the existing
+admin observations endpoint's outbox-age/dead-letter deltas. Keep this evidence
+outside Git. Use one evidence file and product-approved thresholds per workload
+(for example fast QA versus research). Assessment requires the measured commit,
+a recent UTC timestamp, explicit target/load attestations and sufficient samples:
+
+```bash
+python tools/operational_acceptance.py assess --evidence /tmp/agent-live-evidence.json --policy /tmp/agent-slo.json --expected-commit <release-commit>
+```
+
+The policy explicitly supplies `max_p95_run_seconds`, `max_failure_fraction`,
+`max_peak_memory_fraction`, `max_outbox_age_seconds`, `max_dead_letters`,
+`minimum_runs`, and `minimum_memory_samples`. No latency or capacity target is
+silently presented as an industry standard. Missing, stale, non-target or
+different-revision evidence returns `not_measured` with exit code 2. Unit-test
+samples and loopback fixtures cannot count as measured EC2 capacity. Real model
+and EC2 acceptance remain pending until those authorized runs actually occur.
+
 ## Checkpoints and compatibility
 
 `FileCheckpointStore` stores opaque checkpoint payloads with atomic replacement

@@ -175,10 +175,11 @@ def test_specific_question_requires_lexical_support() -> None:
     assert verdict.matched_chunk_indexes == [2]
 
 
-def test_specific_question_without_any_support_is_insufficient() -> None:
+def test_semantic_candidates_without_shared_words_require_answer_verification() -> None:
     verdict = evaluate_sufficiency(
         "Docker konteyner dağıtımı nasıl yapılır?",
         [make_record(2, "Önerilen değer aralığı 100 ile 1000 arasındadır.")],
     )
-    assert verdict.sufficient is False
-    assert verdict.matched_chunk_indexes == []
+    assert verdict.sufficient is True
+    assert verdict.matched_chunk_indexes == [2]
+    assert "verification" in verdict.reason

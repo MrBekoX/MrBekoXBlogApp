@@ -8,6 +8,7 @@
         "start": "next start",
         "lint": "eslint",
         "test": "vitest run",
+        "test:agent-browser": "node tools/agent-browser-acceptance.mjs",
         "test:watch": "vitest"
     },
     "dependencies": {

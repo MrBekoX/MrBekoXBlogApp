@@ -164,7 +164,7 @@ def recreate_test_database() -> None:
     run(_recreate())
 
 
-def run_agent_migrations(database: str) -> None:
+def run_agent_migrations(database: str, target: str = "head") -> None:
     """Alembic zincirini programatik çalıştırır (CLI ile aynı env.py)."""
 
     from alembic import command
@@ -179,7 +179,7 @@ def run_agent_migrations(database: str) -> None:
     try:
         cfg = Config(str(SERVICE_ROOT / "migrations" / "alembic.ini"))
         cfg.set_main_option("script_location", str(SERVICE_ROOT / "migrations"))
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, target)
     finally:
         if previous_url is None:
             os.environ.pop("AGENT_DB_URL", None)
@@ -630,8 +630,12 @@ def real_environment() -> None:
 
     require_postgres()
     recreate_test_database()
-    run_agent_migrations(AGENT_TEST_DB)
+    # This port-contract fixture deliberately exercises legacy string fencing
+    # tokens. Build its compatibility table before ledger FKs are introduced.
+    # Worker/integration/storage suites use the actual migrated jobs table.
+    run_agent_migrations(AGENT_TEST_DB, "0006")
     apply_b6_contract_schema(AGENT_TEST_DB)
+    run_agent_migrations(AGENT_TEST_DB)
 
 
 @pytest.fixture()
@@ -664,7 +668,8 @@ def store(db_pool: Any) -> Any:
     async def _truncate() -> None:
         async with db_pool.acquire() as conn:
             await conn.execute(
-                "TRUNCATE agent.inbox_messages, agent.jobs, agent.cancel_intents, "
+                "TRUNCATE agent.budget_reservations, agent.run_budgets, "
+                "agent.inbox_messages, agent.jobs, agent.cancel_intents, "
                 "agent.outbox_events, agent.run_event_sequences"
             )
 

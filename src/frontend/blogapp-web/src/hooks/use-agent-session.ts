@@ -31,6 +31,7 @@ import { AGENT_RUNS_HUB_URL } from '@/lib/env';
 import type {
   AgentConversationTopic,
   AgentPhase,
+  AgentModePreference,
   AgentRunAccepted,
   AgentRunEvent,
   AgentRunStatus,
@@ -51,6 +52,8 @@ import {
   httpStatusOf,
   isActivePhase,
   isTerminalPhase,
+  originalModePreference,
+  provisionalGraceMs,
   liveAnswerFor,
   mergePhase,
   phaseFromStatus,
@@ -80,6 +83,7 @@ export interface AgentTurn {
   runId: string;
   question: string;
   isResearch: boolean;
+  modePreference?: AgentModePreference;
   phase: AgentPhase;
   status: AgentRunStatus | null;
   /** Canlı yanıt: generation_delta parçalarının birleşimi (foldDeltaText).
@@ -93,6 +97,8 @@ export interface AgentSubmitRequest {
   deepResearch: boolean;
   conversationId?: string;
   idempotencyKey: string;
+  /** Retry keeps the original preference without changing the composer. */
+  modePreference?: AgentModePreference;
 }
 
 export interface UseAgentSessionOptions {
@@ -142,6 +148,8 @@ export function useAgentSession(options: UseAgentSessionOptions) {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [submitting, setSubmitting] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [finalVerificationPending, setFinalVerificationPending] = useState(false);
+  const [finalVerificationUnavailable, setFinalVerificationUnavailable] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
 
   /** Şu an izlenen run (replay/ingest bu kimliğe kilitlidir; eski run sonucu karışmaz). */
@@ -156,7 +164,10 @@ export function useAgentSession(options: UseAgentSessionOptions) {
   const ingestBusyRef = useRef(false);
   const ingestRerunRef = useRef(false);
   const terminalHandledRef = useRef(false);
+  const terminalSeenRef = useRef(false);
   const terminalRecoveryRef = useRef<ReturnType<typeof createTerminalRecovery> | null>(null);
+  const finalVerificationRef = useRef<ReturnType<typeof createTerminalRecovery> | null>(null);
+  const provisionalDeadlineRef = useRef(0);
   const submissionIdentityRef = useRef(createSubmissionIdentity(newIdempotencyKey));
   const submittingOperationRef = useRef<object | null>(null);
   const startedSeenRef = useRef(false);
@@ -173,8 +184,10 @@ export function useAgentSession(options: UseAgentSessionOptions) {
 
   const activeTurn = turns.length > 0 ? turns[turns.length - 1] : null;
   const activeRunId = activeTurn?.runId ?? null;
-  const activeIsTerminal = activeTurn ? isTerminalPhase(activeTurn.phase) : false;
-  const isRunActive = submitting || (activeTurn ? isActivePhase(activeTurn.phase) : false);
+  const activeIsProvisional = !finalVerificationUnavailable && (finalVerificationPending ||
+    (activeTurn?.status?.isProvisionalTerminal === true && provisionalDeadlineRef.current > performance.now()));
+  const activeIsTerminal = activeTurn ? isTerminalPhase(activeTurn.phase) && !activeIsProvisional : false;
+  const isRunActive = submitting || activeIsProvisional || (activeTurn ? isActivePhase(activeTurn.phase) : false);
   // B9 needs_input yüzeyleme: son adım girdi bekliyor ve çalışma hâlâ aktifse
   // (iptal talep edilmemişse) "Devam et" sunulur. Faz makinesi DEĞİŞMEZ; türetilmiş görünüm.
   const activeWaitingInput =
@@ -207,7 +220,9 @@ export function useAgentSession(options: UseAgentSessionOptions) {
         // equal-sequence refreshes so publication/profile masking can still change.
         if (status.lastEventSequence < lastStatusSequenceRef.current) return null;
         const nextPhase = phaseFromStatus(status);
-        if (terminalHandledRef.current && !isTerminalPhase(nextPhase)) return null;
+        const provisional = status.status === 'Failed' && status.isProvisionalTerminal === true;
+        if (terminalSeenRef.current && !isTerminalPhase(nextPhase)) return null;
+        if (terminalHandledRef.current && provisional) return null;
         lastStatusSequenceRef.current = status.lastEventSequence;
         updateTurn(runId, (turn) => {
           // An older overlapping GET must not erase a terminal result with Accepted.
@@ -215,10 +230,29 @@ export function useAgentSession(options: UseAgentSessionOptions) {
           return { ...turn, status, phase: mergePhase(turn.phase, nextPhase) };
         });
         if (isTerminalPhase(nextPhase)) {
-          terminalHandledRef.current = true;
-          terminalRecoveryRef.current?.dispose();
-          terminalRecoveryRef.current = null;
-          announce(terminalLabel(nextPhase, t));
+          terminalSeenRef.current = true;
+          terminalHandledRef.current = !provisional;
+          setFinalVerificationUnavailable(false);
+          if (provisional) {
+            const grace = provisionalGraceMs(status);
+            const candidate = performance.now() + grace;
+            provisionalDeadlineRef.current = provisionalDeadlineRef.current > 0
+              ? Math.min(provisionalDeadlineRef.current, candidate) : candidate;
+            if (provisionalDeadlineRef.current > performance.now()) {
+              finalVerificationRef.current?.dispose();
+              finalVerificationRef.current = null;
+              setFinalVerificationPending(false);
+            } else setFinalVerificationPending(true);
+          }
+          if (!provisional) {
+            terminalRecoveryRef.current?.dispose();
+            terminalRecoveryRef.current = null;
+            finalVerificationRef.current?.dispose();
+            finalVerificationRef.current = null;
+            provisionalDeadlineRef.current = 0;
+            setFinalVerificationPending(false);
+          }
+          announce(provisional ? t.statusReconciling : terminalLabel(nextPhase, t));
           // Terminalde adım alanı bir kez otomatik kapanır (kullanıcı açabilir).
           if (runId === currentRunIdRef.current && !autoCollapseDoneRef.current) {
             autoCollapseDoneRef.current = true;
@@ -234,6 +268,9 @@ export function useAgentSession(options: UseAgentSessionOptions) {
         if (status === 403 || status === 404) {
           terminalRecoveryRef.current?.dispose();
           terminalRecoveryRef.current = null;
+          finalVerificationRef.current?.dispose();
+          finalVerificationRef.current = null;
+          setFinalVerificationPending(false);
           currentRunIdRef.current = null;
           epochRef.current += 1;
           const storage = getBrowserStorage();
@@ -251,15 +288,43 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     [announce, startedText, storageKey, t, updateTurn, validateRestoredRun],
   );
 
+  const verifyFinalResult = useCallback(async (runId: string) => {
+    if (currentRunIdRef.current !== runId || terminalHandledRef.current) return;
+    const epoch = epochRef.current;
+    terminalRecoveryRef.current?.dispose();
+    terminalRecoveryRef.current = null;
+    setFinalVerificationPending(true);
+    setFinalVerificationUnavailable(false);
+    if (!finalVerificationRef.current) {
+      finalVerificationRef.current = createTerminalRecovery({
+        isCurrent: () => currentRunIdRef.current === runId && epochRef.current === epoch,
+        refresh: async () => {
+          const status = await refreshStatus(runId);
+          return status !== null && isTerminalPhase(phaseFromStatus(status)) && status.isProvisionalTerminal !== true;
+        },
+        maxAttempts: 3,
+        retryDelaysMs: [750, 1500],
+        onExhausted: () => {
+          finalVerificationRef.current = null;
+          setFinalVerificationPending(false);
+          setFinalVerificationUnavailable(true);
+          announce(t.finalVerificationUnavailable);
+        },
+      });
+    }
+    await finalVerificationRef.current.start();
+  }, [announce, refreshStatus, t]);
+
   const reconcileTerminal = useCallback(async (runId: string) => {
     if (terminalHandledRef.current || currentRunIdRef.current !== runId) return;
+    if (finalVerificationRef.current) return;
     if (!terminalRecoveryRef.current) {
       const epoch = epochRef.current;
       terminalRecoveryRef.current = createTerminalRecovery({
         isCurrent: () => currentRunIdRef.current === runId && epochRef.current === epoch,
         refresh: async () => {
           const status = await refreshStatus(runId);
-          return status !== null && isTerminalPhase(phaseFromStatus(status));
+          return status !== null && isTerminalPhase(phaseFromStatus(status)) && status.isProvisionalTerminal !== true;
         },
       });
     }
@@ -388,7 +453,12 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     lastSequenceRef.current = 0;
     lastStatusSequenceRef.current = status.lastEventSequence;
     eventsRef.current = [];
-    terminalHandledRef.current = terminal;
+    const provisional = terminal && status.isProvisionalTerminal === true;
+    provisionalDeadlineRef.current = provisional ? performance.now() + provisionalGraceMs(status) : 0;
+    setFinalVerificationPending(provisional && provisionalGraceMs(status) === 0);
+    setFinalVerificationUnavailable(false);
+    terminalHandledRef.current = terminal && !provisional;
+    terminalSeenRef.current = terminal;
     startedSeenRef.current = terminal;
     deltaAnnouncedRef.current = false;
     autoCollapseDoneRef.current = terminal;
@@ -398,9 +468,11 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     setSteps([]);
     // Çalışma sürerken adım alanı açık başlar; terminal kayıt kapalı gelir.
     setStepsOpen(!terminal);
-    setTurns([{ runId, question: status.question ?? '', isResearch: false, phase, status }]);
+    const preference = originalModePreference(status);
+    setTurns([{ runId, question: status.question ?? '', isResearch: preference === 'deep_research',
+      modePreference: preference, phase, status }]);
     const latest = textsRef.current;
-    if (terminal) announce(terminalLabel(phase, latest.t));
+    if (terminal) announce(provisional ? latest.t.statusReconciling : terminalLabel(phase, latest.t));
     else if (phase === 'started') announce(latest.startedText);
 
     await ingestEvents(runId);
@@ -416,6 +488,8 @@ export function useAgentSession(options: UseAgentSessionOptions) {
       currentRunIdRef.current = null;
       terminalRecoveryRef.current?.dispose();
       terminalRecoveryRef.current = null;
+      finalVerificationRef.current?.dispose();
+      finalVerificationRef.current = null;
       submissionIdentity.clear();
       submittingOperationRef.current = null;
     };
@@ -443,6 +517,17 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     });
   }, [activeRunId, activeIsTerminal, ingestEvents, refreshStatus]);
 
+  // Use monotonic relative time. At expiry obtain a stable authoritative result:
+  // a terminal admitted before the cutoff may still be committing under its lock.
+  useEffect(() => {
+    if (!activeIsProvisional || !activeRunId || finalVerificationUnavailable) return;
+    const timer = setTimeout(() => {
+      setNowTick(Date.now());
+      void verifyFinalResult(activeRunId);
+    }, Math.max(provisionalDeadlineRef.current - performance.now(), 0));
+    return () => clearTimeout(timer);
+  }, [activeIsProvisional, activeRunId, activeTurn?.status, finalVerificationUnavailable, verifyFinalResult]);
+
   // Çalışan adım için canlı elapsed saati (yalnız gerçekten çalışırken).
   const hasSteps = steps.length > 0;
   useEffect(() => {
@@ -452,16 +537,22 @@ export function useAgentSession(options: UseAgentSessionOptions) {
   }, [isRunActive, hasSteps]);
 
   const startRun = useCallback(
-    (accepted: AgentRunAccepted, questionText: string, isResearch: boolean) => {
+    (accepted: AgentRunAccepted, questionText: string, isResearch: boolean, preference: AgentModePreference) => {
       // Yeni çalışma: replay imlecini sıfırla; devam eden geri yükleme bayatlar.
       epochRef.current += 1;
       terminalRecoveryRef.current?.dispose();
       terminalRecoveryRef.current = null;
+      finalVerificationRef.current?.dispose();
+      finalVerificationRef.current = null;
+      provisionalDeadlineRef.current = 0;
+      setFinalVerificationPending(false);
+      setFinalVerificationUnavailable(false);
       currentRunIdRef.current = accepted.runId;
       lastSequenceRef.current = 0;
       lastStatusSequenceRef.current = -1;
       eventsRef.current = [];
       terminalHandledRef.current = false;
+      terminalSeenRef.current = false;
       startedSeenRef.current = false;
       deltaAnnouncedRef.current = false;
       autoCollapseDoneRef.current = false;
@@ -473,7 +564,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
       if (storage) writeStoredRunId(storage, storageKey, accepted.runId);
       setTurns((prev) => [
         ...prev,
-        { runId: accepted.runId, question: questionText, isResearch, phase: 'accepted', status: null },
+        { runId: accepted.runId, question: questionText, isResearch, modePreference: preference, phase: 'accepted', status: null },
       ]);
     },
     [storageKey],
@@ -481,7 +572,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
 
   /** Soru gönderir; kabul edilirse true (çağıran besteciyi temizler). */
   const submit = useCallback(
-    async (questionText: string, deepResearch: boolean): Promise<boolean> => {
+    async (questionText: string, deepResearch: boolean, retryPreference?: AgentModePreference): Promise<boolean> => {
       const trimmed = questionText.trim();
       if (!trimmed || submittingOperationRef.current || submitting || isRunActive) return false;
 
@@ -490,6 +581,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
         deepResearch,
         conversationId,
         idempotencyKey: '', // Assigned once for this exact logical operation below.
+        modePreference: retryPreference,
       });
       if (!candidate.ok) {
         if (candidate.reason === 'research_not_allowed_for_topic') {
@@ -518,7 +610,8 @@ export function useAgentSession(options: UseAgentSessionOptions) {
 
         if (!isCurrent()) return false;
         submissionIdentityRef.current.complete(plan);
-        startRun(accepted, trimmed, deepResearch);
+        startRun(accepted, trimmed, deepResearch,
+          plan.endpoint === 'research' ? 'deep_research' : plan.body.modePreference);
         announce(t.statusAccepted);
 
         // Kabul hemen projection'a düşmüş olabilir; ilk replay'i çek.
@@ -575,11 +668,13 @@ export function useAgentSession(options: UseAgentSessionOptions) {
 
   /** Başarısız terminalde TEKRAR DENE: son soruyu yeniden gönderir. */
   const retryLast = useCallback((): Promise<boolean> => {
-    if (!activeTurn || activeTurn.phase !== 'failed') return Promise.resolve(false);
+    if (!activeTurn || activeTurn.phase !== 'failed' || finalVerificationUnavailable) return Promise.resolve(false);
     const text = activeTurn.question || activeTurn.status?.question || '';
     if (!text.trim()) return Promise.resolve(false);
-    return submit(text, activeTurn.isResearch);
-  }, [activeTurn, submit]);
+    const preference = activeTurn.modePreference ?? (activeTurn.status
+      ? originalModePreference(activeTurn.status) : activeTurn.isResearch ? 'deep_research' : 'auto');
+    return submit(text, preference === 'deep_research', preference);
+  }, [activeTurn, finalVerificationUnavailable, submit]);
 
   /** B9 needs_input: beklenen input sürümü (needs_input olayının event_sequence'i)
    * doğrulanarak devam isteği. Çalışma terminal olmadığından abonelik sürer. */
@@ -617,6 +712,9 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     resuming,
     activeTurn,
     activeIsTerminal,
+    activeIsProvisional,
+    finalVerificationUnavailable,
+    checkFinalResult: () => activeRunId ? verifyFinalResult(activeRunId) : Promise.resolve(),
     isRunActive,
     activeWaitingInput,
     submit,

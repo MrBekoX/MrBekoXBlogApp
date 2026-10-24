@@ -147,10 +147,8 @@ public sealed class AgentE2eFullPathTests : IAsyncLifetime
         var replayGet = await GetRunAsync(runId, user.Id);
         Assert.Equal(after.Value.Result!.Answer, replayGet.Value!.Result!.Answer);
 
-        // Kuyruk boşaldı: ConsumeEventsUntilAsync consumer'ı durdurmadan ÖNCE
-        // ready=0 VE unacked=0 doğrular; sakinleşmiş kapanışta requeue edilecek
-        // teslim kalmaz, dolayısıyla bu son ready yoklaması kesindir (commit→ACK
-        // yarışının bıraktığı "kuyrukta takılı mesaj" hatası yapısal olarak olanaksız).
+        // The consumer helper observes live ready=0 AND unacked=0 before close.
+        // This separate AMQP check still rejects any delivery requeued at shutdown.
         var drained = await WaitForAsync(EventsQueueDrainedAsync, TimeSpan.FromSeconds(15));
         Assert.True(drained, "olay kuyruğu projection sonrası boşalmadı (ACK gecikmesi)");
     }
@@ -601,25 +599,29 @@ public sealed class AgentE2eFullPathTests : IAsyncLifetime
             var ok = await WaitForAsync(async () => await condition(), TimeSpan.FromSeconds(45));
             Assert.True(ok, "projection koşulu 45 sn içinde sağlanmadı");
 
-            // Commit→ACK yarışı kapanışı (B5 projection commit'ten sonra ACK):
-            // koşul sağlandığında son teslimin ACK'ı hâlâ yolda olabilir. ACK'siz
-            // consumer durdurulursa mesaj kuyruğa geri döner ve kimse tüketmez —
-            // bu yüzden durdurmadan ÖNCE kuyruk sakinleşir (ready=0 VE unacked=0;
-            // passive declare ready saymadığından unacked yönetim API'sinden okunur).
+            // DB commit precedes ACK. Query the live broker queue process while
+            // the consumer remains active; sampled HTTP metrics can report stale
+            // zeroes and must not decide when it is safe to close this channel.
+            (int Ready, int Unacked)? lastCounts = null;
+            Exception? lastProbeError = null;
             var quiesced = await WaitForAsync(async () =>
             {
                 try
                 {
                     var (ready, unacked) =
                         await _fixture.QueueCountsAsync(AgentMessagingTopology.BackendEventsQueue);
+                    lastCounts = (ready, unacked);
+                    lastProbeError = null;
                     return ready == 0 && unacked == 0;
                 }
-                catch (Exception)
+                catch (Exception exception)
                 {
-                    return false; // yönetim API geçici hatası: yeniden yokla
+                    lastProbeError = exception;
+                    return false; // Unknown probe state is never an empty queue.
                 }
             }, TimeSpan.FromSeconds(15));
-            Assert.True(quiesced, "olay kuyruğu tüketim sonrası sakinleşmedi (ready/unacked)");
+            Assert.True(quiesced,
+                $"olay kuyruğu tüketim sonrası sakinleşmedi (ready/unacked); last={lastCounts?.ToString() ?? "unknown"}; probe={lastProbeError?.Message ?? "none"}");
         }
         finally
         {

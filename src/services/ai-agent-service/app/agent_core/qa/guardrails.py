@@ -81,10 +81,10 @@ def _numbers(text: str) -> list[Decimal]:
 
 
 def _consistent_claim(claim: str, evidence: str, *, min_tokens: int) -> bool:
-    """Conservative local support check, not a proof of semantic entailment.
+    """Literal-only fast check; paraphrases require the semantic verifier.
 
-    Numbers, negation and literal code identifiers must agree within the same
-    evidence span. A number elsewhere in the article cannot justify a claim.
+    Word overlap can never authorize a changed relationship or reordered claim.
+    The production answer flows use grounding.verify_answer for generative text.
     """
     claim = _SOURCE_LABEL_RE.sub("", claim)
     claim_tokens = set(salient_tokens(claim, min_length=4))
@@ -100,7 +100,14 @@ def _consistent_claim(claim: str, evidence: str, *, min_tokens: int) -> bool:
     if bool(_NEGATION_RE.search(fold_text(claim))) != bool(_NEGATION_RE.search(fold_text(evidence))):
         return False
     identifiers = _INLINE_IDENTIFIER_RE.findall(claim) + _CODE_IDENTIFIER_RE.findall(claim)
-    return all(identifier in evidence for identifier in identifiers)
+    if not all(identifier in evidence for identifier in identifiers):
+        return False
+    normalized = fold_text(claim.replace("`", "").replace("**", ""))
+    for marker in _ATTRIBUTION_MARKERS:
+        normalized = normalized.replace(fold_text(marker), "")
+    normalized = " ".join(normalized.split()).strip(" #*-:.,;!?")
+    source = " ".join(fold_text(evidence.replace("`", "").replace("**", "")).split())
+    return bool(normalized) and normalized in source
 
 
 def _evidence_spans(text: str) -> list[str]:
@@ -144,12 +151,12 @@ def neutralize_attributions(
 def ground_answer(
     answer: str, retrieved: list[IndexedChunk], *, min_overlap: int,
 ) -> tuple[str, list[IndexedChunk], int]:
-    """Filter each factual segment and bind citations to its supporting record.
+    """Literal-only local filter; not the production semantic grounding gate.
 
     Unsupported claims are omitted even without an attribution phrase. Code
     fences are retained only when their body occurs in a retrieved chunk. This
-    check may abstain on valid paraphrases; it does not certify arbitrary model
-    statements as true. Callers must not stream the unvalidated draft.
+    Valid paraphrases and translations are intentionally not decided here;
+    production callers use grounding.verify_answer before publishing text.
     """
     spans = [(record, _evidence_spans(record.chunk.content)) for record in retrieved]
     kept: list[str] = []

@@ -9,6 +9,8 @@ using BlogApp.Core.Domain.Enums;
 using BlogApp.Core.Application.Features.AgentFeature.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using BlogApp.Core.Application.Common.Options;
 
 namespace BlogApp.Core.Application.Common.Messaging;
 
@@ -91,7 +93,8 @@ public sealed class AgentRunEventProjectionHandler(
     IApplicationDbContext dbContext,
     IAgentCollaborationStore collaborationStore,
     IAgentResultPresentationGuard presentationGuard,
-    ILogger<AgentRunEventProjectionHandler> logger)
+    ILogger<AgentRunEventProjectionHandler> logger,
+    IOptions<AgentAcceptanceSettings>? acceptanceOptions = null)
 {
     public const string ConsumerName = "backend-agent-events";
 
@@ -153,6 +156,11 @@ public sealed class AgentRunEventProjectionHandler(
                 incomingSequence: @event.EventSequence,
                 incomingIsTerminal: @event.IsTerminal);
 
+            var expiredRecovery = @event.IsTerminal && AgentTerminalRecoveryPolicy.IsBackendTimeout(run)
+                && !AgentTerminalRecoveryPolicy.Evaluate(run, acceptanceOptions?.Value ?? new(), DateTimeOffset.UtcNow)
+                    .IsProvisionalTerminal;
+            if (expiredRecovery) decision = AgentEventDecision.Stale;
+
             var wireContext = AgentRunWireContext.Parse(run.ContextSnapshotJson);
             if (decision == AgentEventDecision.Apply)
             {
@@ -171,7 +179,8 @@ public sealed class AgentRunEventProjectionHandler(
             if (decision == AgentEventDecision.Stale)
             {
                 await InsertInboxAsync(@event, messageId, runId, "stale",
-                    $"sıra gerilemesi veya terminal sonrası eski olay: son uygulanan {run.LastEventSequence}, gelen {@event.EventSequence}", ct);
+                    expiredRecovery ? "terminal event arrived after backend timeout reconciliation grace expired"
+                        : $"sıra gerilemesi veya terminal sonrası eski olay: son uygulanan {run.LastEventSequence}, gelen {@event.EventSequence}", ct);
                 await unitOfWork.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
                 logger.LogInformation(
@@ -231,20 +240,22 @@ public sealed class AgentRunEventProjectionHandler(
 
             // W6 F6: push yolu GET ile AYNI sunum denetiminden geçer (B8 kuralı
             // "sunmadan önce yayın erişim denetimi"). Yayından kalkmış/silinmiş
-            // makaleye dayanan terminal sonuç SignalR push payload'ında TAŞINMAZ;
+            // makaleye dayanan sonuç/progress gövdesi SignalR push payload'ında TAŞINMAZ;
             // istemci durum/status bildirimini alır, içeriği guard'lı GET'ten
             // ("içerik kullanılamıyor" kararıyla) tazeler. Denetim yalnız okur;
             // projection kaydı değişmez.
             var pushResultJson = @event.IsTerminal ? @event.PayloadJson : null;
-            if (pushResultJson is not null)
+            var pushMessage = @event.ProgressMessage ?? string.Empty;
+            if (pushResultJson is not null || pushMessage.Length > 0)
             {
                 var presentation = await presentationGuard.CheckAsync(
-                    new AgentRunResultContext(runId, run.ArticleId, pushResultJson, run.ContextSnapshotJson), ct);
+                    new AgentRunResultContext(runId, run.ArticleId, pushResultJson ?? run.ResultJson, run.ContextSnapshotJson), ct);
                 if (!presentation.IsPresentable)
                 {
                     pushResultJson = null;
+                    pushMessage = string.Empty;
                     logger.LogInformation(
-                        "[AgentProjection] terminal sonuç push'ta maskelendi ({Reason}): run {RunId}",
+                        "[AgentProjection] sonuç/progress gövdesi push'ta maskelendi ({Reason}): run {RunId}",
                         presentation.UnavailableReason, runId);
                 }
             }
@@ -265,7 +276,7 @@ public sealed class AgentRunEventProjectionHandler(
                 MessageType = @event.Envelope.MessageType,
                 Status = run.Status.ToString(),
                 EventSequence = @event.EventSequence,
-                Message = @event.ProgressMessage ?? string.Empty,
+                Message = pushMessage,
                 OccurredAt = @event.Envelope.OccurredAt,
                 ResultJson = pushResultJson,
             };

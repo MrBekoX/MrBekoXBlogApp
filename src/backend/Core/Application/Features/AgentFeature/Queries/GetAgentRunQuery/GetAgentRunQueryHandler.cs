@@ -4,10 +4,12 @@ using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Common.Models;
+using BlogApp.Core.Application.Common.Options;
 using BlogApp.Core.Application.Features.AgentFeature.Services;
 using BlogApp.Core.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunQuery;
 
@@ -69,7 +71,8 @@ public sealed record AgentRunCitationDto(
 public sealed class GetAgentRunQueryHandler(
     IApplicationDbContext dbContext,
     ICurrentUserService currentUser,
-    IAgentResultPresentationGuard presentationGuard) : IRequestHandler<GetAgentRunQueryRequest, Result<AgentRunStatusDto>>
+    IAgentResultPresentationGuard presentationGuard,
+    IOptions<AgentAcceptanceSettings>? acceptanceOptions = null) : IRequestHandler<GetAgentRunQueryRequest, Result<AgentRunStatusDto>>
 {
     public async Task<Result<AgentRunStatusDto>> Handle(GetAgentRunQueryRequest request, CancellationToken cancellationToken)
     {
@@ -103,7 +106,15 @@ public sealed class GetAgentRunQueryHandler(
             result = await BuildResultAsync(run, cancellationToken);
         }
 
+        var settings = acceptanceOptions?.Value ?? new();
+        var stable = await AgentTerminalRecoveryPolicy.StabilizeExpiredAsync(dbContext.AgentRuns, run, settings, cancellationToken);
+        if (!ReferenceEquals(stable, run))
+        {
+            run = stable;
+            result = run.ResultJson is null ? null : await BuildResultAsync(run, cancellationToken);
+        }
         var wire = AgentRunWireContext.Parse(run.ContextSnapshotJson);
+        var recovery = AgentTerminalRecoveryPolicy.Evaluate(run, settings, DateTimeOffset.UtcNow);
 
         return Result<AgentRunStatusDto>.Success(new AgentRunStatusDto
         {
@@ -125,6 +136,9 @@ public sealed class GetAgentRunQueryHandler(
                 ? new DateTimeOffset(terminal, TimeSpan.Zero)
                 : null,
             LastEventSequence = run.LastEventSequence,
+            IsProvisionalTerminal = recovery.IsProvisionalTerminal,
+            ReconciliationUntil = recovery.ReconciliationUntil,
+            ReconciliationRemainingSeconds = recovery.ReconciliationRemainingSeconds,
             Result = result,
         });
     }

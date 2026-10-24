@@ -27,6 +27,7 @@ public static class SecurityExtensions
         services.Configure<IpRateLimitOptions>(configuration.GetSection("IpRateLimiting"));
         services.AddInMemoryRateLimiting();
         services.AddSingleton<IRateLimitConfiguration, CanonicalIpRateLimitConfiguration>();
+        services.AddAgentSignalRAdmission(configuration);
 
         return services;
     }

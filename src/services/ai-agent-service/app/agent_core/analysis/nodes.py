@@ -32,6 +32,7 @@ from ..content.models import IndexedChunk
 from ..content.retrieval import tokenize
 from ..errors import AgentErrorCode, PortError
 from ..graph.nodes import TaskContext, assistant_turn
+from ..grounding import GroundingEvidence, verify_answer
 from ..models import (
     AgentMode,
     AgentOutcome,
@@ -50,7 +51,6 @@ from ..qa.guardrails import (
     append_source_block,
     build_citations,
     build_section_refs,
-    ground_answer,
 )
 from ..qa.sufficiency import MIN_MATCHED_TOKENS
 from ..qa.text import is_generic_question, is_related_to_article, salient_tokens
@@ -194,7 +194,9 @@ def make_evidence(deps: AnalysisDeps) -> Callable[[AnalysisState], Any]:
                 overlap = sum(1 for token in part_tokens if token in evidence_tokens)
                 if overlap >= MIN_MATCHED_TOKENS:
                     matches.append(record.chunk_index)
-            supported[index] = matches
+            # Semantic retrieval candidates may be translations/paraphrases with
+            # no identical words. The answer verifier decides actual support.
+            supported[index] = matches or [record.chunk_index for record in retrieved]
         coverage = HeadingCoverage(
             supported=supported,
             uncovered_indexes=[index for index, matches in supported.items() if not matches],
@@ -438,7 +440,13 @@ def make_control(deps: AnalysisDeps) -> Callable[[AnalysisState], Any]:
                 port="analysis.control",
             )
         retrieved = list(state.get("retrieved") or [])
-        controlled, cited, removed = ground_answer(draft, retrieved, min_overlap=deps.config.min_citation_overlap)
+        evidence = [GroundingEvidence(f"S{index}", record.chunk.content,
+                    (record.canonical_url,) if record.canonical_url else ())
+                    for index, record in enumerate(retrieved, start=1)]
+        checked = await verify_answer(answer=draft, question=context.question, evidence=evidence,
+            model=deps.model, guard=deps.guard, action_id="analysis:verify", cancel=deps.tasks.cancel, deadline=deps.deadline)
+        controlled, removed = checked.answer, len(checked.rejected)
+        cited = [record for index, record in enumerate(retrieved, start=1) if f"S{index}" in checked.labels]
         if not controlled:
             controlled = _localized(context.language,
                 tr="Bu soruya makaledeki kanıtlarla doğrulanmış bir yanıt veremiyorum.",
@@ -481,7 +489,8 @@ def make_control(deps: AnalysisDeps) -> Callable[[AnalysisState], Any]:
         body = "\n\n".join(parts)
         answer = append_source_block(body, sections)
         await _publish_delta(deps.progress, context.run_id, answer)
-        return {"answer": answer, "citations": build_citations(cited), "sections": sections}
+        return {"answer": answer, "citations": build_citations(cited), "sections": sections,
+                "usage_events": checked.events}
 
     return control
 

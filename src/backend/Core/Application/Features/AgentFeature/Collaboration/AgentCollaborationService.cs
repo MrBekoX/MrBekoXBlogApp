@@ -115,6 +115,12 @@ public sealed class AgentCollaborationService(
                     "bu çalışmanın iş birliği önerisi başka bir oturuma ait");
             }
 
+            if (run.IsTerminal || run.DeadlineAt <= DateTime.UtcNow)
+            {
+                return Rejected(CollaborateSubmitOutcome.RejectedVersion, confirmedAt,
+                    "sonlanmış veya süresi dolmuş bir çalışma için onay kaydedilemez");
+            }
+
             // 2) Proposal kaydı: projection'ın yazdığı güncel sürüm.
             var current = await store.GetCurrentProposalAsync(runId, proposalId, ct);
             if (current is null)
@@ -124,7 +130,7 @@ public sealed class AgentCollaborationService(
             }
 
             // 3) Süre sınırı: backend politikası (plan B9 "süre sınırı").
-            if (confirmedAt > current.ExpiresAt)
+            if (confirmedAt >= current.ExpiresAt || DateTimeOffset.UtcNow >= current.ExpiresAt)
             {
                 await WriteRejectionAsync(run, proposalId, hash,
                     "önerinin onay süresi doldu", confirmedAt, ct);
@@ -237,11 +243,23 @@ public sealed class AgentCollaborationService(
                     CollaborateResumeOutcome.RejectedOwner, now, "bu çalışma başka bir oturuma ait");
             }
 
+            if (run.IsTerminal || run.DeadlineAt <= DateTime.UtcNow)
+            {
+                return new CollaborateResumeResult(CollaborateResumeOutcome.RejectedVersion, now,
+                    "sonlanmış veya süresi dolmuş bir çalışma sürdürülemez");
+            }
+
             var current = await store.GetCurrentProposalAsync(runId, proposalId, ct);
             if (current is null)
             {
                 return new CollaborateResumeResult(
                     CollaborateResumeOutcome.RejectedVersion, now, "kayıtlı iş birliği önerisi yok");
+            }
+
+            if (DateTimeOffset.UtcNow >= current.ExpiresAt)
+            {
+                return new CollaborateResumeResult(CollaborateResumeOutcome.RejectedVersion, now,
+                    "önerinin onay süresi doldu; çalışma sürdürülemez");
             }
 
             if (string.Equals(current.Status, AgentProposalStatus.Proposed, StringComparison.Ordinal)

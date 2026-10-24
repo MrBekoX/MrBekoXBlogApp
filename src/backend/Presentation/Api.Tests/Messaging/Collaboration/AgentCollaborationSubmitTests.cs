@@ -1,4 +1,5 @@
 using System.Data;
+using System.Data.Common;
 using BlogApp.Core.Application.Common.Interfaces.Data;
 using BlogApp.Core.Application.Common.Interfaces.Messaging;
 using BlogApp.Core.Application.Common.Interfaces.Persistence;
@@ -11,6 +12,7 @@ using BlogApp.Infrastructure.Messaging;
 using BlogApp.Infrastructure.Persistence;
 using BlogApp.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -95,6 +97,54 @@ public class AgentCollaborationSubmitTests : IAsyncLifetime
     }
 
     // ------------------------------------------------------------- onay temel
+
+    [Theory]
+    [InlineData(AgentRunStatus.Cancelled)]
+    [InlineData(AgentRunStatus.Failed)]
+    [InlineData(AgentRunStatus.Completed)]
+    public async Task Submit_TerminalRunIsRejectedWithoutAStoredApproval(AgentRunStatus status)
+    {
+        var runId = await SeedRunAsync();
+        var proposalId = await SeedProposalAsync(runId);
+        await using var context = _fixture.CreateContext();
+        await context.AgentRuns.Where(r => r.Id == runId).ExecuteUpdateAsync(update => update.SetProperty(r => r.Status, status));
+        var hash = AgentCollaborationContentHash.Compute("İş birliği önerisi — konuk yazı.");
+        var result = await CreateService(context).SubmitConfirmationAsync(runId, proposalId, hash, null, "u:b9-owner", DateTimeOffset.UtcNow);
+        Assert.Equal(CollaborateSubmitOutcome.RejectedVersion, result.Outcome);
+        Assert.False(await context.OutboxMessages.AnyAsync(m => m.RunId == runId));
+        Assert.Equal(AgentProposalStatus.Proposed, (await context.AgentProposals.SingleAsync(p => p.ProposalId == proposalId)).Status);
+    }
+
+    [Fact]
+    public async Task Submit_WaitsForConcurrentTerminalCommitBeforeAdmittingApproval()
+    {
+        var runId = await SeedRunAsync();
+        var proposalId = await SeedProposalAsync(runId);
+        await using var terminal = _fixture.CreateContext();
+        await using var transaction = await terminal.Database.BeginTransactionAsync();
+        await terminal.AgentRuns.Where(r => r.Id == runId).ExecuteUpdateAsync(update => update.SetProperty(r => r.Status, AgentRunStatus.Cancelled));
+        var observer = new RunReadObserver();
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(_fixture.TestConnectionString).AddInterceptors(observer).Options);
+        var hash = AgentCollaborationContentHash.Compute("İş birliği önerisi — konuk yazı.");
+        var pending = CreateService(context).SubmitConfirmationAsync(runId, proposalId, hash, null, "u:b9-owner", DateTimeOffset.UtcNow);
+        await observer.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await transaction.CommitAsync();
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(CollaborateSubmitOutcome.RejectedVersion, result.Outcome);
+        Assert.False(await context.OutboxMessages.AnyAsync(m => m.RunId == runId));
+    }
+
+    private sealed class RunReadObserver : DbCommandInterceptor
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+            CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("agent_runs", StringComparison.Ordinal)) Started.TrySetResult();
+            return ValueTask.FromResult(result);
+        }
+    }
 
     [Fact]
     public async Task Submit_WithCurrentHash_IsAccepted_WritesSingleResultMessage()

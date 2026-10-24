@@ -29,6 +29,7 @@ import re
 from dataclasses import dataclass, field
 
 from ..content.anchors import fold_text
+from ..grounding import answer_is_covered
 from .chunking import ProfileChunk
 
 __all__ = [
@@ -288,6 +289,8 @@ def validate_model_output(
         claims.append(ValidatedClaim(text=claim_text.strip(), labels=tuple(labels), quotes=tuple(kept_quotes)))
 
     combined = " ".join([answer, *(claim.text for claim in claims)])
+    if not answer_is_covered(answer, [claim.text for claim in claims]):
+        errors.append("every answer segment must be covered by the declared claims in answer order")
     allowed = _allowed_urls(evidence, channel_urls)
     for match in _URL_RE.finditer(combined):
         if _normalize_url(match.group(0)) not in allowed:

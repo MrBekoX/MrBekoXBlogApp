@@ -106,7 +106,9 @@ public class AgentWhoAmIStatusReplayTests : IAsyncLifetime
         }
 
         await using var queryContext = _fixture.CreateContext();
-        var handler = new GetAgentRunEventsQueryHandler(queryContext, new TestCurrentUser(userId));
+        var handler = new GetAgentRunEventsQueryHandler(queryContext, new TestCurrentUser(userId),
+            new AgentResultPresentationGuard(queryContext, Profile,
+                Options.Create(new AgentWireV2Settings { Enabled = true })));
         var result = await handler.Handle(new GetAgentRunEventsQueryRequest { RunId = runId, After = 0 }, CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error);

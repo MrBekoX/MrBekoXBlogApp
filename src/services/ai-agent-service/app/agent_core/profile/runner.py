@@ -74,7 +74,8 @@ from .retrieval import (
     budget_for_mode,
 )
 from .source import ProfileDocument, ProfileSourceError
-from .validation import EvidenceEntry, ValidationResult, validate_model_output
+from .validation import EvidenceEntry, ValidatedClaim, ValidationResult, validate_model_output
+from ..grounding import GroundingEvidence, verify_answer
 
 __all__ = [
     "ProfileQueryPlan",
@@ -257,6 +258,8 @@ _SYSTEM_TEMPLATE_TR = (
     "- \"quotes\" kaynak parçadan BİREBİR kopyalanmış kısa alıntılardır; Türkçe kanıtı çevirmeden "
     "aynen kopyala.\n"
     "- Her iddia en az bir kaynak ve bir alıntı taşır. Kanıt yetmiyorsa \"claims\": [] döndür.\n"
+    "- answer içindeki HER cümle/başlık claims içinde aynı metinle ve aynı sırayla yer almalı; "
+    "claims dışında ayrı bilgi, giriş veya sonuç cümlesi ekleme.\n"
     "- \"answer\" {language_name} dilinde yazılır{translation_hint}."
 )
 
@@ -700,6 +703,22 @@ async def run_profile_rag(
         )
         state["validation_errors"] = list(validation.errors)
 
+        async def check_meaning(value: ValidationResult, attempt: int) -> ValidationResult:
+            if not value.ok:
+                return value
+            verified = await verify_answer(answer=value.answer, question=question,
+                evidence=[GroundingEvidence(entry.label, _evidence_block(entry),
+                    (entry.chunk.url, *[channel.url for channel in channels])) for entry in evidence],
+                model=model, guard=guard, action_id=f"profile:verify:{attempt}", cancel=cancel,
+                deadline=deadline, events_sink=events)
+            if verified.rejected or not verified.answer:
+                return ValidationResult(ok=False, errors=["answer claims were not supported by their evidence"])
+            return ValidationResult(ok=True, answer=verified.answer,
+                claims=[ValidatedClaim(claim.text, claim.labels, claim.quotes) for claim in verified.claims])
+
+        validation = await check_meaning(validation, 0)
+        state["validation_errors"].extend(validation.errors)
+
         repairs = 0
         while not validation.ok and not validation.abstained and repairs < run_config.max_repair_calls:
             repairs += 1
@@ -722,6 +741,7 @@ async def run_profile_rag(
             validation = validate_model_output(
                 raw, evidence, channel_urls=[channel.url for channel in channels], known_section_ids=document.section_ids
             )
+            validation = await check_meaning(validation, repairs)
             state["validation_errors"].extend(validation.errors)
         state["repair_calls"] = repairs
 

@@ -96,6 +96,11 @@ def test_unverified_drafts_are_never_streamed_and_control_publishes_only_support
                 await on_delta(draft)
                 return ModelResponse(text=draft, usage=ModelUsage(prompt_tokens=100, completion_tokens=20),
                                      finished_at=datetime.now(timezone.utc))
+            async def complete(self, request, *, cancel):
+                import json
+                result = {"segments": [{"id": "A1", "supported": False, "evidence": []}]}
+                return ModelResponse(text=json.dumps(result), usage=ModelUsage(prompt_tokens=20, completion_tokens=10),
+                                     finished_at=datetime.now(timezone.utc))
 
         source = record("The recommended queue size range is 100 to 1000.")
         kwargs = dict(context=context, route=None, retriever=None, model=Model(), content=None,

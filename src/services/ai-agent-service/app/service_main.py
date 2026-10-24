@@ -35,6 +35,8 @@ from agent_core.adapters import (  # noqa: E402
 from agent_core.content.postgres import PostgresContentIndex, PostgresEmbeddingCache  # noqa: E402
 from agent_core.errors import AgentErrorCode, PortError  # noqa: E402
 from agent_core.models import BudgetProfile  # noqa: E402
+from agent_core.budget.policy import BudgetPolicy  # noqa: E402
+from agent_core.budget.postgres import PostgresBudgetStore  # noqa: E402
 from agent_core.profile import (  # noqa: E402
     CanonicalProfileRepository,
     resolve_profile_dir,
@@ -238,6 +240,10 @@ async def _compose_components(
     # Restore revision/removal guards after a process restart.
     rows = await pool.fetch(f'SELECT article_id,revision,content_hash,deleted FROM "{db_settings.schema}".content_articles')
     state.restore_articles(rows)
+    # Refuse startup on an unmigrated ledger instead of accepting work that
+    # would fail only when its first paid call tries to reserve capacity.
+    await pool.fetch(f'SELECT run_id,limits FROM "{db_settings.schema}".run_budgets LIMIT 0')
+    await pool.fetch(f'SELECT reservation_id,status,actual_amount FROM "{db_settings.schema}".budget_reservations LIMIT 0')
 
     class ContentFetcher:
         async def fetch(self, article_id: str, article_revision: int) -> Any:
@@ -258,6 +264,12 @@ async def _compose_components(
         profile_retriever=ProfileRetriever(embedding=ProfileEmbedding(embedding, settings.index_config)),
         content_state=state,
         web_tools=research_tools,
+        budget_factory=lambda context, fence: PostgresBudgetStore(
+            pool, BudgetPolicy.from_budget_profile(context.budget_profile,
+                # Internal article retrieval remains bounded and available when
+                # external tools are disabled: QA(3) + one analysis upgrade(9).
+                max_tool_attempts=max(context.budget_profile.max_tool_calls, 12)),
+            context.run_id, fence, schema=db_settings.schema),
     )
 
     worker_settings = WorkerSettings(

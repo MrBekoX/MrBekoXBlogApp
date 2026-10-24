@@ -243,6 +243,11 @@ def test_terminal_usage_keeps_actual_cost_even_when_source_control_fails(monkeyp
             async def stream_complete(self, request, **kwargs):
                 return ModelResponse(text=text, usage=ModelUsage(prompt_tokens=1000, completion_tokens=2000),
                                      finished_at=datetime.now(timezone.utc))
+            async def complete(self, request, **kwargs):
+                verdict = {"segments": [{"id": "A1", "supported": True,
+                    "evidence": [{"source": "S1", "quote": text}]}]}
+                return ModelResponse(text=json.dumps(verdict), usage=ModelUsage(prompt_tokens=20, completion_tokens=10),
+                                     finished_at=datetime.now(timezone.utc))
 
         if fail_after_generation:
             async def fail(_state):
@@ -253,8 +258,8 @@ def test_terminal_usage_keeps_actual_cost_even_when_source_control_fails(monkeyp
                                                    "article_revision": 1, "article_content_hash": snapshot.content_hash})
         result = await run_article_qa(context, None, model=Model(), retriever=Retriever())
         assert result.outcome.status.value == ("failed" if fail_after_generation else "completed")
-        assert result.outcome.usage.total_tokens == 3000
-        assert result.outcome.usage.model_calls == 1
+        assert result.outcome.usage.total_tokens == (3000 if fail_after_generation else 3030)
+        assert result.outcome.usage.model_calls == (1 if fail_after_generation else 2)
 
     asyncio.run(run())
 

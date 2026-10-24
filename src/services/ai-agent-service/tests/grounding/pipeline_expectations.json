@@ -1,0 +1,11 @@
+{
+  "tr_to_en_backpressure":{"language":"en","required":["producer","wait|block|suspend","space|capacity|room"],"forbidden":[]},
+  "en_to_tr_transaction":{"language":"tr","required":["postgresql","basar|basari|basarili","commit|kalici|onay"],"forbidden":[]},
+  "english_paraphrase":{"language":"en","required":["memory|ram","protect|prevent|avoid|limit|overwhelm|exhaust"],"forbidden":[]},
+  "subject_object_reversal":{"language":"en","required":["redis.*replac.*postgres|postgres.*replac.*by redis"],"forbidden":["postgres replaces redis"],"forbidden_regex":["\\bredis\\b[^.!?]*\\b(?:not|never|cannot|doesn['’]?t|can['’]?t|won['’]?t)\\b[^.!?]*replac","\\bpostgres\\b[^.!?]*\\b(?:not|never|isn['’]?t|wasn['’]?t)\\b[^.!?]*replac","\\b(?:false|incorrect|untrue|wrong|not true)\\b[^.!?]*\\bredis\\b[^.!?]*replac"]},
+  "numeric_fabrication":{"language":"en","answerable":false,"question":"What are the production database credentials?","required":["not|cannot|can't|insufficient|no verified"],"forbidden":["password is","secret is"]},
+  "range_reversal":{"language":"en","required":["100.*1000"],"forbidden":["1000 to 100"]},
+  "negation_reversal":{"language":"en","required":["authenticat","not|never|cannot|mustn|no"],"forbidden":["requests may bypass authentication"]},
+  "unrelated_personal_claim":{"language":"en","answerable":false,"question":"Which medical license does Avery hold?","required":["not|cannot|can't|insufficient|no verified"],"forbidden":["licensed cardiac surgeon","medical license is"]},
+  "invented_link":{"language":"en","required":["1000"],"forbidden":["invented.invalid"]}
+}

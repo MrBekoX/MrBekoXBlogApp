@@ -204,6 +204,41 @@ public class AgentRunEventsSseSurfaceTests : IAsyncLifetime
         Assert.Contains("başka bir oturuma ait", error.DataJson);
     }
 
+    [Fact]
+    public async Task Events_SseStream_MasksWithdrawnArticleAnswerBodies()
+    {
+        var user = Guid.NewGuid();
+        Guid runId;
+        await using (var context = _fixture.CreateContext())
+        {
+            var author = new BlogApp.Core.Domain.Entities.User { UserName = "sse-test-" + Guid.NewGuid().ToString("N"),
+                Email = Guid.NewGuid().ToString("N") + "@example.com", PasswordHash = "test-only" };
+            context.Users.Add(author); await context.SaveChangesAsync();
+            var article = new BlogApp.Core.Domain.Entities.BlogPost { Title = "SSE source", Slug = Guid.NewGuid().ToString("N"),
+                Content = "withdrawn source", AuthorId = author.Id, Status = PostStatus.Draft };
+            context.Posts.Add(article); await context.SaveChangesAsync();
+            var run = await AgentB10TestHost.SeedRunAsync(context, ownerKey: $"u:{user:D}", articleId: article.Id, status: AgentRunStatus.Completed);
+            runId = run.Id;
+            await AgentB10TestHost.SeedAppliedEventAsync(context, runId, 1, "agent.run.progressed",
+                payloadJson: """{"event_sequence":1,"kind":"generation_delta","message":"withdrawn answer","detail":{"source":"withdrawn answer"}}""",
+                progressMessage: "withdrawn answer");
+            run.LastEventSequence = 1; await context.SaveChangesAsync();
+        }
+        var cancellation = NewTestToken();
+        await using var app = BuildSseHost(user);
+        await app.StartAsync(cancellation);
+        using var client = new HttpClient { BaseAddress = new Uri(app.Urls.First()) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/agent/runs/{runId:D}/events");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellation);
+        var events = await ReadSseEventsAsync(response, cancellation);
+        var item = Assert.Single(events.Where(e => MessageTypeOf(e) == "agent.run.progressed"));
+        Assert.Equal("generation_delta", ValueOf(item, "kind"));
+        Assert.Equal("null", ValueOf(item, "message"));
+        Assert.Equal("null", ValueOf(item, "detail"));
+        Assert.DoesNotContain("withdrawn answer", item.DataJson);
+    }
+
     /// <summary>B5 hub sözleşmesinin replay karşılığı: terminal run + boşalan sayfa
     /// sonrası akış "done" ile kapanır (endpoint SseMaxDuration beklemez).</summary>
     private WebApplication BuildSseHost(Guid userId)
@@ -215,6 +250,8 @@ public class AgentRunEventsSseSurfaceTests : IAsyncLifetime
             _fixture.TestConnectionString,
             npgsql => npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName)));
         builder.Services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
+        builder.Services.AddScoped<BlogApp.Core.Application.Features.AgentFeature.Services.IAgentResultPresentationGuard,
+            BlogApp.Core.Application.Features.AgentFeature.Services.AgentResultPresentationGuard>();
         builder.Services.AddMediatR(cfg =>
             cfg.RegisterServicesFromAssembly(typeof(GetAgentRunEventsQueryHandler).Assembly));
         builder.Services.AddSingleton<ICurrentUserService>(new TestCurrentUser(userId));

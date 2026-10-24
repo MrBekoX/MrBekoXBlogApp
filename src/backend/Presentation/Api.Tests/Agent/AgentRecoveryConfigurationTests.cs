@@ -5,6 +5,8 @@ using BlogApp.Presentation.Api.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using BlogApp.Core.Application.Common.Options;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using Xunit;
@@ -13,6 +15,20 @@ namespace BlogApp.Presentation.Api.Tests.Agent;
 
 public sealed class AgentRecoveryConfigurationTests
 {
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1800, true)]
+    [InlineData(-1, false)]
+    [InlineData(1801, false)]
+    public void ReconciliationGraceHasAValidatedFiniteBoundary(int seconds, bool valid)
+    {
+        var services = new ServiceCollection();
+        services.AddAgentOutbox(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { ["AgentAcceptance:TerminalRecoveryGraceSeconds"] = seconds.ToString() }).Build());
+        using var provider = services.BuildServiceProvider();
+        if (valid) Assert.Equal(seconds, provider.GetRequiredService<IOptions<AgentAcceptanceSettings>>().Value.TerminalRecoveryGraceSeconds);
+        else Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<AgentAcceptanceSettings>>().Value);
+    }
     [Fact]
     public void AgentOutbox_RegistersScopedRecoveryAndItsHost()
     {

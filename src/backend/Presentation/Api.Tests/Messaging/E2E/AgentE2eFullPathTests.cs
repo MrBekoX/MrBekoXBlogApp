@@ -410,7 +410,7 @@ public sealed class AgentE2eFullPathTests : IAsyncLifetime
     private async Task<Result<AgentRunEventsDto>> ReplayEventsAsync(Guid runId, Guid? userId)
     {
         await using var context = _fixture.CreateContext();
-        var handler = new GetAgentRunEventsQueryHandler(context, new E2eCurrentUser(userId));
+        var handler = new GetAgentRunEventsQueryHandler(context, new E2eCurrentUser(userId), new AgentResultPresentationGuard(context));
         return await handler.Handle(
             new GetAgentRunEventsQueryRequest { RunId = runId },
             CancellationToken.None);

@@ -45,6 +45,7 @@ from ..budget.guard import BudgetGuard, CallResult, estimate_model_tokens
 from ..budget.policy import BudgetPolicy, Deadline
 from ..errors import AgentErrorCode, PortError
 from ..graph.nodes import TaskContext, assistant_turn
+from ..grounding import GroundingEvidence, verify_answer
 from ..models import (
     AgentMode,
     AgentOutcome,
@@ -67,8 +68,10 @@ from .models import (
     GatherTask,
     ResearchFlowConfig,
     SourceLedgerEntry,
+    SupportKind,
 )
 from .planning import build_sub_questions, extract_claims
+from .semantic import semantic_coverage, verify_relations
 from .report import (
     assemble_report,
     build_comparison_notes,
@@ -782,6 +785,22 @@ def make_control(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
         valid_ids = {entry.source_id for entry in entries}
         summary, removed = strip_fabricated_sources(draft_summary, valid_ids)
         errors: list[NodeErrorRecord] = []
+        evidence, verification_events, relations_verified = await verify_relations(
+            claims=claims, evidence=evidence, model=deps.model, guard=deps.guard,
+            cancel=deps.tasks.cancel, deadline=deps.deadline)
+        plan_model = state.get("plan")
+        sub_questions = list(plan_model.sub_questions) if plan_model is not None else [context.question]
+        uncovered, contradicted, unresolved = semantic_coverage(claims, evidence, sub_questions)
+        coverage = coverage.model_copy(update={"uncovered_claim_ids": sorted(uncovered),
+            "contradicted_claim_ids": sorted(contradicted), "unresolved_sub_questions": unresolved})
+        comparison = build_comparison_notes(claims, evidence, language=context.language)
+        findings = build_findings(run_id=context.run_id, sub_questions=sub_questions, claims=claims,
+            evidence=evidence, entries_by_id={entry.source_id: entry for entry in entries}, language=context.language,
+            config=deps.config, now=_now())
+        if not relations_verified:
+            errors.append(_error_record("research:relations:incomplete", "research.control",
+                PortError(AgentErrorCode.VALIDATION_ERROR, "Evidence relation verification was incomplete"), occurred_at=_now()))
+        summary_verified = False
         if removed:
             errors.append(
                 NodeErrorRecord(
@@ -794,8 +813,32 @@ def make_control(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
             )
 
         # Yalnız kanıt taşıyan kaynaklar rapor kaynaklarıdır (uydurma kaynak yok).
-        cited_ids = {record.source_id for record in evidence}
+        usable = [record for record in evidence if record.support in (SupportKind.SUPPORTS, SupportKind.CONTRADICTS)]
+        cited_ids = {record.source_id for record in usable}
         cited_entries = [entry for entry in entries if entry.source_id in cited_ids]
+        source_evidence = [GroundingEvidence(f"S{index}", "\n".join(dict.fromkeys(
+            record.excerpt for record in usable if record.source_id == entry.source_id)), (entry.final_url,))
+            for index, entry in enumerate(cited_entries, start=1)]
+        source_evidence += [GroundingEvidence(f"A{index}", claim.text, role="article_claim")
+                            for index, claim in enumerate(claims, start=1)]
+        try:
+            verified = await verify_answer(answer=summary, question=context.question, evidence=source_evidence,
+                model=deps.model, guard=deps.guard, action_id="research:verify", cancel=deps.tasks.cancel,
+                deadline=deps.deadline, events_sink=verification_events)
+            summary = verified.answer
+            summary_verified = bool(summary) and not verified.rejected
+            if verified.rejected:
+                errors.append(_error_record("research:summary:unsupported", "research.control",
+                    PortError(AgentErrorCode.VALIDATION_ERROR, "Unsupported summary claims were omitted"), occurred_at=_now()))
+        except PortError as error:
+            if error.code is AgentErrorCode.CANCELLED:
+                raise
+            summary = ""
+            errors.append(_error_record("research:summary:verification", "research.control", error, occurred_at=_now()))
+        if not summary:
+            summary = _localized(context.language,
+                tr="Üretilen kısa sonuç kanıtlarla doğrulanamadı; aşağıda doğrulanmış kayıtlar ve belirsizlikler sunuluyor.",
+                en="The generated summary could not be verified; verified records and uncertainties are presented below.")
 
         claim_by_id = {claim.claim_id: claim for claim in claims}
         uncovered_texts = [
@@ -803,7 +846,7 @@ def make_control(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
             for claim_id in coverage.uncovered_claim_ids
             if claim_id in claim_by_id
         ]
-        complete = not coverage.uncovered_claim_ids and not coverage.unresolved_sub_questions
+        complete = not coverage.uncovered_claim_ids and not coverage.unresolved_sub_questions and summary_verified and relations_verified
         if complete:
             note = _localized(
                 context.language,
@@ -830,6 +873,10 @@ def make_control(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
                 )
             if coverage.budget_note:
                 parts.append(coverage.budget_note)
+            if not summary_verified:
+                parts.append(_localized(context.language,
+                    tr="kısa sonuç doğrulaması tamamlanamadı veya desteklenmeyen iddialar çıkarıldı",
+                    en="summary verification was incomplete or unsupported claims were omitted"))
             note = "; ".join(parts) or _localized(
                 context.language,
                 tr="kanıt yetersiz",
@@ -845,8 +892,8 @@ def make_control(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
             claims=claims,
             snapshot_title=snapshot.title if snapshot is not None else None,
             article_revision=state.get("article_revision"),
-            comparison=list(state.get("comparison") or []),
-            findings=list(state.get("findings") or []),
+            comparison=comparison,
+            findings=findings,
             uncovered_claim_texts=uncovered_texts,
             unresolved_sub_questions=list(coverage.unresolved_sub_questions),
             cited_entries=cited_entries,
@@ -856,7 +903,8 @@ def make_control(deps: ResearchDeps) -> Callable[[ResearchState], Any]:
             generated_at=_now(),
         )
         await _publish_delta(deps.progress, context.run_id, report_model.text)
-        return {"report": report_model, "errors": errors}
+        return {"report": report_model, "errors": errors, "usage_events": verification_events,
+                "semantic_evidence": evidence, "coverage": coverage, "comparison": comparison, "findings": findings}
 
     return control
 

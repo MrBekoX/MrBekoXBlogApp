@@ -487,7 +487,7 @@ public static class AgentEndpoints
 
                 // Terminal: kalan olaylar boşaldıysa akış tamamlandı.
                 var isTerminal = page.Value.RunStatus is "Completed" or "PartiallyCompleted" or "Failed" or "Cancelled";
-                if (isTerminal && !page.Value.HasMore)
+                if (isTerminal && !page.Value.IsProvisionalTerminal && !page.Value.HasMore)
                 {
                     await WriteSseEventAsync(response, "done",
                         System.Text.Json.JsonSerializer.Serialize(new

@@ -6,6 +6,8 @@ interface TerminalRecoveryOptions {
   isCurrent: () => boolean;
   timers?: RunChannelTimers;
   retryDelaysMs?: readonly number[];
+  maxAttempts?: number;
+  onExhausted?: () => void;
 }
 
 /** A consumed terminal event remains pending until its guarded result is readable.
@@ -44,6 +46,11 @@ export function createTerminalRecovery(options: TerminalRecoveryOptions) {
         if (!current()) return;
         if (complete) {
           dispose();
+          return;
+        }
+        if (options.maxAttempts !== undefined && failures + 1 >= options.maxAttempts) {
+          dispose();
+          options.onExhausted?.();
           return;
         }
         const delay = delays[Math.min(failures++, delays.length - 1)] ?? 20000;

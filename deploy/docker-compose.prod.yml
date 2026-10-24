@@ -161,6 +161,7 @@ services:
       AgentContentSync__BatchSize: "10"
       AgentAcceptance__MaxActiveRunsTotal: "5"
       AgentAcceptance__MaxActiveRunsPerOwner: "1"
+      AgentAcceptance__TerminalRecoveryGraceSeconds: "${AGENT_TERMINAL_RECOVERY_GRACE_SECONDS:-300}"
       AgentOutbox__BatchSize: "4"
       RabbitMq__Host: rabbitmq
       RabbitMq__Port: "5672"

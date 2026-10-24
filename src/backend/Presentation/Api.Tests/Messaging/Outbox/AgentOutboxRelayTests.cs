@@ -182,7 +182,7 @@ public class AgentOutboxRelayTests : IAsyncLifetime
             RabbitMqCtl("start_app");
             await WaitForBrokerUpAsync();
 
-            using (var relay = BuildRelayHost())
+            await using (var relay = BuildRelayHost())
             {
                 await relay.StartAsync(NewToken());
                 var published = await WaitForAsync(() =>
@@ -226,7 +226,7 @@ public class AgentOutboxRelayTests : IAsyncLifetime
         //    tekrar teslimle yanıt verir. Bu yüzden test tam kopya sayısı varsaymaz;
         //    message_id korunumunu ve artan delivery_attempt dizisini doğrular.
         var seenCopies = new List<FetchedMessage>();
-        using (var relay = BuildRelayHost())
+        await using (var relay = BuildRelayHost())
         {
             await relay.StartAsync(NewToken());
             var published = await WaitForAsync(() =>
@@ -261,7 +261,7 @@ public class AgentOutboxRelayTests : IAsyncLifetime
         }
 
         // 3) tekrar yayın: AYNI message_id ile (consumer inbox tekilleştirmesi B4'te)
-        using (var relay = BuildRelayHost())
+        await using (var relay = BuildRelayHost())
         {
             await relay.StartAsync(NewToken());
             var redelivered = await WaitForAsync(() =>
@@ -304,7 +304,7 @@ public class AgentOutboxRelayTests : IAsyncLifetime
         Assert.True(accept.IsSuccess);
         var messageId = await OutboxMessageIdOfAsync(accept.Value!.RunId);
 
-        using (var relay = BuildRelayHost())
+        await using (var relay = BuildRelayHost())
         {
             await relay.StartAsync(NewToken());
             var published = await WaitForAsync(() =>
@@ -606,7 +606,7 @@ public class AgentOutboxRelayTests : IAsyncLifetime
         public bool IsInRole(string role) => false;
     }
 
-    private sealed class RelayHost(IServiceProvider provider) : IDisposable
+    private sealed class RelayHost(IServiceProvider provider) : IAsyncDisposable
     {
         public Task StartAsync(CancellationToken cancellationToken) =>
             provider.GetRequiredService<IHostedService>().StartAsync(cancellationToken);
@@ -614,11 +614,11 @@ public class AgentOutboxRelayTests : IAsyncLifetime
         public Task StopAsync(CancellationToken cancellationToken) =>
             provider.GetRequiredService<IHostedService>().StopAsync(cancellationToken);
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
             if (provider is IAsyncDisposable asyncDisposable)
             {
-                asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                await asyncDisposable.DisposeAsync();
             }
             else if (provider is IDisposable disposable)
             {

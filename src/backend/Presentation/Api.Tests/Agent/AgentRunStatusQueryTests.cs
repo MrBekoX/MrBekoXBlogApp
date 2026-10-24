@@ -1,3 +1,4 @@
+using System.Data.Common;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunEventsQuery;
 using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunQuery;
@@ -6,6 +7,7 @@ using BlogApp.Core.Domain.Entities;
 using BlogApp.Core.Domain.Enums;
 using BlogApp.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xunit;
 using Error = BlogApp.Core.Application.Common.Errors;
 
@@ -34,7 +36,7 @@ public class AgentRunStatusQueryTests : IAsyncLifetime
             new AgentResultPresentationGuard(_fixture.CreateContext()));
 
     private GetAgentRunEventsQueryHandler CreateEventsHandler(Guid? userId) =>
-        new(_fixture.CreateContext(), new TestCurrentUser(userId));
+        new(_fixture.CreateContext(), new TestCurrentUser(userId), new AgentResultPresentationGuard(_fixture.CreateContext()));
 
     private async Task<BlogPost> SeedArticleAsync(bool published)
     {
@@ -67,6 +69,108 @@ public class AgentRunStatusQueryTests : IAsyncLifetime
     }
 
     // ------------------------------------------------------------- sahiplik
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Replay_MasksAnswerBodiesWhenArticleIsWithdrawn(bool deleted)
+    {
+        var user = Guid.NewGuid();
+        var article = await SeedArticleAsync(published: true);
+        Guid runId;
+        await using (var context = _fixture.CreateContext())
+        {
+            var run = await AgentB10TestHost.SeedRunAsync(context, ownerKey: $"u:{user:D}", articleId: article.Id,
+                status: AgentRunStatus.Completed, resultJson: """{"answer":"source answer"}""");
+            runId = run.Id;
+            await AgentB10TestHost.SeedAppliedEventAsync(context, run.Id, 1, "agent.run.progressed",
+                payloadJson: """{"event_sequence":1,"kind":"generation_delta","message":"source answer","detail":{"excerpt":"source answer"}}""",
+                progressMessage: "source answer");
+        }
+        var visible = await CreateEventsHandler(user).Handle(new() { RunId = runId }, default);
+        Assert.Equal("source answer", Assert.Single(visible.Value!.Events).Message);
+        await using (var context = _fixture.CreateContext())
+        {
+            await context.Posts.IgnoreQueryFilters().Where(p => p.Id == article.Id).ExecuteUpdateAsync(update => update
+                .SetProperty(p => p.Status, PostStatus.Draft).SetProperty(p => p.IsDeleted, deleted));
+        }
+        var masked = await CreateEventsHandler(user).Handle(new() { RunId = runId }, default);
+        var item = Assert.Single(masked.Value!.Events);
+        Assert.Equal(1, item.EventSequence);
+        Assert.Equal("generation_delta", item.Kind);
+        Assert.Null(item.Message); Assert.Null(item.Detail);
+        Assert.NotNull((await CreateStatusHandler(user).Handle(new() { RunId = runId }, default)).Value!.Result!.UnavailableReason);
+    }
+
+    [Fact]
+    public async Task MaskedTimeoutStillExposesBoundedReconciliationMetadata()
+    {
+        var user = Guid.NewGuid();
+        var article = await SeedArticleAsync(published: false);
+        Guid runId;
+        await using (var context = _fixture.CreateContext())
+        {
+            var run = await AgentB10TestHost.SeedRunAsync(context, ownerKey: $"u:{user:D}", articleId: article.Id,
+                status: AgentRunStatus.Failed, resultJson: AgentRunDeadlineReaper.AgentDeadlineResultJson);
+            run.DeadlineAt = DateTime.UtcNow.AddSeconds(-10);
+            run.LastEventSequence = 3;
+            await context.SaveChangesAsync(); runId = run.Id;
+        }
+        var status = (await CreateStatusHandler(user).Handle(new() { RunId = runId }, default)).Value!;
+        Assert.True(status.IsProvisionalTerminal);
+        Assert.InRange(status.ReconciliationRemainingSeconds, 1, 300);
+        Assert.Equal(status.DeadlineAt.AddSeconds(300), status.ReconciliationUntil);
+        Assert.NotNull(status.Result!.UnavailableReason);
+        await using (var context = _fixture.CreateContext())
+            await context.AgentRuns.Where(r => r.Id == runId).ExecuteUpdateAsync(update => update.SetProperty(r => r.DeadlineAt, DateTime.UtcNow.AddSeconds(-301)));
+        var final = (await CreateStatusHandler(user).Handle(new() { RunId = runId }, default)).Value!;
+        Assert.False(final.IsProvisionalTerminal);
+        Assert.Equal(0, final.ReconciliationRemainingSeconds);
+        Assert.Equal(3, final.LastEventSequence);
+    }
+
+    [Fact]
+    public async Task FinalTimeoutReadWaitsForAnAlreadyAdmittedProjectionToCommit()
+    {
+        var user = Guid.NewGuid();
+        Guid runId;
+        await using (var context = _fixture.CreateContext())
+        {
+            var run = await AgentB10TestHost.SeedRunAsync(context, ownerKey: $"u:{user:D}",
+                status: AgentRunStatus.Failed, resultJson: AgentRunDeadlineReaper.AgentDeadlineResultJson);
+            run.DeadlineAt = DateTime.UtcNow.AddSeconds(-301); run.LastEventSequence = 3;
+            await context.SaveChangesAsync(); runId = run.Id;
+        }
+        await using var writer = _fixture.CreateContext();
+        await using var transaction = await writer.Database.BeginTransactionAsync();
+        await writer.AgentRuns.Where(r => r.Id == runId).ExecuteUpdateAsync(update => update
+            .SetProperty(r => r.Status, AgentRunStatus.Completed).SetProperty(r => r.LastEventSequence, 4)
+            .SetProperty(r => r.ResultJson, "{\"answer\":\"completed work\"}"));
+        var observer = new FinalReadObserver();
+        await using var query = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(_fixture.TestConnectionString).AddInterceptors(observer).Options);
+        var pending = new GetAgentRunQueryHandler(query, new TestCurrentUser(user), new AgentResultPresentationGuard(query))
+            .Handle(new() { RunId = runId }, default);
+        await observer.Started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.False(pending.IsCompleted);
+        await transaction.CommitAsync();
+        var result = (await pending.WaitAsync(TimeSpan.FromSeconds(10))).Value!;
+        Assert.Equal("Completed", result.Status);
+        Assert.Equal(4, result.LastEventSequence);
+        Assert.False(result.IsProvisionalTerminal);
+        Assert.Equal("completed work", result.Result!.Answer);
+    }
+
+    private sealed class FinalReadObserver : DbCommandInterceptor
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+            CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("FOR SHARE", StringComparison.Ordinal)) Started.TrySetResult();
+            return ValueTask.FromResult(result);
+        }
+    }
 
     [Fact]
     public async Task Run_WithoutAnyIdentity_IsUnauthorized()

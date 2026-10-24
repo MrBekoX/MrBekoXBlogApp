@@ -26,5 +26,10 @@ public sealed record AgentRunEventsDto
 
     public bool HasMore { get; init; }
 
+    public bool IsProvisionalTerminal { get; init; }
+
+    public DateTimeOffset? ReconciliationUntil { get; init; }
+    public int ReconciliationRemainingSeconds { get; init; }
+
     public required IReadOnlyList<AgentRunEventDto> Events { get; init; }
 }

@@ -5,8 +5,8 @@ namespace BlogApp.Core.Application.Common.Messaging;
 /// <summary>
 /// Commit edilmiş projection'ın istemci bildirimi (B5, plan: "commit edilmiş projection
 /// üzerinden UI bildirimi üret"). Yalnız projection'a UYGULANMIŞ olaylar bildirilir;
-/// duplicate/stale/quarantined olaylar bildiri üretmez. Payload ResultJson yalnız
-/// terminal olaylarda doludur (tam sonuç snapshot'ı).
+/// duplicate/stale/quarantined olaylar bildiri üretmez. SignalR taşıyıcısı yalnız
+/// metadata yayınlar; içerik yetkili GET/replay yolundan okunur.
 /// </summary>
 public sealed record AgentRunNotification
 {
@@ -33,7 +33,7 @@ public sealed record AgentRunNotification
     [JsonPropertyName("occurred_at")]
     public required string OccurredAt { get; init; }
 
-    /// <summary>Terminal snapshot JSON'u (yalnız terminal olaylarda).</summary>
+    /// <summary>Internal terminal snapshot; never released through cached SignalR groups.</summary>
     [JsonIgnore]
     public string? ResultJson { get; init; }
 }

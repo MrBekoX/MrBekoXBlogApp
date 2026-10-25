@@ -32,7 +32,8 @@ import logging
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from contextlib import nullcontext
+from typing import Any, Callable, Protocol
 
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 
@@ -41,6 +42,8 @@ from .consumer import BrokerConsumer
 from .settings import BrokerSettings
 from .topology import CONTENT_QUEUE
 from agent_core.errors import AgentErrorCode, PortError
+from agent_core.budget.embedding import embedding_budget_scope
+from agent_core.ports import BudgetStore
 
 __all__ = [
     "CONTENT_MESSAGE_TYPES",
@@ -180,12 +183,14 @@ class ContentIndexProjector:
         model_config: Any,
         content_fetcher: _ContentBodyFetcher | None = None,
         canonical_url_template: str | None = None,
+        embedding_budget_factory: Callable[[Any], tuple[str, BudgetStore]] | None = None,
     ) -> None:
         self._index = index
         self._embedding_provider = embedding_provider
         self._model_config = model_config
         self._content_fetcher = content_fetcher
         self._canonical_url_template = canonical_url_template
+        self._embedding_budget_factory = embedding_budget_factory
 
     async def on_article_applied(
         self,
@@ -238,12 +243,15 @@ class ContentIndexProjector:
                 "Fetched article hash conflicts with the content event at the same revision.",
                 port="ContentIndexProjector",
             )
-        result = await self._index.index_article(
-            snapshot,
-            embedding_provider=self._embedding_provider,
-            model_config=self._model_config,
-            canonical_url_template=self._canonical_url_template,
-        )
+        scope = (embedding_budget_scope(*self._embedding_budget_factory(snapshot))
+                 if self._embedding_budget_factory is not None else nullcontext())
+        with scope:
+            result = await self._index.index_article(
+                snapshot,
+                embedding_provider=self._embedding_provider,
+                model_config=self._model_config,
+                canonical_url_template=self._canonical_url_template,
+            )
         effect = "superseded_indexed" if snapshot_revision > revision else "indexed"
         return ContentProjectionResult(
             f"{effect}:{result.chunk_count}", snapshot_revision, str(snapshot.content_hash)

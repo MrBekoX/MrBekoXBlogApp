@@ -3,6 +3,7 @@
 .env.*
 **/*.env
 **/private
+**/out
 **/feature-prompts
 **/author-profile.local
 **/.agent_checkpoints

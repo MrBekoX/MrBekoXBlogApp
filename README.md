@@ -17,9 +17,9 @@ A modern, full-stack blog platform with AI-powered content assistance, autonomou
   - SEO description and keyword extraction
   - Sentiment analysis and reading time calculation
   - Geographic content optimization
-- **Autonomous AI Agent**: Plan-Execute-Reflect-Adapt loop with episodic memory and hallucination verification
-- **Hybrid RAG Search**: BM25 keyword + semantic vector search with ChromaDB
-- **Real-time Features**: SignalR hubs for cache invalidation, authoring events, and live chat
+- **Bounded AI Agent**: Versioned background runs, grounded answers, research and explicit collaboration approval
+- **Hybrid Article Retrieval**: BM25 + real embedding similarity over PostgreSQL snapshots
+- **Real-time Features**: SignalR public-cache invalidation and owner-admitted agent run metadata
 - **Chat System**: AI-powered chat with RAG context, abuse protection, and session memory
 - **Message Backpressure**: Priority queues, circuit breaker, and graceful degradation
 - **Search**: Full-text search with AI-powered ranking
@@ -36,7 +36,7 @@ graph TB
 
     subgraph "API Gateway"
         API[.NET 10 API<br/>Minimal APIs + CQRS]
-        SIG[SignalR Hubs<br/>Cache / Authoring / Chat]
+        SIG[SignalR Hubs<br/>Public Cache / Agent Runs]
     end
 
     subgraph "Application Layer"
@@ -54,19 +54,18 @@ graph TB
         RMQ[RabbitMQ<br/>Priority Queues]
     end
 
-    subgraph "AI Agent Service"
-        SUP[Supervisor Agent<br/>Static / Dynamic / Hybrid Routing]
-        CHAT[Chat Agent<br/>RAG + ReAct]
-        AUT[Autonomous Agent<br/>Plan-Execute-Reflect-Adapt]
-        VER[Verification Agent<br/>Hallucination Detection]
-        CON[Content Agent<br/>Title / Tags / SEO]
-        ANA[Analysis Agent]
-        RAG[RAG Engine<br/>BM25 + Semantic]
-        MEM[Memory<br/>Conversation + Episodic]
+    subgraph "AI Agent Worker"
+        SUP[Inbox / Job Lease / Fencing]
+        ROUTER[Core Routing<br/>Fast / Research]
+        RUN[QA / Analysis / Profile / Collaboration]
+        RAG[Published Article Index<br/>Canonical Profile Retrieval]
+        CHECKPOINT[PostgreSQL Checkpoints<br/>Legacy File Import]
+        BUDGET[PostgreSQL Budget Ledger]
     end
 
-    subgraph "Local LLM"
-        OLLAMA[Ollama<br/>phi4-mini / gemma3:4b]
+    subgraph "Remote Providers"
+        MODEL[Configured Chat Completions API]
+        EMBEDDING[OpenAI Embeddings]
     end
 
     FE --> API
@@ -77,16 +76,16 @@ graph TB
     APP --> REDIS
     API --> RMQ
     RMQ --> SUP
-    SUP --> CHAT
-    SUP --> AUT
-    SUP --> CON
-    SUP --> ANA
-    AUT --> VER
-    CHAT --> RAG
-    AUT --> RAG
-    RAG --> REDIS
-    SUP --> OLLAMA
-    MEM --> REDIS
+    SUP --> ROUTER
+    ROUTER --> RUN
+    RUN --> RAG
+    RUN --> CHECKPOINT
+    RUN --> BUDGET
+    RAG --> DB
+    BUDGET --> DB
+    RUN --> MODEL
+    RAG --> EMBEDDING
+    SUP --> RMQ
 ```
 
 ## Tech Stack
@@ -98,9 +97,9 @@ graph TB
 - **EF Core** with entity-specific repositories
 - **Outbox & Inbox patterns** for reliable event delivery
 - **PostgreSQL** as primary database
-- **Redis** for caching, sessions, and agent state
+- **Redis** for optional backend caching and sessions
 - **RabbitMQ** for event-driven messaging with priority queues
-- **SignalR** for real-time updates (`/hubs/public-cache`, `/hubs/authoring-events`, `/hubs/chat-events`)
+- **SignalR** for real-time updates (`/hubs/public-cache`, `/hubs/agent-runs`)
 - **Serilog** for structured logging
 - **OpenTelemetry** for observability
 
@@ -117,51 +116,42 @@ graph TB
 - **Vitest** for unit testing
 
 ### AI Agent Service
-- **Python 3.13** with FastAPI
-- **LangGraph** for stateful agent orchestration
-- **ChromaDB** for vector storage
-- **Ollama** for local LLM inference (`phi4-mini`, `gemma3:4b`)
-- **sentence-transformers** + `nomic-embed-text` for embeddings
-- **Hybrid search**: BM25 (`rank-bm25`) + semantic vector search
-- **Semantic chunking** for better embedding quality
-- **aio-pika** for async RabbitMQ integration
-- **Redis** for conversation state and multi-level caching
-- **Prometheus** metrics
-- **dependency-injector** for DI container
+
+- **Python 3.13**, Pydantic and LangGraph with explicit ports/adapters
+- **RabbitMQ / aio-pika** for versioned execute, control, content and result messages
+- **PostgreSQL / asyncpg** for durable jobs, inbox/outbox, article index, embedding cache and budget reservations
+- **Configured remote Chat Completions provider**, with bounded streaming and retries
+- **OpenAI `text-embedding-3-small`**, 1536 dimensions, with bounded request splitting
+- **Canonical profile snapshots and provenance**, publication/revision checks and verified citations
+- **PostgreSQL continuation checkpoints**, with the existing file volume retained for legacy import
+
+Production starts at [`app/service_main.py`](src/services/ai-agent-service/app/service_main.py).
+It requires real providers and approved sources; missing configuration fails explicitly.
+Legacy local-model, Redis-agent-state and ChromaDB paths are not this production composition.
 
 ## AI Agent System
 
-### Supervisor (Orchestrator)
-Routes incoming events to specialized agents via three strategies:
+The .NET API accepts an owner-bound run and writes a command outbox. The Python
+worker durably accepts the command, leases a job, routes it, executes bounded
+model/tool calls and publishes versioned progress/terminal events. The API projects
+these events and provides SignalR plus authoritative GET/replay recovery to the browser.
 
-| Strategy | When Used | How |
-|----------|-----------|-----|
-| **Static** | Known event types | Direct mapping (fast, deterministic) |
-| **Dynamic** | Unknown/ambiguous events | LLM-based intent classification |
-| **Hybrid** | Chat requests | Complexity assessment → simple (ReAct) or complex (Autonomous) |
+Article QA/analysis use published snapshots. Who am I uses a pinned canonical profile;
+profile execution has no web tool capability. Research uses explicitly configured
+restricted web tools. Collaboration persists `needs_input` state and accepts only
+backend-validated action results after user approval. Optional project/catalogue
+guidance requires an authoritative source; a missing source is not replaced with sample data.
 
-### Specialized Agents
+| State | Owner / persistence | Guarantee |
+| --- | --- | --- |
+| Conversation context | Backend snapshot in the execute payload | Owner/session checked at acceptance |
+| Run and messages | PostgreSQL jobs and inbox/outbox | Lease/fenced terminal writes; bounded delivery/recovery |
+| Continuation | PostgreSQL checkpoint rows; existing volume for legacy import | Stable execution identity and atomic job-fenced writes |
+| Paid capacity | PostgreSQL budget reservations | Capacity reserved before calls; uncertain usage is not free |
+| Article retrieval | PostgreSQL snapshot/index and embedding cache | Revision/removal guards and bounded article-scoped search |
 
-- **ChatAgent** — RAG + ReAct reasoning for conversational Q&A with memory
-- **AutonomousAgent** — Plan → Execute → Reflect → Adapt loop (max 15 iterations, 2 replans)
-- **ContentAgent** — Title, excerpt, tag, and SEO description generation
-- **AnalysisAgent** — Article analysis, summarization, keyword extraction, sentiment
-- **SeoAgent** — Meta descriptions, geographic optimization, keyword ranking
-- **VerificationAgent** — Post-generation hallucination detection and correction (non-blocking, 5s timeout)
-- **PlannerAgent** + **PlanValidator** — Plan creation and validation against available tools
-
-### Memory Systems
-
-| System | Storage | Purpose |
-|--------|---------|---------|
-| Conversation Memory | Redis | Short-term session history |
-| Episodic Memory | Redis | Learning from successful executions |
-| LangGraph Checkpointing | Redis | State persistence and recovery |
-
-### Tools Available to Agents
-- `rag_tool` — Hybrid BM25 + semantic retrieval from ChromaDB
-- `web_search_tool` — DuckDuckGo integration for live information
-- Content and SEO tools for generation tasks
+Job recovery can replay graph work; it does not imply node-level exactly-once
+execution. Test and acceptance boundaries are recorded in [`agent-readiness/`](agent-readiness/verification.md).
 
 ## Message Backpressure System
 
@@ -236,15 +226,16 @@ IdempotencyRecord — OperationId, StatusCode, Response
 | Hub | Path | Auth | Purpose |
 |-----|------|------|---------|
 | PublicCacheHub | `/hubs/public-cache` | Anonymous | Cache invalidation broadcasts |
-| AuthoringEventsHub | `/hubs/authoring-events` | Required | Real-time post editing updates |
-| ChatEventsHub | `/hubs/chat-events` | Required | Live chat notifications |
+| AgentRunsHub | `/hubs/agent-runs` | Owner/session admission | Versioned metadata hints; authorized GET/replay returns content |
 
 ## Caching Strategy
 
-1. **L1 — Redis**: Conversation sessions, RAG results, embedding cache
+1. **L1 — Redis**: Backend conversation sessions and cached application data
 2. **L2 — Local Memory**: Fallback cache for Redis failures
 3. **Output Caching**: HTTP response caching on GET endpoints
 4. **Cache Invalidation**: Real-time via SignalR `PublicCacheHub`
+
+The production agent's embedding cache and content index are PostgreSQL-backed.
 
 ### Cache Keys
 - Posts: `posts:list:*`, `posts:slug:*`
@@ -260,7 +251,7 @@ IdempotencyRecord — OperationId, StatusCode, Response
 - **CSRF Protection**: Anti-forgery tokens for state-changing operations
 - **Input Sanitization**: HTML sanitization for user content
 - **Service-to-Service Auth**: Internal service key validation
-- **Log Sanitization**: PII removal from all log output
+- **Telemetry Privacy**: Application OTLP excludes raw content/auth values; request metadata logs omit query values. Other exception/operator logs need their own access, retention, and privacy review
 - **Idempotency**: OperationId-based request deduplication
 - **Security Headers**: OWASP recommended headers
 - **Password Requirements**: Minimum 12 characters with complexity rules
@@ -270,15 +261,15 @@ IdempotencyRecord — OperationId, StatusCode, Response
 ### Prerequisites
 - Docker and Docker Compose
 - .NET 10 SDK (local development)
-- Node.js 20+ (local development)
+- Node.js 24 LTS and npm (local development and CI)
 - Python 3.13+ (AI service local development)
-- Ollama with `phi4-mini` or `gemma3:4b` model
+- Explicit remote chat/embedding configuration and an approved canonical profile for agent execution
 
-### Using Docker (Recommended)
+### Using Docker for Local Development
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/MrBekoXBlogApp.git
+git clone https://github.com/MrBekoX/MrBekoXBlogApp.git
 cd MrBekoXBlogApp
 
 # Copy environment template
@@ -288,17 +279,18 @@ cp docker/.env.example docker/.env
 nano docker/.env
 
 # Start all services
-cd docker && docker-compose up -d
+cd docker && docker compose up -d
 
-# Run database migrations
-docker-compose exec backend dotnet ef database update
+# The local Compose configuration enables reviewed API startup migrations.
+# Inspect their startup result; the runtime image does not contain the EF CLI.
+docker compose logs --tail=100 backend
 
 # Access the application
 # Frontend:           http://localhost:3000
 # Backend API:        http://localhost:8080
 # Swagger UI:         http://localhost:8080/swagger
 # RabbitMQ Console:   http://localhost:15672
-# AI Agent Service:   http://localhost:8000
+# Agent progress is exposed by the backend, not a separate worker HTTP API.
 ```
 
 ### Local Development
@@ -322,8 +314,11 @@ npm run dev
 cd src/services/ai-agent-service
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python -m app.main
+python -m pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+python -m pip install --no-deps --no-build-isolation -e .
+python -m pip check
+# Configure the service, provision a dedicated broker/DB and apply reviewed migrations first.
+python -m app.service_main
 ```
 
 ## Environment Variables
@@ -337,10 +332,10 @@ python -m app.main
 | `JwtSettings__Secret` | JWT signing key (min 32 chars) | Yes |
 | `JwtSettings__Issuer` | JWT issuer | No |
 | `JwtSettings__Audience` | JWT audience | No |
-| `RabbitMQ__HostName` | RabbitMQ host | Yes |
-| `RabbitMQ__Port` | RabbitMQ port (default: 5672) | No |
-| `RabbitMQ__UserName` | RabbitMQ username | Yes |
-| `RabbitMQ__Password` | RabbitMQ password | Yes |
+| `RabbitMq__Host` | RabbitMQ host | Yes |
+| `RabbitMq__Port` | RabbitMQ port (default: 5672) | No |
+| `RabbitMq__UserName` | RabbitMQ username | Yes |
+| `RabbitMq__Password` | RabbitMQ password | Yes |
 | `AdminUser__Email` | Admin user email | Yes |
 | `AdminUser__Password` | Admin password | Yes |
 
@@ -357,31 +352,63 @@ python -m app.main
 > file at `src/services/ai-agent-service` (priority: real environment > `.env` > code
 > defaults). Setup: `cp .env.example .env` → fill `AGENT_DB_PASSWORD` and `AGENT_LLM_*`
 > → start with `python -m app.service_main`. See
-> `src/services/ai-agent-service/README.md` (“Ortam değişkenleri ve .env dosyası”).
+> [`src/services/ai-agent-service/README.md`](src/services/ai-agent-service/README.md).
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `OLLAMA_BASE_URL` | Ollama API URL | `http://localhost:11434` | No |
-| `OLLAMA_MODEL` | Model name | `phi4-mini` | No |
-| `OLLAMA_TIMEOUT` | Request timeout (seconds) | `120` | No |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` | Yes |
-| `RABBITMQ_HOST` | RabbitMQ host | `localhost` | Yes |
-| `RABBITMQ_USER` | RabbitMQ username | — | Yes |
-| `RABBITMQ_PASS` | RabbitMQ password | — | Yes |
-| `CHROMA_PERSIST_DIR` | ChromaDB storage path | `./chroma_data` | No |
-| `AGENT_MAX_ITERATIONS` | Max autonomous agent steps | `15` | No |
-| `AGENT_MAX_REPLANS` | Max replanning attempts | `2` | No |
-| `AGENT_VERIFICATION_ENABLED` | Enable hallucination check | `true` | No |
-| `IDLE_SHUTDOWN_ENABLED` | Auto-shutdown on idle | `false` | No |
-| `IDLE_TIMEOUT_SECONDS` | Idle timeout | `1800` | No |
-| `RATE_LIMIT_REQUESTS_PER_MINUTE` | Rate limit per IP | `60` | No |
+| `AGENT_LLM_API_KEY` | Remote chat credential | — | Yes |
+| `AGENT_LLM_MODEL` | Explicit provider model | — | Yes |
+| `AGENT_LLM_BASE_URL` | Chat API base URL | `https://api.openai.com/v1` | No |
+| `AGENT_EMBEDDING_API_KEY` | Embedding credential | Chat key fallback | Yes |
+| `AGENT_EMBEDDING_MODEL` | Embedding model | `text-embedding-3-small` | No |
+| `AGENT_DB_PASSWORD` | Worker PostgreSQL credential | — | Yes |
+| `AGENT_BROKER_HOST` | Broker host | `127.0.0.1` | No |
+| `AGENT_BROKER_USERNAME` | Least-privilege worker identity | `agent_svc` | Yes in production |
+| `AGENT_BROKER_PASSWORD` | Broker credential | Development only | Yes in production |
+| `AGENT_CONTENT_BASE_URL` | Backend internal content API | — | Yes |
+| `AGENT_CONTENT_SERVICE_KEY` | Internal content credential | — | Yes |
+| `AGENT_PROFILE_DIR` | Approved canonical profile directory | Bundled public template | Explicit private mount in production |
+
+The service environment template documents the full settings. Never commit local
+environment files, real profile bundles or provider credentials.
 
 ## Observability
 
-- **Metrics**: Prometheus-format metrics at `/metrics` (AI service) and `/metrics` (backend)
-- **Logging**: Structured logging with Serilog (backend) and contextualized Python logging (AI service), with PII sanitization
-- **Health Checks**: `/health` endpoint on all services (checks DB, Redis, RabbitMQ)
-- **Distributed Tracing**: OpenTelemetry-ready with correlation IDs
+- **Backend metrics**: internal-host restricted `/metrics`.
+- **Backend health**: `/health/live` has no dependency checks; `/health/ready` checks configured DB/cache;
+  `/health/agent` reports broker/outbox state without making agent backlog a process liveness failure.
+- **Worker health**: `python -m app.healthcheck` checks its supervised heartbeat, without provider calls.
+- **Tracing and capacity**: see [verification](agent-readiness/verification.md) for measured coverage.
+  A configured trace field or local fixture is not deployment or capacity acceptance.
+
+## Verification
+
+The [AI Agent CI workflow](.github/workflows/ai-agent-ci.yml) is the command source
+for .NET/Python unit and real-infrastructure suites, frontend tests/lint/typecheck/build
+and browser fixture acceptance. Run .NET and Python broker suites serially, using
+dedicated test databases/vhosts and explicit test environment overrides.
+
+```bash
+# From src/frontend/blogapp-web
+npm ci
+npm test
+npm run lint
+npx --no-install tsc --noEmit
+npm run build
+npm run test:agent-browser
+
+# From src/services/ai-agent-service, using the installed Python 3.13 environment
+python ../../content/author-profile/tools/update_manifest.py --check
+python tools/evaluate_grounding.py --check-corpus --scope all
+python tools/verify_storage.py
+```
+
+The last command creates a disposable PostgreSQL cluster. Offline corpus checks,
+transport fixtures, real PostgreSQL/RabbitMQ and a browser with API fixtures each
+prove different properties. Real-provider semantic acceptance requires explicit
+permission/budget and a dedicated test DB; full-service staging and production
+capacity evidence remain separate. See [the service guide](src/services/ai-agent-service/README.md)
+and [readiness specification](agent-readiness/spec.md).
 
 ## Troubleshooting
 
@@ -393,9 +420,9 @@ docker-compose logs postgres
 
 ### AI Service Not Responding
 ```bash
-# Ensure Ollama is running and model is available
-ollama list
-ollama pull phi4-mini
+# Inspect the worker and broker; do not print environment/credential values.
+docker compose logs --tail 100 ai-agent
+docker compose ps
 ```
 
 ### Redis Connection Errors

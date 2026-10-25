@@ -28,6 +28,7 @@ from ..models import (
     ActionProposal,
     AgentOutcome,
     RouteDecision,
+    RunIntent,
     RunStatus,
     SourceScope,
     UsageRecord,
@@ -36,10 +37,10 @@ from ..models import (
 )
 from ..ports import ProgressSink
 from .extract import extract_collaboration_details, merge_answer, questions_for_missing_fields
-from .models import CollabField, CollabResumeInput, CollabStage, CollaborationState
+from .models import CollabField, CollabResolution, CollabResumeInput, CollabStage, CollaborationState
 from .proposal import build_collab_proposal
 
-__all__ = ["run_collaboration"]
+__all__ = ["reconcile_resolved_collaboration", "run_collaboration"]
 
 
 def _utcnow() -> datetime:
@@ -155,6 +156,32 @@ async def _publish_action_proposed(progress: ProgressSink | None, proposal: Acti
         )
     except PortError:
         return  # sink arızası akışı başarısızlaştırmaz (port sözleşmesi)
+
+
+def reconcile_resolved_collaboration(context, route: RouteDecision, state: CollaborationState) -> AgentOutcome:
+    """Rebuild a recorded result for internal lease recovery without effects.
+
+    The worker must establish recovered-job ownership and reject new inputs
+    before using this helper. Normal public collaboration resume remains closed
+    after RESOLVED. Legacy state without a receipt cannot be reconciled.
+    """
+    if route.intent is not RunIntent.COLLABORATION or state.stage is not CollabStage.RESOLVED:
+        raise _validation_error("Collaboration recovery requires a resolved collaboration checkpoint")
+    proposal, resolution = state.proposal, state.resolution
+    if proposal is None or resolution is None:
+        raise _validation_error("Resolved collaboration has no recorded validated result for recovery")
+    result = resolution.result
+    if (route.run_id != context.run_id or proposal.run_id != context.run_id or result.run_id != context.run_id
+            or result.proposal_id != proposal.proposal_id):
+        raise _validation_error("Recorded collaboration result does not match its run and proposal")
+    if (proposal.article_id != context.article_id or proposal.article_revision != context.article_revision
+            or proposal.base_content_hash != context.article_content_hash):
+        raise _validation_error("Recorded collaboration proposal does not match its article context")
+    content_hash = compute_content_hash(proposal.summary)
+    if resolution.proposal_content_hash != content_hash or state.proposal_content_hash != content_hash:
+        raise _validation_error("Recorded collaboration result does not match the approved proposal summary")
+    outcome = _outcome(route, _utcnow(), status=RunStatus.COMPLETED, answer=_resolved_answer(result, context.language))
+    return outcome.model_copy(update={"run_intent": RunIntent.COLLABORATION})
 
 
 def _apply_answers(state: CollaborationState, collab_input: CollabResumeInput) -> CollaborationState:
@@ -299,7 +326,10 @@ async def run_collaboration(
                 "backend sonucu başka çalışmaya ait: beklenen="
                 f"{context.run_id}, gelen={validated_result.run_id}"
             )
-        resolved = state.model_copy(update={"stage": CollabStage.RESOLVED})
+        resolved = state.model_copy(update={
+            "stage": CollabStage.RESOLVED,
+            "resolution": CollabResolution(result=validated_result, proposal_content_hash=compute_content_hash(proposal.summary)),
+        })
         outcome = _outcome(
             route,
             started_at,

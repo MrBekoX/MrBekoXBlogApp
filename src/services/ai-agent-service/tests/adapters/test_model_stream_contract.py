@@ -65,6 +65,44 @@ def test_valid_stream_preserves_actual_usage_and_output_limit():
     assert sent[0]["max_tokens"] == 2500
 
 
+def test_explicit_provider_capabilities_select_completion_limit_without_changing_model():
+    settings = LlmProviderSettings.from_env({
+        "AGENT_LLM_API_KEY": "test-only", "AGENT_LLM_MODEL": "configured-model",
+        "AGENT_LLM_OUTPUT_TOKEN_PARAMETER": "max_completion_tokens",
+        "AGENT_LLM_SUPPORTS_TEMPERATURE": "false",
+        "AGENT_LLM_STREAM_USAGE": "false",
+    })
+    provider = OpenAiModelProvider(settings)
+    body = provider._build_body(ModelRequest(prompt="Question", max_output_tokens=37))
+    assert body["model"] == "configured-model"
+    assert body.get("max_completion_tokens") == 37
+    assert "max_tokens" not in body
+    assert "temperature" not in body
+    assert "stream_options" not in body
+
+
+def test_unsupported_temperature_is_rejected_before_creating_a_client():
+    settings = LlmProviderSettings.from_env({
+        "AGENT_LLM_API_KEY": "test-only", "AGENT_LLM_MODEL": "configured-model",
+        "AGENT_LLM_SUPPORTS_TEMPERATURE": "false",
+    })
+    provider = OpenAiModelProvider(settings)
+    with pytest.raises(PortError) as caught:
+        provider._build_body(ModelRequest(prompt="Question", temperature=0.5))
+    assert caught.value.code is AgentErrorCode.CONFIG_ERROR
+    assert provider._client is None
+
+
+def test_invalid_output_token_capability_fails_closed_without_echoing_the_value():
+    with pytest.raises(PortError) as caught:
+        LlmProviderSettings.from_env({
+            "AGENT_LLM_API_KEY": "test-only", "AGENT_LLM_MODEL": "configured-model",
+            "AGENT_LLM_OUTPUT_TOKEN_PARAMETER": "secret-invalid-value",
+        })
+    assert caught.value.code is AgentErrorCode.CONFIG_ERROR
+    assert "secret-invalid-value" not in str(caught.value)
+
+
 @pytest.mark.parametrize("body", [
     event(content()),  # clean HTTP EOF is still an incomplete completion
     event(content()) + event(STOP),

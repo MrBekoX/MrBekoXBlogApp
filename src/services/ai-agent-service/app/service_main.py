@@ -37,6 +37,10 @@ from agent_core.errors import AgentErrorCode, PortError  # noqa: E402
 from agent_core.models import BudgetProfile  # noqa: E402
 from agent_core.budget.policy import BudgetPolicy  # noqa: E402
 from agent_core.budget.postgres import PostgresBudgetStore  # noqa: E402
+from agent_core.budget.content_embedding import (  # noqa: E402
+    ContentEmbeddingLimits, PostgresContentEmbeddingBudget, content_embedding_scope,
+)
+from agent_core.telemetry import configure_telemetry  # noqa: E402
 from agent_core.profile import (  # noqa: E402
     CanonicalProfileRepository,
     resolve_profile_dir,
@@ -66,6 +70,7 @@ from .messaging.topology import (  # noqa: E402
     execute_queue_for,
 )
 from .messaging.worker import ExecutionDependencies, ExecutionWorker, WorkerSettings  # noqa: E402
+from .messaging.fenced_checkpoint import FencedCheckpointStore  # noqa: E402
 from .healthcheck import heartbeat_path  # noqa: E402
 
 __all__ = [
@@ -240,10 +245,20 @@ async def _compose_components(
     # Restore revision/removal guards after a process restart.
     rows = await pool.fetch(f'SELECT article_id,revision,content_hash,deleted FROM "{db_settings.schema}".content_articles')
     state.restore_articles(rows)
-    # Refuse startup on an unmigrated ledger instead of accepting work that
-    # would fail only when its first paid call tries to reserve capacity.
+    # Refuse startup on unmigrated durable state instead of accepting work that
+    # cannot persist its continuation or reserve its first paid call.
     await pool.fetch(f'SELECT run_id,limits FROM "{db_settings.schema}".run_budgets LIMIT 0')
     await pool.fetch(f'SELECT reservation_id,status,actual_amount FROM "{db_settings.schema}".budget_reservations LIMIT 0')
+    await pool.fetch(f'SELECT scope_id,token_limit,request_limit FROM "{db_settings.schema}".content_embedding_budgets LIMIT 0')
+    await pool.fetch(f'SELECT reservation_id,status,actual_amount FROM "{db_settings.schema}".content_embedding_reservations LIMIT 0')
+    await pool.fetch(f'SELECT run_id,checkpoint_id,payload,fencing_token,version FROM "{db_settings.schema}".job_checkpoints LIMIT 0')
+    content_embedding_limits = ContentEmbeddingLimits.from_env(env)
+
+    def content_budget(snapshot):
+        scope_id = content_embedding_scope(snapshot, settings.index_config)
+        return scope_id, PostgresContentEmbeddingBudget(
+            pool, scope_id, content_embedding_limits, schema=db_settings.schema,
+        )
 
     class ContentFetcher:
         async def fetch(self, article_id: str, article_revision: int) -> Any:
@@ -252,6 +267,7 @@ async def _compose_components(
     content_service = ContentConsumerService(state, projector=ContentIndexProjector(
         index, embedding_provider=embedding, model_config=settings.index_config, content_fetcher=ContentFetcher(),
         canonical_url_template=canonical_url_template,
+        embedding_budget_factory=content_budget,
     ))
     research_tools = research_tools_from_env(env)
     # Both profile execution paths share this already validated local source.
@@ -263,6 +279,9 @@ async def _compose_components(
         profile_repository=resolved_profile,
         profile_retriever=ProfileRetriever(embedding=ProfileEmbedding(embedding, settings.index_config)),
         content_state=state,
+        checkpoint_factory=lambda inner, run_id, fence: FencedCheckpointStore(
+            inner, pool, run_id, fence, schema=db_settings.schema,
+        ),
         web_tools=research_tools,
         budget_factory=lambda context, fence: PostgresBudgetStore(
             pool, BudgetPolicy.from_budget_profile(context.budget_profile,
@@ -457,14 +476,21 @@ async def _async_main() -> int:
         logger.info(".env yüklendi: %d değişken", len(loaded))
     else:
         logger.debug(".env bulunamadı")
+    telemetry = None
     try:
         db_settings = db_settings_from_env()
-        components = await build_components_async(db_settings=db_settings, broker=broker_settings_from_env())
+        profile = resolve_profile_repository()
+        profile.load(profile.active_snapshot())
+        telemetry = configure_telemetry(os.environ)
+        components = await build_components_async(db_settings=db_settings, broker=broker_settings_from_env(), profile_repository=profile)
         await run_service(components)
         return 0
     except Exception:
         logger.exception("servis beklenmedik şekilde sonlandı")
         return 1
+    finally:
+        if telemetry is not None:
+            await asyncio.to_thread(telemetry.shutdown)
 
 
 def main() -> int:

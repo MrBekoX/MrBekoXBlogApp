@@ -76,6 +76,10 @@ from typing import Any
 
 from agent_core.checkpoint.resume import load_resume_payload
 from agent_core.checkpoint.store import FileCheckpointStore
+from agent_core.budget.embedding import embedding_budget_scope
+from agent_core.collab.models import CollabStage
+from agent_core.collab.runner import reconcile_resolved_collaboration
+from agent_core.telemetry import set_span_attributes, trace_operation
 from agent_core.web.tools import WebTools
 from agent_core.entrypoints import (
     PreparedRun,
@@ -221,6 +225,7 @@ class ExecutionDependencies:
     budget: BudgetStore | None = None
     web_tools: WebTools | None = None
     checkpoint_store: CheckpointStorePort | None = None
+    checkpoint_factory: Callable[[CheckpointStorePort, str, int], CheckpointStorePort] | None = None
     content_state: Any | None = None
     profile_repository: Any | None = None
     project_repository: Any | None = None
@@ -680,22 +685,31 @@ class ExecutionWorker:
         kararları CycleResult'a çevrilir (run_once ile aynı sözleşme).
         """
 
-        try:
-            return await self._execute_claimed(
-                claimed,
-                collab_input=collab_input,
-                validated_result=validated_result,
-            )
-        except WorkerAborted as abort:
-            logger.warning("yürütme terminal'siz bırakıldı: run=%s (%s)", claimed.run_id, abort)
-            return CycleResult(
-                run_id=claimed.run_id,
-                action=abort.args[0] if abort.args else "aborted",
-                detail=str(abort),
-                execution_attempt=claimed.execution_attempt,
-                fencing_token=claimed.fencing_token,
-                recovered=claimed.recovered,
-            )
+        attributes = {"messaging.system": "rabbitmq", "blogapp.execution.attempt": claimed.execution_attempt}
+        # A recovered job's age also contains previous execution time, so it is
+        # not presented as queue wait. First admission has a precise boundary.
+        if claimed.execution_attempt == 1:
+            started = claimed.started_at or datetime.now(timezone.utc)
+            attributes["messaging.message.queue_time_ms"] = max(0, (started - claimed.accepted_at).total_seconds() * 1000)
+        with trace_operation("agent.execute", parent=claimed.envelope.trace_context, attributes=attributes) as span:
+            try:
+                result = await self._execute_claimed(
+                    claimed,
+                    collab_input=collab_input,
+                    validated_result=validated_result,
+                )
+            except WorkerAborted as abort:
+                logger.warning("yürütme terminal'siz bırakıldı: run=%s (%s)", claimed.run_id, abort)
+                result = CycleResult(
+                    run_id=claimed.run_id,
+                    action=abort.args[0] if abort.args else "aborted",
+                    detail=str(abort),
+                    execution_attempt=claimed.execution_attempt,
+                    fencing_token=claimed.fencing_token,
+                    recovered=claimed.recovered,
+                )
+            set_span_attributes(span, {"blogapp.run.status": "partial" if result.action == "partially_completed" else result.action})
+            return result
 
     async def run_forever(self, *, max_cycles: int | None = None) -> None:
         """Claim-çalıştır bekleme döngüsü; her 8 çevrimde bir sweep."""
@@ -811,7 +825,7 @@ class ExecutionWorker:
                     router_model=self._deps.router_model,
                     progress=sink,
                     cancel=cancel,
-                    checkpoint=self._checkpoint,
+                    checkpoint=self._checkpoint_for(claimed),
                     execution_id=stable_execution_id(run_id),
                     profile_identity=self._profile_identity(context),
                 )
@@ -989,9 +1003,10 @@ class ExecutionWorker:
         """
 
         execution_id = stable_execution_id(claimed.run_id)
+        checkpoint = self._checkpoint_for(claimed)
         try:
             _envelope, payload = await load_resume_payload(
-                self._checkpoint, claimed.run_id, None, execution_id=execution_id
+                checkpoint, claimed.run_id, None, execution_id=execution_id
             )
         except PortError as error:
             if error.code is AgentErrorCode.NOT_FOUND:
@@ -1046,29 +1061,44 @@ class ExecutionWorker:
                     error_code="timeout",
                     error_message="checkpoint'ten devam ederken deadline doldu",
                 )
-        outcome = await resume(
-            ResumeRequest(
-                run_id=claimed.run_id,
-                execution_id=execution_id,
-                deadline_seconds=remaining,
-                collab_input=collab_input,
-                validated_result=validated_result,
-            ),
-            checkpoint=self._checkpoint,
-            model=metered,
-            retriever=self._deps.retriever,
-            content=self._deps.content,
-            budget=self._budget_for(stored.context, claimed.fencing_token),
-            progress=sink,
-            cancel=cancel,
-            # Profil run'ına dış kaynak kapasitesi port düzeyinde verilmez (K5).
-            web_tools=None if sink.profile_guard else self._deps.web_tools,
-            profile_repository=self._deps.profile_repository,
-            project_repository=self._deps.project_repository,
-            article_catalog=self._deps.article_catalog,
-            profile_knowledge=self._deps.profile_knowledge,
-            profile_retriever=self._deps.profile_retriever,
-        )
+        if (stored.route.intent is RunIntent.COLLABORATION and stored.collab_state is not None
+                and stored.collab_state.stage is CollabStage.RESOLVED
+                and collab_input is None and validated_result is None and claimed.recovered):
+            # A previous owner may have persisted the validated backend result
+            # immediately before losing its terminal commit. Reconcile only a
+            # trusted lease-recovery claim; public/human resume stays rejected.
+            if (stored.context.run_id != claimed.run_id or stored.route.run_id != claimed.run_id
+                    or (stored.execution_id is not None and stored.execution_id != execution_id)):
+                raise PortError(AgentErrorCode.VALIDATION_ERROR, "Recovered checkpoint identity does not match the claimed job", port="worker")
+            if cancel is not None:
+                cancel.raise_if_cancelled()
+            return reconcile_resolved_collaboration(stored.context, stored.route, stored.collab_state)
+
+        budget = self._budget_for(stored.context, claimed.fencing_token)
+        with embedding_budget_scope(stored.context.run_id, budget):
+            outcome = await resume(
+                ResumeRequest(
+                    run_id=claimed.run_id,
+                    execution_id=execution_id,
+                    deadline_seconds=remaining,
+                    collab_input=collab_input,
+                    validated_result=validated_result,
+                ),
+                checkpoint=checkpoint,
+                model=metered,
+                retriever=self._deps.retriever,
+                content=self._deps.content,
+                budget=budget,
+                progress=sink,
+                cancel=cancel,
+                # Profil run'ına dış kaynak kapasitesi port düzeyinde verilmez (K5).
+                web_tools=None if sink.profile_guard else self._deps.web_tools,
+                profile_repository=self._deps.profile_repository,
+                project_repository=self._deps.project_repository,
+                article_catalog=self._deps.article_catalog,
+                profile_knowledge=self._deps.profile_knowledge,
+                profile_retriever=self._deps.profile_retriever,
+            )
         return outcome
 
     async def _execute_prepared(
@@ -1082,30 +1112,38 @@ class ExecutionWorker:
         collab_input: Any | None = None,
         validated_result: Any | None = None,
     ) -> AgentOutcome:
-        return await execute_plan(
-            prepared,
-            model=metered,
-            retriever=self._deps.retriever,
-            content=self._deps.content,
-            budget=self._budget_for(prepared.context, claimed.fencing_token),
-            progress=sink,
-            cancel=cancel,
-            # Profil run'ına web/arama/kaynak okuyucu araçları HİÇ verilmez (K5):
-            # Profile execution receives no external tool handles at all.
-            web_tools=None if sink.profile_guard else self._deps.web_tools,
-            profile_repository=self._deps.profile_repository,
-            project_repository=self._deps.project_repository,
-            article_catalog=self._deps.article_catalog,
-            collab_input=collab_input,
-            validated_result=validated_result,
-            profile_knowledge=self._deps.profile_knowledge,
-            profile_retriever=self._deps.profile_retriever,
-        )
+        budget = self._budget_for(prepared.context, claimed.fencing_token)
+        with embedding_budget_scope(prepared.context.run_id, budget):
+            return await execute_plan(
+                prepared,
+                model=metered,
+                retriever=self._deps.retriever,
+                content=self._deps.content,
+                budget=budget,
+                progress=sink,
+                cancel=cancel,
+                # Profil run'ına web/arama/kaynak okuyucu araçları HİÇ verilmez (K5):
+                # Profile execution receives no external tool handles at all.
+                web_tools=None if sink.profile_guard else self._deps.web_tools,
+                profile_repository=self._deps.profile_repository,
+                project_repository=self._deps.project_repository,
+                article_catalog=self._deps.article_catalog,
+                checkpoint=self._checkpoint_for(claimed),
+                collab_input=collab_input,
+                validated_result=validated_result,
+                profile_knowledge=self._deps.profile_knowledge,
+                profile_retriever=self._deps.profile_retriever,
+            )
 
     def _budget_for(self, context: ExecutionContext, fencing_token: int) -> BudgetStore | None:
         if self._deps.budget_factory is not None:
             return self._deps.budget_factory(context, fencing_token)
         return self._deps.budget
+
+    def _checkpoint_for(self, claimed: ClaimedJob) -> CheckpointStorePort:
+        if self._deps.checkpoint_factory is not None:
+            return self._deps.checkpoint_factory(self._checkpoint, claimed.run_id, claimed.fencing_token)
+        return self._checkpoint
 
     # ------------------------------------------------- iptal terminali + guard
 

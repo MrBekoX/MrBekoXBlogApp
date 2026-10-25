@@ -124,7 +124,7 @@ class PostgresBudgetStore:
             return BudgetReservation(reservation_id=str(reservation_id), run_id=self.run_id,
                                      kind=kind, reserved_amount=amount, created_at=created)
 
-    async def _resolve(self, reservation: BudgetReservation, actual: int | None) -> None:
+    async def _resolve(self, reservation: BudgetReservation, actual: int | None, *, classification: str | None = None) -> None:
         self._check_run(reservation.run_id)
         async with self._locked(require_active=False) as conn:
             row = await conn.fetchrow(
@@ -133,8 +133,9 @@ class PostgresBudgetStore:
             if (row is None or row["fencing_token"] != self.fencing_token
                     or row["kind"] != reservation.kind.value or row["reserved_amount"] != reservation.reserved_amount):
                 raise PortError(AgentErrorCode.VALIDATION_ERROR, "Unknown or mismatched budget reservation", port="BudgetStore")
-            target = "released" if actual is None else "committed"
-            if row["status"] == target and row["actual_amount"] == actual:
+            target = "uncertain" if classification == "uncertain" else "released" if actual is None else "committed"
+            reason = {"estimated": "provider_estimated", "uncertain": "provider_interrupted"}.get(classification)
+            if row["status"] == target and row["actual_amount"] == actual and row["uncertainty_reason"] == reason:
                 return  # A retry after a lost DB response must not double charge.
             if row["status"] != "reserved":
                 raise PortError(AgentErrorCode.VALIDATION_ERROR, "Budget reservation was already resolved", port="BudgetStore")
@@ -145,8 +146,8 @@ class PostgresBudgetStore:
                 raise PortError(AgentErrorCode.CANCELLED,
                     "An expired execution cannot refund a budget reservation", port="BudgetStore")
             await conn.execute(
-                f"UPDATE {self.schema}.budget_reservations SET status=$2,actual_amount=$3,resolved_at=now() WHERE reservation_id=$1",
-                UUID(reservation.reservation_id), target, actual)
+                f"UPDATE {self.schema}.budget_reservations SET status=$2,actual_amount=$3,uncertainty_reason=$4,resolved_at=now() WHERE reservation_id=$1",
+                UUID(reservation.reservation_id), target, actual, reason)
 
     @_storage_errors
     async def commit(self, reservation: BudgetReservation, actual_amount: int) -> None:
@@ -157,3 +158,13 @@ class PostgresBudgetStore:
     @_storage_errors
     async def release(self, reservation: BudgetReservation) -> None:
         await self._resolve(reservation, None)
+
+    @_storage_errors
+    async def commit_embedding(self, reservation: BudgetReservation, actual_amount: int, classification: str) -> None:
+        """Persist reported, estimated and uncertain embedding cost separately."""
+        if (reservation.kind is not BudgetKind.TOKEN or type(actual_amount) is not int or actual_amount < 1
+                or classification not in {"reported", "estimated", "uncertain"}
+                or (classification == "uncertain" and actual_amount != reservation.reserved_amount)):
+            raise PortError(AgentErrorCode.VALIDATION_ERROR, "Invalid embedding usage classification", port="BudgetStore")
+        await self._resolve(reservation, None if classification == "uncertain" else actual_amount,
+                            classification=classification)

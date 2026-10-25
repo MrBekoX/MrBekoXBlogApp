@@ -18,6 +18,8 @@ from typing import Any
 import httpx
 
 from ..content.config import EmbeddingModelConfig
+from ..budget.embedding import current_embedding_accounting
+from ..telemetry import set_span_attributes, trace_operation
 from ..errors import AgentErrorCode, PortError
 from ..ports import CancellationToken
 from .config import EmbeddingProviderSettings
@@ -110,9 +112,17 @@ def _decode_embeddings(payload: Any, *, count: int, dimensions: int, model: str)
 class OpenAiEmbeddingProvider:
     """OpenAI HTTP embeddings provider implementing the EmbeddingProvider port."""
 
-    def __init__(self, settings: EmbeddingProviderSettings) -> None:
+    def __init__(
+        self,
+        settings: EmbeddingProviderSettings,
+        *,
+        client: httpx.AsyncClient | None = None,
+        require_budget_scope: bool = False,
+    ) -> None:
         self.settings = settings
-        self._client: httpx.AsyncClient | None = None
+        self._client = client
+        self._owns_client = client is None
+        self._require_budget_scope = require_budget_scope
 
     @property
     def index_config(self) -> EmbeddingModelConfig:
@@ -123,7 +133,8 @@ class OpenAiEmbeddingProvider:
         return self.settings.dimensions
 
     async def aclose(self) -> None:
-        if self._client is not None:
+        """Close only the client's resources created by this provider."""
+        if self._owns_client and self._client is not None:
             await self._client.aclose()
             self._client = None
 
@@ -200,6 +211,53 @@ class OpenAiEmbeddingProvider:
         return self._client
 
     async def _request(self, texts: list[str]) -> list[list[float]]:
+        with trace_operation("embeddings", kind="client", attributes={
+            "gen_ai.provider.name": "openai", "gen_ai.request.model": self.settings.model,
+        }) as span:
+            return await self._budgeted_request(texts, span)
+
+    async def _budgeted_request(self, texts: list[str], span) -> list[list[float]]:
+        accounting = current_embedding_accounting()
+        if accounting is None and self._require_budget_scope:
+            raise PortError(
+                AgentErrorCode.CONFIG_ERROR, "Embedding requests require an explicit budget owner.",
+                port="OpenAiEmbeddingProvider",
+            )
+        reservation = None
+        if accounting is not None:
+            reservation = await accounting.reserve(sum(len(text.encode("utf-8")) for text in texts))
+        set_span_attributes(span, {"blogapp.embedding.requests": 1})
+        try:
+            vectors, reported = await self._fetch_embeddings(texts)
+        except BaseException:
+            estimate = sum(len(text.encode("utf-8")) for text in texts)
+            set_span_attributes(span, {
+                "gen_ai.usage.input_tokens": estimate, "blogapp.usage.basis": "uncertain",
+                "blogapp.embedding.estimated_tokens": estimate, "blogapp.embedding.uncertain_tokens": estimate,
+            })
+            if reservation is not None:
+                # A transport interruption or invalid response does not prove
+                # that the provider did no billable work. Failed accounting
+                # leaves the durable reservation charged against admission.
+                with suppress(Exception):
+                    await accounting.record(reservation, None, uncertain=True)
+            raise
+        charged = reported if reported is not None else sum(len(text.encode("utf-8")) for text in texts)
+        set_span_attributes(span, {
+            "gen_ai.usage.input_tokens": charged, "blogapp.usage.basis": "reported" if reported is not None else "estimated",
+            "blogapp.embedding.reported_tokens" if reported is not None else "blogapp.embedding.estimated_tokens": charged,
+        })
+        if reservation is not None:
+            try:
+                await accounting.record(reservation, reported)
+            except PortError as error:
+                raise PortError(
+                    error.code, "Embedding usage could not be acknowledged by the budget ledger.",
+                    port="OpenAiEmbeddingProvider", retryable=False, usage_uncertain=True,
+                ) from None
+        return vectors
+
+    async def _fetch_embeddings(self, texts: list[str]) -> tuple[list[list[float]], int | None]:
         try:
             # Bound the entire operation as well as individual socket phases.
             async with asyncio.timeout(self.settings.request_timeout_seconds):
@@ -228,12 +286,21 @@ class OpenAiEmbeddingProvider:
                         payload = json.loads(body)
                     except (ValueError, UnicodeError):
                         raise _provider_error("Embedding provider returned invalid JSON.") from None
-                    return _decode_embeddings(
+                    vectors = _decode_embeddings(
                         payload,
                         count=len(texts),
                         dimensions=self.settings.dimensions,
                         model=self.settings.model,
                     )
+                    usage = payload.get("usage")
+                    if usage is None:
+                        return vectors, None
+                    if (not isinstance(usage, dict)
+                            or any(type(usage.get(key)) is not int or usage[key] < 1
+                                   for key in ("prompt_tokens", "total_tokens"))
+                            or usage["prompt_tokens"] != usage["total_tokens"]):
+                        raise _provider_error("Embedding response contains invalid usage.")
+                    return vectors, usage["total_tokens"]
         except (TimeoutError, httpx.TimeoutException):
             raise PortError(
                 AgentErrorCode.TIMEOUT,

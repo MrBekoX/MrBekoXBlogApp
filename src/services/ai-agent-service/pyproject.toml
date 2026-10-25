@@ -17,6 +17,9 @@ dependencies = [
     "asyncpg>=0.32,<0.33",
     # HTTP transport for production chat and embedding providers.
     "httpx>=0.27,<1",
+    # Explicit opt-in OTLP/HTTP tracing; payload capture stays disabled.
+    "opentelemetry-sdk==1.45.1",
+    "opentelemetry-exporter-otlp-proto-http==1.45.1",
     "alembic>=1.20,<1.21",
     "sqlalchemy>=2.0,<2.1",
 ]
@@ -24,6 +27,8 @@ dependencies = [
 [project.optional-dependencies]
 storage-test = ["embedded-postgres==18.6.3"]
 dev = [
+    # CI installs the local package without resolving an unpinned build environment.
+    "setuptools>=68",
     "PyYAML>=6,<7",
     "pytest>=8.3",
     # Sözleşme testleri fixture'ları gerçek JSON Schema dosyalarına (Draft 2020-12,

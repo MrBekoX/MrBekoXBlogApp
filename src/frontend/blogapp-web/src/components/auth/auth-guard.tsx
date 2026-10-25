@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
-import type { User } from '@/types';
+import { useAuthHydrated } from '@/hooks/use-auth-hydrated';
 
 type AllowedRole = 'Admin' | 'Editor' | 'Author' | 'Reader';
 
@@ -50,23 +50,10 @@ export function AuthGuard({
   const authStatus = useAuthStore((state) => state.authStatus);
   const lastAuthCheck = useAuthStore((state) => state.lastAuthCheck);
   const checkAuth = useAuthStore((state) => state.checkAuth);
-  const [hasMounted, setHasMounted] = useState(false);
+  const hasMounted = useAuthHydrated();
   const hasCheckedAuth = useRef(false);
   const hasRedirected = useRef(false);
   const hasTriggeredRevalidation = useRef(false);
-
-  // Wait for both component mount AND Zustand store hydration from sessionStorage.
-  // This prevents auth decisions before persisted state is restored.
-  useEffect(() => {
-    if (useAuthStore.persist.hasHydrated()) {
-      setHasMounted(true);
-      return;
-    }
-    const unsub = useAuthStore.persist.onFinishHydration(() => {
-      setHasMounted(true);
-    });
-    return unsub;
-  }, []);
 
   // Check auth status on mount
   // Trust persisted state for immediate render, but verify with backend
@@ -94,7 +81,7 @@ export function AuthGuard({
 
     // Idle state — no persisted data, check with backend
     checkAuth();
-  }, [hasMounted, authStatus, user, checkAuth]);
+  }, [hasMounted, authStatus, user, checkAuth, lastAuthCheck]);
 
   // Handle redirects with circuit breaker
   useEffect(() => {

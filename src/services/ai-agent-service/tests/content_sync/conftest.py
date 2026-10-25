@@ -159,6 +159,8 @@ def provision_vhost_and_users() -> None:
     """
 
     mgmt_request("PUT", f"/vhosts/{VHOST}")
+    mgmt_request("PUT", f"/permissions/{VHOST}/{ADMIN[0]}",
+                 {"configure": ".*", "write": ".*", "read": ".*"})
     for user, password in (BACKEND_USER, AGENT_USER):
         mgmt_request("PUT", f"/users/{user}", {"password": password, "tags": "none"})
     mgmt_request(

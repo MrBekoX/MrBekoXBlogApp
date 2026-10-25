@@ -1,6 +1,12 @@
+using System.Diagnostics;
+using System.Globalization;
 using BlogApp.BuildingBlocks.Options;
 using BlogApp.Presentation.Api.Health;
 using BlogApp.Infrastructure.Messaging;
+using BlogApp.Presentation.Api.Services;
+using OpenTelemetry;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using Serilog;
@@ -33,6 +39,7 @@ public static class ObservabilityExtensions
     {
         // OpenTelemetry Metrics for Cache Observability
         services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource.AddService("blogapp-api"))
             .WithMetrics(metrics =>
             {
                 metrics
@@ -43,10 +50,55 @@ public static class ObservabilityExtensions
             .WithTracing(tracing =>
             {
                 tracing
-                    .AddAspNetCoreInstrumentation()
-                    .AddHttpClientInstrumentation()
-                    .AddEntityFrameworkCoreInstrumentation()
+                    .AddAspNetCoreInstrumentation(options =>
+                    {
+                        options.RecordException = false;
+                    })
+                    .AddHttpClientInstrumentation(options =>
+                    {
+                        options.RecordException = false;
+                    })
+                    .AddEntityFrameworkCoreInstrumentation(options =>
+                        options.EnrichWithIDbCommand = (activity, _) =>
+                        {
+                            activity.SetTag("db.query.text", null);
+                            activity.SetTag("db.statement", null);
+                        })
                     .AddSource("BlogApp");
+
+                // Explicit opt-in only. Do not enable OTLP logging or payload capture.
+                var configuredEndpoint = configuration["AgentTelemetry:Endpoint"]?.Trim();
+                if (!string.IsNullOrEmpty(configuredEndpoint))
+                {
+                    if (!Uri.TryCreate(configuredEndpoint, UriKind.Absolute, out var endpoint)
+                        || endpoint.Scheme is not ("http" or "https")
+                        || string.IsNullOrEmpty(endpoint.Host)
+                        || !endpoint.AbsolutePath.EndsWith("/v1/traces", StringComparison.Ordinal)
+                        || !string.IsNullOrEmpty(endpoint.UserInfo)
+                        || !string.IsNullOrEmpty(endpoint.Query)
+                        || !string.IsNullOrEmpty(endpoint.Fragment))
+                        throw new ArgumentException("AgentTelemetry:Endpoint must be an absolute HTTP(S) traces URL ending in /v1/traces without credentials, query or fragment.");
+                    var timeout = 1000;
+                    var configuredTimeout = configuration["AgentTelemetry:TimeoutMilliseconds"];
+                    if (configuredTimeout is not null
+                        && !int.TryParse(configuredTimeout, NumberStyles.Integer, CultureInfo.InvariantCulture, out timeout)
+                        || timeout is < 100 or > 10000)
+                        throw new ArgumentException("AgentTelemetry:TimeoutMilliseconds must be an integer between 100 and 10000.");
+                    tracing.AddProcessor(new AgentTelemetryPrivacyProcessor())
+                        .AddOtlpExporter(options =>
+                        {
+                            options.Endpoint = endpoint;
+                            options.Protocol = OtlpExportProtocol.HttpProtobuf;
+                            options.TimeoutMilliseconds = timeout;
+                            options.BatchExportProcessorOptions = new BatchExportProcessorOptions<Activity>
+                            {
+                                MaxQueueSize = 512,
+                                MaxExportBatchSize = 128,
+                                ScheduledDelayMilliseconds = 1000,
+                                ExporterTimeoutMilliseconds = timeout,
+                            };
+                        });
+                }
             });
 
         // Health checks for PostgreSQL and Redis

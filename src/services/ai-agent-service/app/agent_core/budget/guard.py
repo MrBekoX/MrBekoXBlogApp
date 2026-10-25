@@ -31,6 +31,7 @@ import asyncio
 import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,7 @@ from ..errors import AgentErrorCode, PortError
 from ..ports import BudgetKind, BudgetReservation, BudgetStore, BudgetUsage, CancellationToken
 from ..ports.model import ModelRequest, ModelResponse, ModelUsage
 from .policy import BudgetPolicy, Deadline
+from ..telemetry import record_admission_rejection, record_call_retry, trace_operation
 
 if TYPE_CHECKING:
     from ..state.events import UsageEvent
@@ -224,6 +226,27 @@ class BudgetGuard:
         token_estimate: int | None = None,
         events_sink: list["UsageEvent"] | None = None,
     ) -> GuardedOutcome:
+        """Trace external tool work while preserving the reservation boundary."""
+        scope = trace_operation("tool") if kind in {
+            BudgetKind.TOOL_CALL, BudgetKind.WEB_SEARCH_CALL, BudgetKind.SOURCE_PAGE_READ,
+        } else nullcontext()
+        with scope:
+            return await self._guarded(
+                action_id=action_id, kind=kind, call=call, cancel=cancel, deadline=deadline,
+                token_estimate=token_estimate, events_sink=events_sink,
+            )
+
+    async def _guarded(
+        self,
+        *,
+        action_id: str,
+        kind: BudgetKind,
+        call: Callable[[int], Awaitable[CallResult]],
+        cancel: CancellationToken | None = None,
+        deadline: Deadline | None = None,
+        token_estimate: int | None = None,
+        events_sink: list["UsageEvent"] | None = None,
+    ) -> GuardedOutcome:
         """Dış çağrıyı rezervasyon + kullanım kaydı + sınırlı retry ile yürütür.
 
         ``call(attempt)`` çalıştırılabilir dış çağrıdır; iptal ve deadline
@@ -238,24 +261,40 @@ class BudgetGuard:
         """
         events: list[UsageEvent] = []
         max_attempts = self._policy.max_attempts_per_action
+        operation = "chat" if kind is BudgetKind.MODEL_CALL else "tool" if kind in {
+            BudgetKind.TOOL_CALL, BudgetKind.WEB_SEARCH_CALL, BudgetKind.SOURCE_PAGE_READ,
+        } else None
+        retry_reason = None
         for attempt in range(1, max_attempts + 1):
-            assert_active(cancel, deadline)  # çağrı öncesi: dış etki başlamadı
-            call_reservation = await self.reserve(kind)
-            token_reservation: BudgetReservation | None = None
-            if kind is BudgetKind.MODEL_CALL:
-                per_call = max(self._policy.max_total_tokens // max(self._policy.max_model_calls, 1), 1)
-                try:
-                    token_reservation = await self.reserve(BudgetKind.TOKEN, token_estimate or per_call)
-                except BaseException:
-                    await self.release(call_reservation)
-                    raise
+            try:
+                assert_active(cancel, deadline)  # çağrı öncesi: dış etki başlamadı
+                call_reservation = await self.reserve(kind)
+                token_reservation: BudgetReservation | None = None
+                if kind is BudgetKind.MODEL_CALL:
+                    per_call = max(self._policy.max_total_tokens // max(self._policy.max_model_calls, 1), 1)
+                    try:
+                        token_reservation = await self.reserve(BudgetKind.TOKEN, token_estimate or per_call)
+                    except BaseException:
+                        await self.release(call_reservation)
+                        raise
+            except PortError as error:
+                record_admission_rejection(operation, error)
+                raise
+
+            async def invoke_admitted():
+                # Every reservation and the timeout context have succeeded.
+                # Count callback invocations, not confirmed provider requests.
+                if attempt > 1:
+                    record_call_retry(operation, retry_reason)
+                return await call(attempt)
+
             try:
                 if deadline is None:
-                    result = await call(attempt)
+                    result = await invoke_admitted()
                 else:
                     try:
                         async with asyncio.timeout(deadline.remaining()):
-                            result = await call(attempt)
+                            result = await invoke_admitted()
                     except TimeoutError:
                         raise PortError(AgentErrorCode.TIMEOUT, "The call exceeded the remaining run deadline",
                                         port="BudgetGuard", usage_uncertain=True) from None
@@ -273,6 +312,7 @@ class BudgetGuard:
                     if (error.code is not AgentErrorCode.CANCELLED and error.retryable
                             and attempt < max_attempts
                             and (deadline is None or deadline.remaining() > _MIN_RETRY_SECONDS)):
+                        retry_reason = error.code
                         continue
                     raise
                 if error.code is AgentErrorCode.BUDGET_EXHAUSTED:
@@ -290,6 +330,7 @@ class BudgetGuard:
                 )
                 if error.retryable and attempt < max_attempts:
                     if deadline is None or deadline.remaining() > _MIN_RETRY_SECONDS:
+                        retry_reason = error.code
                         continue
                 raise
             except asyncio.CancelledError:

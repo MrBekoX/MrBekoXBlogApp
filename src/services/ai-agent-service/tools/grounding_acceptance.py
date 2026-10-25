@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import json
 import asyncio
+import hashlib
 import os
 from pathlib import Path
 import re
+import subprocess
 from urllib.parse import unquote, urlsplit
 import uuid
 from datetime import datetime, timezone
@@ -36,6 +38,42 @@ MAX_CHAT_TOKENS = 60000
 MAX_EMBEDDING_BYTES = 32768
 MAX_SECONDS = 300
 PIPELINE_EXPECTATIONS = Path(__file__).resolve().parents[1] / "tests" / "grounding" / "pipeline_expectations.json"
+
+
+def _source_digest(sources):
+    """Bind names and byte boundaries as well as source contents."""
+    digest = hashlib.sha256()
+    for name, content in sorted(sources):
+        digest.update(name.encode("utf-8") + b"\0")
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
+
+
+def evaluation_identity(cases):
+    """Bind finite live evidence to source revisions without recording secrets."""
+    service = Path(__file__).resolve().parents[1]
+    try:
+        commit = subprocess.run(["git", "--no-optional-locks", "rev-parse", "HEAD"], cwd=service,
+                                capture_output=True, text=True, timeout=5, check=True).stdout.strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", commit):
+            commit = None
+        dirty = bool(subprocess.run(["git", "--no-optional-locks", "status", "--porcelain"], cwd=service,
+                                   capture_output=True, text=True, timeout=5, check=True).stdout)
+    except (OSError, subprocess.SubprocessError):
+        commit, dirty = None, None
+    prompt_sources = ["app/agent_core/grounding.py", "app/agent_core/qa/nodes.py", "app/agent_core/qa/runner.py"]
+    prompt_digest = _source_digest([(name, (service / name).read_bytes()) for name in prompt_sources])
+    corpus = json.dumps(cases, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    dataset_sources = ["tests/grounding/corpus.json", "tests/grounding/pipeline_expectations.json"]
+    dataset_digest = _source_digest([(dataset_sources[0], corpus),
+                                      (dataset_sources[1], (service / dataset_sources[1]).read_bytes())])
+    return {"commit": commit, "workspace_dirty": dirty, "dataset_version": "grounding-corpus-v1",
+            "dataset_sha256": dataset_digest, "dataset_source_files": dataset_sources,
+            "prompt_version": "grounding-verifier-and-qa-v1", "prompt_sources_sha256": prompt_digest,
+            "prompt_source_files": prompt_sources,
+            "samples": len(cases), "provider": "configured-openai-compatible", "layer": "real-provider",
+            "judge": "configured model verifier with finite rule checks; no independent human calibration has been measured"}
 
 
 def validate_cases(cases):
@@ -244,7 +282,7 @@ async def run_acceptance(cases, scope):
             except TimeoutError:
                 pool.terminate()
     usage = await store.usage("grounding-acceptance")
-    return {"scope": scope, "model": os.environ.get("AGENT_LLM_MODEL"), "results": results,
+    return {"scope": scope, "model": os.environ.get("AGENT_LLM_MODEL"), "identity": evaluation_identity(cases), "results": results,
             "limits": limits.report(), "charged_chat_tokens": usage.committed.get("token", 0),
             "passed": bool(results) and all(result["passed"] for result in results),
             "coverage": "Public verifier corpus and/or real QA provider pipeline only; browser, cross-service broker and EC2 capacity are separate"}

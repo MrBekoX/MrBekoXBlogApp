@@ -83,16 +83,27 @@ def make_settings(
 
 
 def mgmt_request(method: str, path: str, body: Any = None, auth: tuple[str, str] = ADMIN) -> Any:
-    token = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
-    req = urllib.request.Request(
-        MGMT + path,
-        method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={"Authorization": "Basic " + token, "content-type": "application/json"},
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        raw = resp.read()
-        return json.loads(raw) if raw else None
+    # Setup operations are idempotent. Retry transient transport failures only;
+    # an actual authentication/permission HTTP response must still fail setup.
+    last_error = None
+    for attempt in range(5):
+        try:
+            token = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
+            req = urllib.request.Request(
+                MGMT + path,
+                method=method,
+                data=json.dumps(body).encode() if body is not None else None,
+                headers={"Authorization": "Basic " + token, "content-type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read()
+                return json.loads(raw) if raw else None
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, OSError, ConnectionError) as error:
+            last_error = error
+            time.sleep(0.5 * 2**attempt)
+    raise RuntimeError(f"Test broker management {method} {path} unavailable") from last_error
 
 
 def mgmt_try(method: str, path: str, body: Any = None, auth: tuple[str, str] = ADMIN) -> int:
@@ -114,6 +125,10 @@ def provision_vhost_and_users() -> None:
     """
 
     mgmt_request("PUT", f"/vhosts/{VHOST}")
+    # A management administrator still needs explicit AMQP vhost permissions.
+    # This test-only declarer is separate from both restricted service roles.
+    mgmt_request("PUT", f"/permissions/{VHOST}/{ADMIN[0]}",
+                 {"configure": ".*", "write": ".*", "read": ".*"})
     for user, password in (BACKEND_USER, AGENT_USER, RESTRICTED_USER):
         mgmt_request("PUT", f"/users/{user}", {"password": password, "tags": "none"})
     # An existing permission record with three empty regexes permits vhost

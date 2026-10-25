@@ -222,6 +222,8 @@ def provision_vhost_and_users() -> None:
     """B2 izin modeliyle ÖZEL vhost kurulumu (idempotent; declarer kimliği admin)."""
 
     mgmt_request("PUT", f"/vhosts/{VHOST}")
+    mgmt_request("PUT", f"/permissions/{VHOST}/{ADMIN[0]}",
+                 {"configure": ".*", "write": ".*", "read": ".*"})
     for user, password in (BACKEND_USER, AGENT_USER):
         mgmt_request("PUT", f"/users/{user}", {"password": password, "tags": "none"})
     mgmt_request(
@@ -389,7 +391,7 @@ def db_pool() -> Any:
     async def _reset() -> None:
         async with pool.acquire() as conn:
             await conn.execute(
-                "TRUNCATE agent.budget_reservations, agent.run_budgets, "
+                "TRUNCATE agent.job_checkpoints, agent.budget_reservations, agent.run_budgets, "
                 "agent.inbox_messages, agent.jobs, agent.outbox_events, "
                 "agent.run_event_sequences, agent.cancel_intents"
             )

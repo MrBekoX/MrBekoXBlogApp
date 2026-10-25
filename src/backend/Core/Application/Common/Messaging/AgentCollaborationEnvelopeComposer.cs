@@ -53,6 +53,7 @@ public static class AgentCollaborationEnvelopeComposer
             CorrelationId = correlationId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(occurredAt),
             Producer = producer,
+            TraceContext = AgentTraceContext.Capture(),
             DeliveryAttempt = 0,
             Payload = JsonSerializer.SerializeToElement(
                 new AgentResumeRequestedV1
@@ -93,6 +94,7 @@ public static class AgentCollaborationEnvelopeComposer
             CorrelationId = correlationId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(occurredAt),
             Producer = producer,
+            TraceContext = AgentTraceContext.Capture(),
             DeliveryAttempt = 0,
             Payload = JsonSerializer.SerializeToElement(
                 new AgentActionResultV1

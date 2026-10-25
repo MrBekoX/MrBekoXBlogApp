@@ -72,7 +72,7 @@ jobs:
         run: >
           dotnet test src/backend/Presentation/Api.Tests/BlogApp.Presentation.Api.Tests.csproj
           -c Release --no-build --nologo -v q
-          --filter "FullyQualifiedName~BlogApp.Presentation.Api.Tests.Media|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Security.TrustedClientIpTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.SeoDocumentsTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentTerminalRecoveryPolicyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Security.SignalRAdmissionTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentRecoveryConfigurationTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentStartupConfigurationTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResumeEnvelopeComposerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResultIntegrityPolicyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapClustererTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapSanitizerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapTermExtractorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.EditorialDraftFieldsHashTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Comments.CommentPiiRedactorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Staleness.StalenessSlotCalculatorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Broker.AgentMessagingBrokerContractMirrorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Content.AgentContentEventServiceTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Projection.AgentRunProjectionRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentContract|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentMessagingRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.E2E.QueueCountsParserTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.WhoAmI"
+          --filter "FullyQualifiedName~BlogApp.Presentation.Api.Tests.Media|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Security.TrustedClientIpTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.SeoDocumentsTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentTerminalRecoveryPolicyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Security.SignalRAdmissionTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentRecoveryConfigurationTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentStartupConfigurationTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentTraceContextTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentEventTraceContextTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentTelemetryExportTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Security.AgentCredentialLifetimeTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Security.AgentNotificationPrivacyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Security.AgentSseCredentialTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Security.RequestLoggingPrivacyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResumeEnvelopeComposerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.AgentResultIntegrityPolicyTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapClustererTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapSanitizerTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.ContentGapTermExtractorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Agent.EditorialDraftFieldsHashTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Comments.CommentPiiRedactorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Staleness.StalenessSlotCalculatorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Broker.AgentMessagingBrokerContractMirrorTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Content.AgentContentEventServiceTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.Projection.AgentRunProjectionRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentContract|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.AgentMessagingRuleTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.Messaging.E2E.QueueCountsParserTests|FullyQualifiedName~BlogApp.Presentation.Api.Tests.WhoAmI"
 
   # ────────────────────────────────────────────────────────────────────
   # 2. python hızlı katman: broker'sız pytest alt kümesi
@@ -92,12 +92,15 @@ jobs:
         with:
           python-version: '3.13'
           cache: 'pip'
-          cache-dependency-path: src/services/ai-agent-service/pyproject.toml
+          cache-dependency-path: |
+            src/services/ai-agent-service/requirements.lock
+            src/services/ai-agent-service/requirements-dev.lock
 
       - name: Install service
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,storage-test]"
+          python -m pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+          python -m pip check
 
       # Broker/DB gerektiren paket dizinleri dışlanır (her biri kendi
       # conftest'inde gerçek broker/postgres ister — sahte başarı yok).
@@ -132,7 +135,7 @@ jobs:
 
 
   # ────────────────────────────────────────────────────────────────────
-  # 2b. frontend hızlı katman: Vitest + build (+ lint, bilgilendirici)
+  # 2b. frontend hızlı katman: Vitest + browser fixture + lint/typecheck/build
   # ────────────────────────────────────────────────────────────────────
   frontend-fast:
     runs-on: ubuntu-latest
@@ -154,6 +157,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Test (Vitest)
         run: npm test
 
@@ -164,11 +170,11 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Who am I teslimi anında depoda bu değişiklikten bağımsız 8 lint hatası
-      # vardı (dokunulmayan dosyalarda); düzeltilene kadar bilgilendirici.
-      - name: Lint (informational)
+      - name: Lint
         run: npm run lint
-        continue-on-error: true
+
+      - name: Typecheck
+        run: npx --no-install tsc --noEmit
 
   # ────────────────────────────────────────────────────────────────────
   # 3. PR/main integration: real broker + postgres, full suites run sequentially.
@@ -231,7 +237,9 @@ jobs:
         with:
           python-version: '3.13'
           cache: 'pip'
-          cache-dependency-path: src/services/ai-agent-service/pyproject.toml
+          cache-dependency-path: |
+            src/services/ai-agent-service/requirements.lock
+            src/services/ai-agent-service/requirements-dev.lock
 
       # blogapp_dev vhost'u + servis kullanıcıları (python messaging_broker
       # conftest'inin provizyonu ile AYNI izin regex'leri; declarer=backend_svc,
@@ -279,8 +287,9 @@ jobs:
       - name: Install python service
         working-directory: src/services/ai-agent-service
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          python -m pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+          python -m pip check
 
       # Python infrastructure checks use real broker and PostgreSQL instances.
       # conftest'ler Postgres kimliğini REPO_KÖKÜ/docker/.env'den okur (sır

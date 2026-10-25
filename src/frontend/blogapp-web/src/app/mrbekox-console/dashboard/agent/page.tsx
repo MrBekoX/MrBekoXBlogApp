@@ -58,32 +58,32 @@ interface AgentObservations {
 const fmt = (value?: number | null, unit = '') =>
   value === null || value === undefined ? '—' : `${value.toFixed(value < 10 ? 1 : 0)}${unit}`;
 
+async function readObservations() {
+  return apiClient.get<{ success: boolean; data?: AgentObservations; errors?: string[] }>(
+    '/agent/admin/observations', { params: { windowHours: 24 } },
+  );
+}
+
 export default function AgentObservationsPage() {
   const [observations, setObservations] = useState<AgentObservations | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await apiClient.get<{ success: boolean; data?: AgentObservations; errors?: string[] }>(
-        '/agent/admin/observations',
-        { params: { windowHours: 24 } },
-      );
+  const load = useCallback(() => readObservations()
+    .then((response) => {
+      setError(null);
       if (response.data.success && response.data.data) {
         setObservations(response.data.data);
         setRefreshedAt(new Date().toLocaleTimeString('tr-TR'));
       } else {
         setError(response.data.errors?.[0] ?? 'Gözlemler okunamadı');
       }
-    } catch (err) {
+    }).catch((err) => {
       setError(getErrorMessage(err, 'Gözlemler okunamadı'));
-    } finally {
+    }).finally(() => {
       setIsLoading(false);
-    }
-  }, []);
+    }), []);
 
   useEffect(() => {
     void load();
@@ -100,7 +100,11 @@ export default function AgentObservationsPage() {
         </div>
         <div className="flex items-center gap-3">
           {refreshedAt && <span className="text-xs text-muted-foreground">{refreshedAt}</span>}
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={isLoading}>
+          <Button variant="outline" size="sm" onClick={() => {
+            setIsLoading(true);
+            setError(null);
+            void load();
+          }} disabled={isLoading}>
             <RefreshCw className={`mr-1 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             Yenile
           </Button>

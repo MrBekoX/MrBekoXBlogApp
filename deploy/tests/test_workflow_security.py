@@ -141,7 +141,7 @@ class WorkflowSecurityTests(unittest.TestCase):
             patterns = {line.strip() for line in dockerfile.with_name("Dockerfile.dockerignore").read_text().splitlines()
                         if line.strip() and not line.lstrip().startswith("#")}
             self.assertTrue({"**/private", "**/feature-prompts", "**/author-profile.local",
-                             "**/.agent_checkpoints", "**/*.env"}.issubset(patterns))
+                             "**/.agent_checkpoints", "**/*.env", "**/out"}.issubset(patterns))
             self.assertFalse(any(pattern.startswith("!") for pattern in patterns))
         for job in workflow("ai-agent-ci.yml")["jobs"].values():
             for service in job.get("services", {}).values():

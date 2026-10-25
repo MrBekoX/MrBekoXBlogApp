@@ -178,7 +178,7 @@ app.MapHealthChecks("/health/agent", new HealthCheckOptions
 }).RequireHost(internalHosts);
 app.MapHub<PublicCacheHub>("/hubs/public-cache").AllowAnonymous();
 // B5: agent run canlı bildirim hub'ı (replay GET uç noktaları B10'da).
-app.MapHub<AgentRunsHub>(AgentRunsHub.HubPath).AllowAnonymous();
+app.MapAgentRunsHub();
 app.MapPrometheusScrapingEndpoint("/metrics").RequireHost(internalHosts);
 
 // Run migrations and seeding based on configuration

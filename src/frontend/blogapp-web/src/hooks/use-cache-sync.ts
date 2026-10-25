@@ -43,7 +43,7 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
     }
   }, [debug]);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async function connectWithRetry() {
     if (connectionRef.current?.state === signalR.HubConnectionState.Connected) {
       return;
     }
@@ -120,7 +120,7 @@ export function useCacheSync(options: UseCacheSyncOptions = {}) {
         }
         reconnectTimeoutRef.current = setTimeout(() => {
           reconnectTimeoutRef.current = null;
-          void connect();
+          void connectWithRetry();
         }, delay);
       }
     }

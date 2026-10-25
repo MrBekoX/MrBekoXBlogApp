@@ -31,6 +31,17 @@ export function SearchCommand() {
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [tags, setTags] = React.useState<TagType[]>([]);
 
+  const changeSearch = (value: string) => {
+    setSearch(value);
+    if (value.trim().length < MIN_SEARCH_LENGTH) {
+      setPosts([]);
+      setCategories([]);
+      setTags([]);
+      setSearchError(null);
+      setIsLoading(false);
+    }
+  };
+
   // Keyboard shortcut
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -49,21 +60,10 @@ export function SearchCommand() {
     const searchTerm = search.trim();
     
     // Minimum karakter kontrolü
-    if (searchTerm.length > 0 && searchTerm.length < MIN_SEARCH_LENGTH) {
-      setPosts([]);
-      setCategories([]);
-      setTags([]);
-      return;
-    }
-    
-    const searchData = async () => {
-      if (!searchTerm) {
-        setPosts([]);
-        setCategories([]);
-        setTags([]);
-        return;
-      }
+    if (searchTerm.length < MIN_SEARCH_LENGTH) return;
+    let cancelled = false;
 
+    const searchData = async () => {
       setIsLoading(true);
       setSearchError(null);
       try {
@@ -73,6 +73,7 @@ export function SearchCommand() {
           pageSize: 10, 
           status: 'Published' 
         });
+        if (cancelled) return;
 
         if (postsRes.success && postsRes.data) {
           setPosts(postsRes.data.items);
@@ -85,6 +86,7 @@ export function SearchCommand() {
           categoriesApi.getAll(),
           tagsApi.getAll(),
         ]);
+        if (cancelled) return;
 
         // Türkçe karakter uyumlu filtreleme
         const normalizeText = (text: string) => 
@@ -123,6 +125,7 @@ export function SearchCommand() {
           );
         }
       } catch {
+        if (cancelled) return;
         const errorMessage = 'Arama sırasında bir hata oluştu. Lütfen tekrar deneyin.';
         setSearchError(errorMessage);
         toast.error(errorMessage);
@@ -130,17 +133,17 @@ export function SearchCommand() {
         setCategories([]);
         setTags([]);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     const debounce = setTimeout(searchData, DEBOUNCE_DELAY);
-    return () => clearTimeout(debounce);
+    return () => { cancelled = true; clearTimeout(debounce); };
   }, [search]);
 
   const handleSelect = (type: 'post' | 'category' | 'tag', identifier: string) => {
     setOpen(false);
-    setSearch('');
+    changeSearch('');
 
     switch (type) {
       case 'post':
@@ -174,7 +177,7 @@ export function SearchCommand() {
         <CommandInput
           placeholder="Search posts, categories, tags..."
           value={search}
-          onValueChange={setSearch}
+          onValueChange={changeSearch}
         />
         <CommandList>
             {isLoading && (

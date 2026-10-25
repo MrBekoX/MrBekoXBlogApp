@@ -23,6 +23,7 @@ from ..content.postgres import validate_vectors
 from ..content.retrieval import RRF_K, bm25_scores, cosine_similarity, tokenize
 from ..models import AgentMode
 from ..ports import CancellationToken, EmbeddingProvider
+from ..telemetry import trace_operation
 from .chunking import CHUNKER_VERSION, ProfileChunk, chunk_document
 from .detection import ProfileIdentity, owner_name_tokens
 from .source import ProfileDocument
@@ -373,6 +374,18 @@ class ProfileRetriever:
         return result
 
     async def retrieve_async(
+        self,
+        document: ProfileDocument,
+        query: str,
+        *,
+        language: str,
+        budget: RetrievalBudget,
+        cancel: CancellationToken | None = None,
+    ) -> RetrievalResult:
+        with trace_operation("retrieval"):
+            return await self._retrieve_async(document, query, language=language, budget=budget, cancel=cancel)
+
+    async def _retrieve_async(
         self,
         document: ProfileDocument,
         query: str,

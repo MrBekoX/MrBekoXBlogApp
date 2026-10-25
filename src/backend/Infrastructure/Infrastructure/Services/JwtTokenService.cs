@@ -1,9 +1,11 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Options;
+using BlogApp.Core.Application.Common.Security;
 using BlogApp.Core.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,12 +24,15 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.Secret));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+        var issuedAt = DateTimeOffset.UtcNow;
 
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Iat, issuedAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),
+            new(AccessTokenClaimTypes.IssuedAtTicks, issuedAt.UtcDateTime.Ticks.ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.UserName),
             new(ClaimTypes.Role, user.Role.ToString()),
@@ -43,7 +48,7 @@ public class JwtTokenService(IOptions<JwtSettings> jwtSettings, ILogger<JwtToken
             issuer: _settings.Issuer,
             audience: _settings.Audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_settings.ExpirationMinutes),
+            expires: issuedAt.UtcDateTime.AddMinutes(_settings.ExpirationMinutes),
             signingCredentials: credentials
         );
 

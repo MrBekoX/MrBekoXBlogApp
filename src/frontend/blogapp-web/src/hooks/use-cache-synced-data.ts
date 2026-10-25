@@ -44,76 +44,54 @@ export function useCacheSyncedData<T>({
   initialData,
   cacheVersion,
   fetchFn,
-  debug = false,
 }: UseCacheSyncedDataOptions<T>): UseCacheSyncedDataResult<T> {
-  // Track the previous cache version to detect changes
-  const prevCacheVersionRef = useRef(cacheVersion);
-  const isInitialMountRef = useRef(true);
-
-  // Store fetchFn in a ref to avoid unnecessary effect triggers
+  // An inline fetch callback must not restart an in-flight invalidation fetch.
+  // Publish the latest callback at commit time, not by mutating a render ref.
   const fetchFnRef = useRef(fetchFn);
-  fetchFnRef.current = fetchFn;
+  useEffect(() => { fetchFnRef.current = fetchFn; }, [fetchFn]);
+  const requestSequenceRef = useRef(0);
+  const [snapshot, setSnapshot] = useState<{ data: T | null; version: number | null }>(() => ({
+    data: null, version: cacheVersion > 0 ? null : cacheVersion,
+  }));
+  const [manualRequests, setManualRequests] = useState(0);
 
-  // State for refreshed data and loading
-  const [refreshedData, setRefreshedData] = useState<T | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const log = useCallback((..._args: unknown[]) => {
-    // logging disabled
+  const readVersion = useCallback(async (version: number, isCurrent: () => boolean) => {
+    const requestSequence = ++requestSequenceRef.current;
+    let freshData: T | null = null;
+    try {
+      freshData = await fetchFnRef.current();
+    } catch {
+      // A failed or empty refresh retains the last usable data.
+    } finally {
+      if (isCurrent() && requestSequence === requestSequenceRef.current) {
+        setSnapshot((previous) => ({ data: freshData ?? previous.data, version }));
+      }
+    }
   }, []);
 
-  // Refresh function that can be called manually or on cache invalidation
-  const refresh = useCallback(async () => {
-    log('Fetching fresh data...');
-    setIsLoading(true);
-
-    try {
-      const freshData = await fetchFnRef.current();
-      if (freshData !== null) {
-        log('Fresh data received');
-        setRefreshedData(freshData);
-      }
-    } catch {
-      // fetch error silenced
-    } finally {
-      setIsLoading(false);
-    }
-  }, [log]);
-
-  // Watch for cacheVersion changes
+  // Automatic loading is derived from the external cache version. No state is
+  // synchronously reset by this effect; only the async result settles it.
   useEffect(() => {
-    // First mount handling
-    if (isInitialMountRef.current) {
-      isInitialMountRef.current = false;
-      prevCacheVersionRef.current = cacheVersion;
+    if (snapshot.version === cacheVersion) return;
+    let cancelled = false;
+    void readVersion(cacheVersion, () => !cancelled);
+    return () => { cancelled = true; };
+  }, [cacheVersion, snapshot.version, readVersion]);
 
-      // If cacheVersion > 0, an invalidation happened before this component mounted
-      // This can happen due to React StrictMode remounts or navigation
-      // We should fetch fresh data to ensure consistency
-      if (cacheVersion > 0) {
-        log(`Initial mount but cacheVersion is ${cacheVersion}, fetching fresh data`);
-        refresh();
-        return;
-      }
-
-      log('Initial mount, using server data');
-      return;
+  const refresh = useCallback(async () => {
+    setManualRequests((pending) => pending + 1);
+    try {
+      await readVersion(cacheVersion, () => true);
+    } finally {
+      // Every manual promise settles independently of whether its data was
+      // superseded by an automatic invalidation request.
+      setManualRequests((pending) => pending - 1);
     }
-
-    // Check if cacheVersion changed after initial mount
-    if (prevCacheVersionRef.current !== cacheVersion) {
-      log(`Cache version changed: ${prevCacheVersionRef.current} -> ${cacheVersion}`);
-      prevCacheVersionRef.current = cacheVersion;
-      refresh();
-    }
-  }, [cacheVersion, refresh, log]);
-
-  // Return refreshed data if available, otherwise initial data
-  const data = refreshedData ?? initialData;
+  }, [cacheVersion, readVersion]);
 
   return {
-    data,
-    isLoading,
+    data: snapshot.data ?? initialData,
+    isLoading: manualRequests > 0 || snapshot.version !== cacheVersion,
     refresh,
   };
 }

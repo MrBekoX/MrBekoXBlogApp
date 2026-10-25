@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Options;
+using BlogApp.Presentation.Api.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -41,24 +42,10 @@ public static class AuthenticationExtensions
                     var blacklist = context.HttpContext.RequestServices.GetService<ITokenBlacklistService>();
                     if (blacklist is null) return;
 
-                    var jti = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Jti);
-                    if (!string.IsNullOrEmpty(jti) && await blacklist.IsTokenBlacklistedAsync(jti))
+                    if (context.Principal is null || await AccessTokenRevocationPolicy.IsRevokedAsync(
+                        context.Principal, blacklist, context.HttpContext.RequestAborted))
                     {
                         context.Fail("Token has been revoked.");
-                        return;
-                    }
-
-                    var userIdClaim = context.Principal?.FindFirstValue("UserId");
-                    var iatClaim = context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Iat);
-                    if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId)
-                        && !string.IsNullOrEmpty(iatClaim) && long.TryParse(iatClaim, out var iatUnix))
-                    {
-                        var issuedAt = DateTimeOffset.FromUnixTimeSeconds(iatUnix).UtcDateTime;
-                        if (await blacklist.AreUserTokensInvalidatedAsync(userId, issuedAt))
-                        {
-                            context.Fail("All user tokens have been invalidated.");
-                            return;
-                        }
                     }
                 }
             };

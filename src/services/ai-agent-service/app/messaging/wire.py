@@ -29,6 +29,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 
+from agent_core.telemetry import current_traceparent
+
 from .contracts import (
     SUPPORTED_SCHEMA_VERSIONS,
     WIRE_VERSION_V1,
@@ -139,6 +141,7 @@ def compose_run_envelope(
         causation_id=causation_id,
         occurred_at=occurred,
         producer=producer,
+        trace_context=current_traceparent(),
         payload=validated.model_dump(exclude_none=True),
     )
     envelope = AgentEnvelope(**{key: value for key, value in fields.items() if value is not None})

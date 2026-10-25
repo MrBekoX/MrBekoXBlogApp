@@ -20,12 +20,13 @@ from enum import StrEnum
 
 from pydantic import Field, field_validator, model_validator
 
-from ..models import ActionProposal, BusinessModel, HashHex, Identifier, NonEmptyText
+from ..models import ActionProposal, BusinessModel, HashHex, Identifier, NonEmptyText, ValidatedActionResult
 
 __all__ = [
     "COLLAB_STATE_SCHEMA_VERSION",
     "CollabField",
     "CollabResumeInput",
+    "CollabResolution",
     "CollabStage",
     "CollaborationDetails",
     "CollaborationState",
@@ -123,6 +124,18 @@ class CollabStage(StrEnum):
     RESOLVED = "resolved"
 
 
+class CollabResolution(BusinessModel):
+    """Previously validated backend result retained for terminal recovery.
+
+    This is trusted application state, not a cryptographic backend attestation.
+    The hash binds recovery to the proposal summary already reviewed by the
+    backend; it follows the existing B9 summary-hash contract.
+    """
+
+    result: ValidatedActionResult
+    proposal_content_hash: HashHex
+
+
 class CollaborationState(BusinessModel):
     """Checkpoint'te taşınan iş birliği hazırlık state'i.
 
@@ -141,6 +154,8 @@ class CollaborationState(BusinessModel):
     questions: list[NonEmptyText] = []
     proposal: ActionProposal | None = None
     proposal_content_hash: HashHex | None = None
+    #: Optional for legacy checkpoints; an absent receipt never implies success.
+    resolution: CollabResolution | None = None
 
     @field_validator("schema_version")
     @classmethod

@@ -45,6 +45,7 @@ def test_fresh_worker_execution_uses_fenced_run_factory(monkeypatch):
     monkeypatch.setattr("messaging.worker.execute_plan",execute)
     worker=ExecutionWorker.__new__(ExecutionWorker)
     worker._deps=ExecutionDependencies(model=None,budget_factory=factory)
+    worker._checkpoint=object()
     result=asyncio.run(worker._execute_prepared(SimpleNamespace(fencing_token=42), prepared=prepared,
         metered=None,sink=SimpleNamespace(profile_guard=False),cancel=None))
     assert result == "complete" and observed == [(run_id,42)]

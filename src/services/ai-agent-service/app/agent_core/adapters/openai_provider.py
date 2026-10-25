@@ -31,6 +31,7 @@ from ..errors import AgentErrorCode, PortError
 from ..budget.guard import estimate_model_input_tokens
 from ..ports import CancellationToken, ModelRequest, ModelResponse, ModelUsage
 from .config import LlmProviderSettings
+from ..telemetry import set_span_attributes, trace_operation
 
 __all__ = ["OpenAiModelProvider"]
 
@@ -125,6 +126,24 @@ class OpenAiModelProvider:
         return await self.stream_complete(request, cancel=cancel, on_delta=_noop)
 
     async def stream_complete(
+        self,
+        request: ModelRequest,
+        *,
+        cancel: CancellationToken | None = None,
+        on_delta: Callable[[str], Awaitable[None]],
+    ) -> ModelResponse:
+        with trace_operation("chat", kind="client", attributes={
+            "gen_ai.provider.name": "openai_compatible", "gen_ai.request.model": self._settings.model,
+        }) as span:
+            response = await self._stream_complete(request, cancel=cancel, on_delta=on_delta)
+            set_span_attributes(span, {
+                "gen_ai.usage.input_tokens": response.usage.prompt_tokens,
+                "gen_ai.usage.output_tokens": response.usage.completion_tokens,
+                "blogapp.usage.basis": "estimated" if response.usage_estimated else "reported",
+            })
+            return response
+
+    async def _stream_complete(
         self,
         request: ModelRequest,
         *,
@@ -294,11 +313,18 @@ class OpenAiModelProvider:
             "model": self._settings.model,
             "messages": messages,
             "stream": True,
-            "stream_options": {"include_usage": True},
         }
+        if self._settings.include_stream_usage:
+            body["stream_options"] = {"include_usage": True}
         if request.max_output_tokens is not None:
-            body["max_tokens"] = request.max_output_tokens
+            body[self._settings.output_token_parameter] = request.max_output_tokens
         if request.temperature is not None:
+            if not self._settings.supports_temperature:
+                raise PortError(
+                    AgentErrorCode.CONFIG_ERROR,
+                    "The configured provider/model does not support temperature.",
+                    port="OpenAiModelProvider",
+                )
             body["temperature"] = request.temperature
         return body
 

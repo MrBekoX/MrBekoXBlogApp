@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from env_file import env_float, env_int
+from env_file import env_bool, env_float, env_int
 
 from ..content.config import EmbeddingModelConfig
 from ..errors import AgentErrorCode, PortError
@@ -87,19 +87,34 @@ class ProviderSettings(BaseModel):
 
 @dataclass(frozen=True)
 class LlmProviderSettings:
-    """Real OpenAI-compatible chat provider connection settings."""
+    """Explicit Chat Completions capabilities of the configured endpoint/model.
+
+    Defaults preserve the existing compatible-provider contract. Operators must
+    select capabilities from that provider's documentation; model names never
+    trigger a silent endpoint, model or API migration.
+    """
 
     api_key: str = field(repr=False)
     model: str
     base_url: str = DEFAULT_LLM_BASE_URL
     connect_timeout_seconds: float = 10.0
     request_timeout_seconds: float = 120.0
+    output_token_parameter: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
+    supports_temperature: bool = True
+    include_stream_usage: bool = True
 
     def __post_init__(self) -> None:
         if not self.api_key.strip():
             raise _config_error("AGENT_LLM_API_KEY is required.", "LlmProviderSettings")
         if not self.model.strip():
             raise _config_error("AGENT_LLM_MODEL is required.", "LlmProviderSettings")
+        if self.output_token_parameter not in {"max_tokens", "max_completion_tokens"}:
+            raise _config_error(
+                "AGENT_LLM_OUTPUT_TOKEN_PARAMETER must be max_tokens or max_completion_tokens.",
+                "LlmProviderSettings",
+            )
+        if type(self.supports_temperature) is not bool or type(self.include_stream_usage) is not bool:
+            raise _config_error("Provider capability flags must be boolean.", "LlmProviderSettings")
         _validate_endpoint(self.base_url, "LlmProviderSettings")
         _validate_timeout(self.connect_timeout_seconds, "AGENT_LLM_CONNECT_TIMEOUT", "LlmProviderSettings")
         _validate_timeout(self.request_timeout_seconds, "AGENT_LLM_REQUEST_TIMEOUT", "LlmProviderSettings")
@@ -113,6 +128,9 @@ class LlmProviderSettings:
             base_url=env.get("AGENT_LLM_BASE_URL", "").strip() or DEFAULT_LLM_BASE_URL,
             connect_timeout_seconds=env_float("AGENT_LLM_CONNECT_TIMEOUT", 10.0, env),
             request_timeout_seconds=env_float("AGENT_LLM_REQUEST_TIMEOUT", 120.0, env),
+            output_token_parameter=env.get("AGENT_LLM_OUTPUT_TOKEN_PARAMETER", "").strip() or "max_tokens",
+            supports_temperature=env_bool("AGENT_LLM_SUPPORTS_TEMPERATURE", True, env),
+            include_stream_usage=env_bool("AGENT_LLM_STREAM_USAGE", True, env),
         )
 
 
@@ -177,7 +195,7 @@ def build_model_provider_from_env(environ: Mapping[str, str] | None = None) -> M
 def build_embedding_provider_from_env(environ: Mapping[str, str] | None = None) -> EmbeddingProvider:
     from .openai_embedding import OpenAiEmbeddingProvider
 
-    return OpenAiEmbeddingProvider(EmbeddingProviderSettings.from_env(environ))
+    return OpenAiEmbeddingProvider(EmbeddingProviderSettings.from_env(environ), require_budget_scope=True)
 
 
 def _require_openai(settings: ProviderSettings, port: str) -> None:

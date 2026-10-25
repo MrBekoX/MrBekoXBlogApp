@@ -39,25 +39,43 @@ def main():
     parser.add_argument("--allow-paid-provider-calls", action="store_true")
     parser.add_argument("--check-corpus", action="store_true")
     parser.add_argument("--scope", choices=("verifier", "full-pipeline", "all"), default="verifier")
+    parser.add_argument("--readiness-results", type=Path,
+                        help="Assess an existing bounded observation artifact offline; makes no provider calls")
     args = parser.parse_args()
+    if (args.allow_paid_provider_calls and not args.check_corpus and not args.readiness_results
+            and os.environ.get("AGENT_RUN_PAID_TESTS") != "1"):
+        parser.error("Real provider calls require owner authorization and AGENT_RUN_PAID_TESTS=1")
+    from readiness_evaluation import assess_observations, dataset_summary, load_dataset, read_json
+    behavior = load_dataset()
+    if args.readiness_results:
+        if args.allow_paid_provider_calls:
+            parser.error("Offline observation assessment cannot enable provider calls")
+        try:
+            result = assess_observations(behavior, read_json(args.readiness_results))
+            output = json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
+        except (ValueError, OverflowError, OSError, KeyError, TypeError):
+            print(json.dumps({"valid": False, "error": "Invalid bounded evaluation observations"}))
+            return 1
+        print(output)
+        return 0
     cases = load_corpus()
     from grounding_acceptance import load_pipeline_expectations, validate_cases
     validate_cases(cases)
     if args.scope != "verifier":
         load_pipeline_expectations(cases)
     if args.check_corpus or not args.allow_paid_provider_calls:
-        print(json.dumps({"corpus_valid": True, "cases": len(cases), "provider_calls": 0}))
+        print(json.dumps({"corpus_valid": True, "cases": len(cases), "provider_calls": 0,
+                          "behavior_dataset": dataset_summary(behavior)}, allow_nan=False))
         return 0
-    if os.environ.get("AGENT_RUN_PAID_TESTS") != "1":
-        parser.error("Real provider calls require owner authorization and AGENT_RUN_PAID_TESTS=1")
     from grounding_acceptance import run_acceptance
     try:
         result = asyncio.run(run_acceptance(cases, args.scope))
+        output = json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
     except Exception as error:
         # URLs, connection strings and provider errors can contain credentials.
         print(json.dumps({"passed": False, "scope": args.scope, "error": type(error).__name__}))
         return 1
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(output)
     return 0 if result["passed"] else 1
 
 

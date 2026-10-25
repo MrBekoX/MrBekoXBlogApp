@@ -254,6 +254,8 @@ def provision_vhost_and_users() -> None:
     """B2 ile aynı izin modeli (idempotent); detaylar tests/messaging_broker/conftest.py."""
 
     mgmt_request("PUT", f"/vhosts/{VHOST}")
+    mgmt_request("PUT", f"/permissions/{VHOST}/{ADMIN[0]}",
+                 {"configure": ".*", "write": ".*", "read": ".*"})
     for user, password in (BACKEND_USER, AGENT_USER):
         mgmt_request("PUT", f"/users/{user}", {"password": password, "tags": "none"})
     mgmt_request(
@@ -571,7 +573,7 @@ def db_pool() -> Any:
 def truncated_db(db_pool: Any) -> Any:
     async def _truncate() -> None:
         async with db_pool.acquire() as conn:
-            await conn.execute("TRUNCATE agent.budget_reservations, agent.run_budgets, "
+            await conn.execute("TRUNCATE agent.job_checkpoints, agent.budget_reservations, agent.run_budgets, "
                                "agent.inbox_messages, agent.jobs, agent.outbox_events")
 
     run(_truncate())

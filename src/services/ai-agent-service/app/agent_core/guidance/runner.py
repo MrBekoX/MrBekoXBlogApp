@@ -151,8 +151,14 @@ async def run_guidance(
         if intent is RunIntent.PROJECTS:
             if project_repository is None:
                 return GuidanceRunResult(
-                    outcome=_config_error(route, started_at, "proje deposu", language),
-                    state={},
+                    outcome=AgentOutcome(
+                        selected_mode=route.selected_mode,
+                        status=RunStatus.PARTIAL,
+                        answer=unavailable_note("proje deposu", language),
+                        source_scope=SourceScope.PROJECTS,
+                        usage=_usage(run_id, started_at),
+                    ),
+                    state={"capability_available": False},
                 )
             projects = await project_repository.list_projects()
             interest = project_interest_tokens(context.question)

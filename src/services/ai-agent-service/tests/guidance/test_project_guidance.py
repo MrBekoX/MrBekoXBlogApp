@@ -8,7 +8,6 @@ onaylı statik kayıtlardır; bağlantılar kayıttan aynen yansır, uydurma pro
 
 from __future__ import annotations
 
-from agent_core.errors import AgentErrorCode
 from agent_core.guidance import run_guidance
 from agent_core.models import RunIntent, RunStatus
 
@@ -58,8 +57,9 @@ def test_no_matching_interest_lists_all_with_honest_note() -> None:
     assert "MrBekoXBlogApp" in outcome.answer  # kayıtlar yine dürüstçe listelenir
 
 
-def test_unwired_project_repository_fails_with_config_error() -> None:
+def test_unwired_optional_project_repository_returns_honest_partial_availability() -> None:
     outcome = run_projects("Hangi projeler var?", project_repository=None)
 
-    assert outcome.status is RunStatus.FAILED
-    assert outcome.error_code is AgentErrorCode.CONFIG_ERROR
+    assert outcome.status is RunStatus.PARTIAL
+    assert outcome.error_code is None
+    assert "onaylı kayıt olmadan cevap üretilmez" in outcome.answer

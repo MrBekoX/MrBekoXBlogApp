@@ -10,6 +10,7 @@ from ..content.models import IndexedChunk
 from ..content.retrieval import SearchFilters
 from ..models import ArticleSnapshot
 from ..ports import CancellationToken, EmbeddingProvider
+from ..telemetry import trace_operation
 
 __all__ = ["ArticleRetriever", "SnapshotRetriever"]
 
@@ -64,13 +65,14 @@ class SnapshotRetriever:
     async def ensure_indexed(
         self, snapshot: ArticleSnapshot, *, cancel: CancellationToken | None = None
     ) -> IndexResult:
-        return await self._index.index_article(
-            snapshot,
-            embedding_provider=self._embedding_provider,
-            model_config=self._model_config,
-            canonical_url_template=self._canonical_url_template,
-            cancel=cancel,
-        )
+        with trace_operation("retrieval"):
+            return await self._index.index_article(
+                snapshot,
+                embedding_provider=self._embedding_provider,
+                model_config=self._model_config,
+                canonical_url_template=self._canonical_url_template,
+                cancel=cancel,
+            )
 
     async def retrieve(
         self,
@@ -81,14 +83,15 @@ class SnapshotRetriever:
         top_k: int,
         cancel: CancellationToken | None = None,
     ) -> list[IndexedChunk]:
-        hits = await self._index.search(
-            SearchQuery(
-                text=query,
-                filters=SearchFilters(article_ids=frozenset({article_id}), published=True),
-                top_k=top_k,
-            ),
-            embedding_provider=self._embedding_provider,
-            model_config=self._model_config,
-            cancel=cancel,
-        )
+        with trace_operation("retrieval"):
+            hits = await self._index.search(
+                SearchQuery(
+                    text=query,
+                    filters=SearchFilters(article_ids=frozenset({article_id}), published=True),
+                    top_k=top_k,
+                ),
+                embedding_provider=self._embedding_provider,
+                model_config=self._model_config,
+                cancel=cancel,
+            )
         return [hit.record for hit in hits if hit.record.article_revision == article_revision]

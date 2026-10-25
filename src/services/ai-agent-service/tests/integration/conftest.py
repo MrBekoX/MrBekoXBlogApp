@@ -166,7 +166,7 @@ def db_pool() -> Any:
     async def _reset() -> None:
         async with pool.acquire() as conn:
             await conn.execute(
-                "TRUNCATE agent.budget_reservations, agent.run_budgets, "
+                "TRUNCATE agent.job_checkpoints, agent.budget_reservations, agent.run_budgets, "
                 "agent.inbox_messages, agent.jobs, agent.outbox_events, "
                 "agent.run_event_sequences, agent.cancel_intents"
             )

@@ -39,15 +39,14 @@ const nextConfig: NextConfig = {
   // Disable trailing slashes for cleaner URLs
   trailingSlash: false,
 
-  // Skip build-time type checking (optional, for faster builds)
+  // Keep production build type checking enabled.
   typescript: {
     ignoreBuildErrors: false,
   },
 
   // Experimental features
   experimental: {
-    // Optimize CSS chunking to reduce preload warnings
-    cssChunking: 'strict',
+    // Turbopack follows import order; webpack-only cssChunking is not configured.
     // Disable client-side Router Cache so navigations always get fresh RSC payload
     staleTimes: {
       dynamic: 0,

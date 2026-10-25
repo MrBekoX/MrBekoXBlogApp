@@ -12,8 +12,8 @@ export default function PostLoading() {
       </div>
       <Skeleton className="aspect-video w-full rounded mb-8 bg-ide-border" />
       <div className="space-y-3">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-3 w-full bg-ide-border" style={{ width: `${70 + Math.random() * 30}%` }} />
+        {[100, 92, 85, 98, 76, 94, 88, 70].map((width, i) => (
+          <Skeleton key={i} className="h-3 w-full bg-ide-border" style={{ width: `${width}%` }} />
         ))}
       </div>
     </div>

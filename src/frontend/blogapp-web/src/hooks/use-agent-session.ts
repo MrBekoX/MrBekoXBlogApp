@@ -150,6 +150,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
   const [resuming, setResuming] = useState(false);
   const [finalVerificationPending, setFinalVerificationPending] = useState(false);
   const [finalVerificationUnavailable, setFinalVerificationUnavailable] = useState(false);
+  const [provisionalRunId, setProvisionalRunId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
 
   /** Şu an izlenen run (replay/ingest bu kimliğe kilitlidir; eski run sonucu karışmaz). */
@@ -185,7 +186,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
   const activeTurn = turns.length > 0 ? turns[turns.length - 1] : null;
   const activeRunId = activeTurn?.runId ?? null;
   const activeIsProvisional = !finalVerificationUnavailable && (finalVerificationPending ||
-    (activeTurn?.status?.isProvisionalTerminal === true && provisionalDeadlineRef.current > performance.now()));
+    (activeTurn?.status?.isProvisionalTerminal === true && provisionalRunId === activeRunId));
   const activeIsTerminal = activeTurn ? isTerminalPhase(activeTurn.phase) && !activeIsProvisional : false;
   const isRunActive = submitting || activeIsProvisional || (activeTurn ? isActivePhase(activeTurn.phase) : false);
   // B9 needs_input yüzeyleme: son adım girdi bekliyor ve çalışma hâlâ aktifse
@@ -239,10 +240,14 @@ export function useAgentSession(options: UseAgentSessionOptions) {
             provisionalDeadlineRef.current = provisionalDeadlineRef.current > 0
               ? Math.min(provisionalDeadlineRef.current, candidate) : candidate;
             if (provisionalDeadlineRef.current > performance.now()) {
+              setProvisionalRunId(runId);
               finalVerificationRef.current?.dispose();
               finalVerificationRef.current = null;
               setFinalVerificationPending(false);
-            } else setFinalVerificationPending(true);
+            } else {
+              setProvisionalRunId(null);
+              setFinalVerificationPending(true);
+            }
           }
           if (!provisional) {
             terminalRecoveryRef.current?.dispose();
@@ -250,6 +255,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
             finalVerificationRef.current?.dispose();
             finalVerificationRef.current = null;
             provisionalDeadlineRef.current = 0;
+            setProvisionalRunId(null);
             setFinalVerificationPending(false);
           }
           announce(provisional ? t.statusReconciling : terminalLabel(nextPhase, t));
@@ -271,6 +277,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
           finalVerificationRef.current?.dispose();
           finalVerificationRef.current = null;
           setFinalVerificationPending(false);
+          setProvisionalRunId(null);
           currentRunIdRef.current = null;
           epochRef.current += 1;
           const storage = getBrowserStorage();
@@ -294,6 +301,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     terminalRecoveryRef.current?.dispose();
     terminalRecoveryRef.current = null;
     setFinalVerificationPending(true);
+    setProvisionalRunId((current) => current === runId ? null : current);
     setFinalVerificationUnavailable(false);
     if (!finalVerificationRef.current) {
       finalVerificationRef.current = createTerminalRecovery({
@@ -455,6 +463,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
     eventsRef.current = [];
     const provisional = terminal && status.isProvisionalTerminal === true;
     provisionalDeadlineRef.current = provisional ? performance.now() + provisionalGraceMs(status) : 0;
+    setProvisionalRunId(provisional && provisionalGraceMs(status) > 0 ? runId : null);
     setFinalVerificationPending(provisional && provisionalGraceMs(status) === 0);
     setFinalVerificationUnavailable(false);
     terminalHandledRef.current = terminal && !provisional;
@@ -545,6 +554,7 @@ export function useAgentSession(options: UseAgentSessionOptions) {
       finalVerificationRef.current?.dispose();
       finalVerificationRef.current = null;
       provisionalDeadlineRef.current = 0;
+      setProvisionalRunId(null);
       setFinalVerificationPending(false);
       setFinalVerificationUnavailable(false);
       currentRunIdRef.current = accepted.runId;

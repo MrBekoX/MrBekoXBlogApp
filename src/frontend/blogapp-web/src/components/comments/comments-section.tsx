@@ -14,7 +14,7 @@ export function CommentsSection({ postId }: CommentsSectionProps) {
       <div className="border-b border-ide-border/50 pb-2 mb-4">
         <div className="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-widest">
           <Terminal className="w-3 h-3 text-ide-primary" />
-          <span>// comments.sh</span>
+          <span>{'// comments.sh'}</span>
         </div>
       </div>
 

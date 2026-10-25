@@ -166,6 +166,31 @@ describe('agent session request and recovery wiring', () => {
     expect(api.getRun).toHaveBeenCalledTimes(reads);
   });
 
+  it('keeps a provisional run locked when render observes a late clock before the expiry callback', async () => {
+    const monotonic = vi.spyOn(performance, 'now').mockReturnValue(0);
+    api.getRun.mockResolvedValueOnce({ ...status('Completed'), status: 'Failed', lastEventSequence: 3,
+      isProvisionalTerminal: true, reconciliationRemainingSeconds: 1 })
+      .mockResolvedValue({ ...status('Completed'), status: 'Failed', lastEventSequence: 3,
+        isProvisionalTerminal: false });
+    const session = render(); hooks.flushEffects();
+    await session.submit('Question', false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(render().activeIsProvisional).toBe(true);
+    hooks.flushEffects();
+
+    // The event loop has not dispatched its deadline timer yet. Rendering
+    // alone must not unlock a result that still needs an authoritative GET.
+    monotonic.mockReturnValue(2000);
+    expect(render().activeIsProvisional).toBe(true);
+    expect(render().isRunActive).toBe(true);
+    expect(await render().retryLast()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(render().activeIsProvisional).toBe(false);
+    expect(render().activeIsTerminal).toBe(true);
+    monotonic.mockRestore();
+  });
+
   it('ends terminal recovery at provisional expiry even when the final GET is offline', async () => {
     const until = Date.now() + 1000;
     const provisional = { ...status('Completed'), status: 'Failed' as const, lastEventSequence: 3,

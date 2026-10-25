@@ -715,6 +715,12 @@ function readFeedbackSent(runId: string): boolean {
   }
 }
 
+function newFeedbackKey(runId: string, rating: number): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${runId}-${rating}-${Date.now()}`;
+}
+
 /** Terminal sonuç sonrası idempotent geri bildirim satırı (1-5 puan).
  * Yalnız istemcide (terminal tur varken) render edilir; run başına key'lenir. */
 function FeedbackRow({ runId, lang }: { runId: string; lang: AgentLang }) {
@@ -725,10 +731,7 @@ function FeedbackRow({ runId, lang }: { runId: string; lang: AgentLang }) {
   const rate = async (rating: number) => {
     setBusy(true);
     try {
-      const key =
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : `${runId}-${rating}-${Date.now()}`;
+      const key = newFeedbackKey(runId, rating);
       await agentApi.sendFeedback(runId, rating, key);
       try {
         window.localStorage.setItem(`agent-feedback:${runId}`, '1');

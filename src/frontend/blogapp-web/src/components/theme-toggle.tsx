@@ -10,14 +10,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+const subscribeHydration = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 export function ThemeToggle() {
-  const { setTheme, theme } = useTheme();
-  const [mounted, setMounted] = React.useState(false);
-
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
+  const { setTheme } = useTheme();
+  const mounted = React.useSyncExternalStore(subscribeHydration, getClientSnapshot, getServerSnapshot);
 
   if (!mounted) {
     return (

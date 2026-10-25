@@ -197,8 +197,11 @@ Health is necessary but insufficient. With live-call approval and real keys:
 3. Restart only the Python worker and repeat retrieval; persisted vectors must
    still resolve without replacing them with hash/JSON fixtures. Verify changed
    or deleted content does not remain retrievable under its old revision.
-   Restart while a run awaits user input and verify its checkpoint resumes from
-   the persistent `deploy_agent_state` volume.
+   Restart while a run awaits user input and verify its authoritative checkpoint
+   resumes from PostgreSQL `agent.job_checkpoints`. During the reviewed upgrade,
+   verify the latest legacy file can seed an empty DB run once; after DB authority
+   exists, later files must not replace it. Keep `deploy_agent_state` for that
+   controlled legacy import and approved recovery, not as the new write authority.
 4. In a real browser through HTTPS, verify guest/authenticated agent acceptance,
    incremental events, cancellation/resume where offered, `/hubs/agent-runs`
    WebSocket negotiation and `/hubs/public-cache` updates. Confirm the internal
@@ -236,8 +239,45 @@ and run validation before applying. Do not downgrade databases or run the legacy
 `rollback-migration.sh` automatically. A schema rollback/data restore requires a
 reviewed maintenance procedure and a tested restore, with worker/API writers
 stopped. Preserve `uploads`, data-protection `keys`, PostgreSQL and RabbitMQ data.
-Back up and restore `deploy_agent_state` consistently with agent job state; it
-contains durable execution checkpoints and may contain private user input.
+Back up and restore current `agent.job_checkpoints` with the PostgreSQL job state.
+Retain a consistent backup of `deploy_agent_state` for legacy checkpoints/import;
+both stores can contain private user input. The new worker does not update those
+legacy files, so a volume-only restore cannot recover new continuation state.
+
+## Agent readiness rollout and proof
+
+The readiness change adds Alembic `0008` for immutable-source indexing budgets and
+run embedding usage classification, and `0009` for DB-authoritative continuations.
+Drain/quiesce old file-writing workers before the checkpoint transition; do not
+mix old file writers with first-time legacy import for the same run. Apply the
+reviewed migrations before starting the new worker, through the existing release
+migration step. Back up the DB and
+checkpoint volume together. Application rollback can retain the additive tables;
+prefer that or roll-forward. Downgrading deletes indexing accounting history and
+requires a separate approved maintenance/data-loss decision, never an automatic rollback.
+An older application cannot resume new DB-only checkpoints from the retained file
+volume. Keep the new checkpoint adapter when rolling back unrelated changes, or
+review an explicit quiesced export/recovery procedure before a version downgrade.
+
+Provider capabilities remain operator-selected through
+`AGENT_LLM_OUTPUT_TOKEN_PARAMETER`, `AGENT_LLM_SUPPORTS_TEMPERATURE` and
+`AGENT_LLM_STREAM_USAGE`. Existing defaults are preserved. Per-source indexing
+bounds use `AGENT_CONTENT_SYNC_MAX_EMBEDDING_TOKENS` and
+`AGENT_CONTENT_SYNC_MAX_EMBEDDING_REQUESTS`; they are not a global monetary limit.
+
+Optional trace export is disabled with empty endpoints. `API_OTEL_ENDPOINT` and
+`AGENT_OTEL_ENDPOINT` accept full OTLP/HTTP `/v1/traces` URLs; the worker also uses
+the sibling `/v1/metrics`. Restrict collector reachability and retention as operator
+policy. Timeout defaults are 1000 ms for API and 1 second for worker, bounded by
+their validated configuration. The application exporters exclude raw prompt,
+profile, result, auth and SQL/query content. External auto-instrumentation/exporters
+need their own privacy review; do not assume these application guards configure them.
+
+Local SDK/collector, storage, browser fixture and component integration evidence is
+documented in [the verification ledger](../agent-readiness/verification.md).
+It does not establish live cross-service provider quality, backup restoration or
+EC2 capacity. Run approved staging and operational acceptance with explicit policy
+thresholds against the deployed commit before declaring those layers accepted.
 
 ## Configuration references
 

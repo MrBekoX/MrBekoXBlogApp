@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuthStore } from '@/stores/auth-store';
+import { useAuthHydrated } from '@/hooks/use-auth-hydrated';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,7 +23,7 @@ export default function AdminLoginPage() {
   const clearError = useAuthStore((state) => state.clearError);
   const authStatus = useAuthStore((state) => state.authStatus);
   const [showPassword, setShowPassword] = useState(false);
-  const [hasMounted, setHasMounted] = useState(false);
+  const hasMounted = useAuthHydrated();
 
   // IMPORTANT: All hooks must be called before any conditional returns
   const {
@@ -32,19 +33,6 @@ export default function AdminLoginPage() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
-
-  // Wait for both component mount AND Zustand store hydration from sessionStorage.
-  // This prevents redirect decisions before persisted state is restored.
-  useEffect(() => {
-    if (useAuthStore.persist.hasHydrated()) {
-      setHasMounted(true);
-      return;
-    }
-    const unsub = useAuthStore.persist.onFinishHydration(() => {
-      setHasMounted(true);
-    });
-    return unsub;
-  }, []);
 
   // If already authenticated (e.g. navigating back to login page or after hydration),
   // redirect to dashboard. Only fires once via redirectedRef to prevent loops.
@@ -119,7 +107,7 @@ export default function AdminLoginPage() {
             </CardDescription>
           </CardHeader>
 
-          <form onSubmit={handleSubmit(onSubmit)}>
+          <form onSubmit={(event) => void handleSubmit(onSubmit)(event)}>
             <CardContent className="space-y-4 sm:space-y-5 pt-4 sm:pt-6 px-4 sm:px-6 pb-6 sm:pb-8">
               <div className="space-y-1.5 sm:space-y-2">
                 <Label htmlFor="email" className="text-xs sm:text-sm font-medium">E-posta</Label>

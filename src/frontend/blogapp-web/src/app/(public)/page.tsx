@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { fetchPosts, fetchTags } from '@/lib/server-api';
 import { format } from 'date-fns';
-import { Calendar, Clock, Eye, FileText, Tag } from 'lucide-react';
+import { Calendar, Eye, FileText, Tag } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +39,7 @@ export default async function HomePage() {
         <div>
           <div className="border-b border-ide-border/50 mb-4 pb-2">
             <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-              // Recent Entries
+              {'// Recent Entries'}
             </span>
           </div>
 

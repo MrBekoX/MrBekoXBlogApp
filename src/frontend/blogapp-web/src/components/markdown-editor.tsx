@@ -9,6 +9,9 @@ import { MermaidDiagram } from '@/components/mermaid-diagram';
 import { readMermaidChart } from '@/components/mermaid-source';
 
 const MDEditor = dynamic(() => import('@uiw/react-md-editor'), { ssr: false });
+const subscribeHydration = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 function EditorPreviewPre({
   children,
@@ -38,7 +41,7 @@ export function MarkdownEditor({
   height = 400,
 }: MarkdownEditorProps) {
   const { resolvedTheme } = useTheme();
-  const [mounted, setMounted] = React.useState(false);
+  const mounted = React.useSyncExternalStore(subscribeHydration, getClientSnapshot, getServerSnapshot);
   const previewOptions = React.useMemo(
     () => ({
       className: 'prose dark:prose-invert max-w-none',
@@ -48,10 +51,6 @@ export function MarkdownEditor({
     }),
     [],
   );
-
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
 
   if (!mounted) {
     return (

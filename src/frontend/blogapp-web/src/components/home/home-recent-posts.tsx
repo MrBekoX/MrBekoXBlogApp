@@ -46,7 +46,7 @@ export function HomeRecentPosts({ initialPosts }: HomeRecentPostsProps) {
     <div>
       <div className="border-b border-ide-border/50 mb-4 pb-2">
         <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-          // Recent Entries
+          {'// Recent Entries'}
         </span>
       </div>
 

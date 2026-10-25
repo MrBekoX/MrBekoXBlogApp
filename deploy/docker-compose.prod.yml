@@ -162,6 +162,8 @@ services:
       AgentAcceptance__MaxActiveRunsTotal: "5"
       AgentAcceptance__MaxActiveRunsPerOwner: "1"
       AgentAcceptance__TerminalRecoveryGraceSeconds: "${AGENT_TERMINAL_RECOVERY_GRACE_SECONDS:-300}"
+      AgentTelemetry__Endpoint: "${API_OTEL_ENDPOINT:-}"
+      AgentTelemetry__TimeoutMilliseconds: "${API_OTEL_TIMEOUT_MILLISECONDS:-1000}"
       AgentOutbox__BatchSize: "4"
       RabbitMq__Host: rabbitmq
       RabbitMq__Port: "5672"
@@ -217,6 +219,13 @@ services:
       AGENT_LLM_API_KEY: "${AGENT_LLM_API_KEY:?AGENT_LLM_API_KEY is required}"
       AGENT_LLM_BASE_URL: "${AGENT_LLM_BASE_URL:-https://api.openai.com/v1}"
       AGENT_LLM_MODEL: "${AGENT_LLM_MODEL:?AGENT_LLM_MODEL is required}"
+      AGENT_LLM_OUTPUT_TOKEN_PARAMETER: "${AGENT_LLM_OUTPUT_TOKEN_PARAMETER:-max_tokens}"
+      AGENT_LLM_SUPPORTS_TEMPERATURE: "${AGENT_LLM_SUPPORTS_TEMPERATURE:-true}"
+      AGENT_LLM_STREAM_USAGE: "${AGENT_LLM_STREAM_USAGE:-true}"
+      AGENT_CONTENT_SYNC_MAX_EMBEDDING_TOKENS: "${AGENT_CONTENT_SYNC_MAX_EMBEDDING_TOKENS:-1048576}"
+      AGENT_CONTENT_SYNC_MAX_EMBEDDING_REQUESTS: "${AGENT_CONTENT_SYNC_MAX_EMBEDDING_REQUESTS:-2177}"
+      AGENT_OTEL_ENDPOINT: "${AGENT_OTEL_ENDPOINT:-}"
+      AGENT_OTEL_TIMEOUT_SECONDS: "${AGENT_OTEL_TIMEOUT_SECONDS:-1}"
       AGENT_EMBEDDING_API_KEY: "${AGENT_EMBEDDING_API_KEY:-}"
       AGENT_EMBEDDING_BASE_URL: "${AGENT_EMBEDDING_BASE_URL:-https://api.openai.com/v1}"
       AGENT_EMBEDDING_MODEL: text-embedding-3-small

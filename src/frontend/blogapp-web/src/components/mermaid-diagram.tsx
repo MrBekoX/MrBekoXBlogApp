@@ -11,13 +11,22 @@ function newChannelToken(): string {
 export function MermaidDiagram({ chart }: { chart: string }) {
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === 'dark' ? 'dark' : 'default';
+  return (
+    <div className="not-prose relative my-3 overflow-x-auto rounded-md border border-border bg-background p-3">
+      {chart.trim()
+        ? <MermaidRenderer key={`${theme}:${chart}`} chart={chart} theme={theme} />
+        : <p className="text-sm text-muted-foreground">Mermaid bloğu boş.</p>}
+    </div>
+  );
+}
+
+function MermaidRenderer({ chart, theme }: { chart: string; theme: 'dark' | 'default' }) {
   const frame = React.useRef<HTMLIFrameElement>(null);
   const [channel, setChannel] = React.useState<string | null>(null);
   const [svg, setSvg] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (!chart.trim()) { setChannel(null); setSvg(null); setError(null); return; }
     const token = newChannelToken();
     let timeout: ReturnType<typeof setTimeout>;
     const finish = () => {
@@ -49,15 +58,14 @@ export function MermaidDiagram({ chart }: { chart: string }) {
   }, [chart, theme]);
 
   return (
-    <div className="not-prose relative my-3 overflow-x-auto rounded-md border border-border bg-background p-3">
+    <>
       {channel && <iframe key={channel} ref={frame} src={'/mermaid-renderer#' + channel} sandbox="allow-scripts" referrerPolicy="no-referrer" title="Yalıtılmış diyagram çizicisi" aria-hidden tabIndex={-1} className="pointer-events-none absolute h-px w-px border-0 opacity-0" />}
-      {!chart.trim() ? <p className="text-sm text-muted-foreground">Mermaid bloğu boş.</p>
-        : error ? <p role="status" className="text-sm text-destructive">Mermaid diyagramı çizilemedi. {error}</p>
+      {error ? <p role="status" className="text-sm text-destructive">Mermaid diyagramı çizilemedi. {error}</p>
           : svg ? <div role="img" aria-label="Mermaid diyagramı" data-mermaid-rendered="true">
             {/* SVG image context cannot execute chart scripts or affect parent styles. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)} alt="Mermaid diyagramı" className="h-auto max-w-full" />
           </div> : <div className="h-24 animate-pulse rounded-md bg-muted" aria-hidden />}
-    </div>
+    </>
   );
 }

@@ -115,6 +115,7 @@ public static class AgentCommandEnvelopeComposer
             OccurredAt = FormatUtc(occurredAt),
             DeadlineAt = FormatUtc(deadlineAt),
             Producer = producer,
+            TraceContext = AgentTraceContext.Capture(),
             DeliveryAttempt = 0,
             Payload = JsonSerializer.SerializeToElement(payload, payload.GetType(), SerializerOptions),
         };

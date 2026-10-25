@@ -23,11 +23,11 @@ public class RequestLoggingMiddleware
 
         var method = context.Request.Method;
         var path = context.Request.Path;
-        var queryString = context.Request.QueryString;
-
+        // Query values can contain credentials or private search/profile text.
+        // Retain operational metadata without copying input into log state.
         _logger.LogInformation(
-            "[{CorrelationId}] {Method} {Path}{QueryString} - Started",
-            correlationId, method, path, queryString);
+            "[{CorrelationId}] {Method} {Path} - Started",
+            correlationId, method, path);
 
         await _next(context);
 

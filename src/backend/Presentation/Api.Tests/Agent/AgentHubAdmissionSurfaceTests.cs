@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using System.Text.Json;
 using BlogApp.Core.Application.Common.Interfaces.Data;
+using BlogApp.Core.Application.Common.Interfaces.Services;
 using BlogApp.Core.Application.Common.Messaging;
 using BlogApp.Core.Application.Features.AgentFeature.Services;
 using BlogApp.Core.Domain.Entities;
@@ -16,6 +18,7 @@ using BlogApp.Presentation.Api.Hubs;
 using BlogApp.Presentation.Api.Middlewares;
 using BlogApp.Presentation.Api.Security;
 using BlogApp.Presentation.Api.Services;
+using BlogApp.Presentation.Api.Tests.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -112,12 +115,64 @@ public sealed class AgentHubAdmissionSurfaceTests(AgentB10DatabaseFixture fixtur
         var notice = await frames.Notification();
         Assert.Equal(runId.ToString("D"), notice.GetProperty("run_id").GetString());
         Assert.Equal(1, notice.GetProperty("event_sequence").GetInt64());
-        Assert.Equal(state == "published" ? body : string.Empty, notice.GetProperty("message").GetString());
-        if (state != "published") Assert.DoesNotContain(body, notice.GetRawText());
+        Assert.Equal(state == "published" ? body : string.Empty, result.Notification!.Message);
+        Assert.Equal(string.Empty, notice.GetProperty("message").GetString());
+        Assert.DoesNotContain(body, notice.GetRawText());
         Assert.Equal(1, await projection.AgentEventInboxes.CountAsync(inbox => inbox.RunId == runId && inbox.Status == "applied"));
     }
 
-    private WebApplication BuildHost(Guid owner)
+    [Fact]
+    public async Task RevokedSubscriberGetsOnlyMetadataAndCannotSubscribeAgain()
+    {
+        var owner = Guid.NewGuid();
+        Guid runId;
+        await using (var context = fixture.CreateContext())
+            runId = (await AgentB10TestHost.SeedRunAsync(context, ownerKey: $"u:{owner:D}")).Id;
+        var blacklist = new MutableTokenBlacklist();
+        await using var app = BuildHost(owner, blacklist, realJwt: true);
+        await app.StartAsync();
+        var token = AgentCredentialLifetimeTests.Generate(owner);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var client = app.GetTestServer().CreateWebSocketClient();
+        client.ConfigureRequest = request => request.Headers["Authorization"] = "Bearer " + token;
+        using var socket = await client.ConnectAsync(new Uri("ws://localhost" + AgentRunsHub.HubPath), timeout.Token);
+        var frames = new Frames(socket, timeout.Token);
+        await frames.Handshake();
+        Assert.Null(await frames.Subscribe("1", runId));
+        var jti = new JwtSecurityTokenHandler().ReadJwtToken(token).Id;
+        await blacklist.BlacklistTokenAsync(jti, TimeSpan.FromMinutes(5));
+        await app.Services.GetRequiredService<IAgentRunNotifier>().NotifyAsync(new AgentRunNotification
+        {
+            RunId = runId.ToString("D"), MessageId = Guid.NewGuid().ToString("D"),
+            MessageType = "agent.run.completed", Status = "Completed", EventSequence = 3,
+            OccurredAt = "2026-10-25T00:00:00Z", Message = "private-progress-sentinel",
+            ResultJson = "{\"answer\":\"private-answer-sentinel\"}",
+        });
+        var notice = await frames.Notification();
+        Assert.DoesNotContain("private-", notice.GetRawText());
+        Assert.False(notice.TryGetProperty("result", out _));
+        Assert.NotNull(await frames.Subscribe("2", runId));
+    }
+
+    [Fact]
+    public async Task GuestSubscriptionRemainsAvailableWithoutAnAuthenticationToken()
+    {
+        var guest = Guid.NewGuid().ToString("D");
+        Guid runId;
+        await using (var context = fixture.CreateContext())
+            runId = (await AgentB10TestHost.SeedRunAsync(context, ownerKey: "g:" + guest)).Id;
+        await using var app = BuildHost(Guid.NewGuid(), realJwt: true);
+        await app.StartAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var client = app.GetTestServer().CreateWebSocketClient();
+        client.ConfigureRequest = request => request.Headers["Cookie"] = AgentGuestSessionService.CookieName + "=" + guest;
+        using var socket = await client.ConnectAsync(new Uri("ws://localhost" + AgentRunsHub.HubPath), timeout.Token);
+        var frames = new Frames(socket, timeout.Token);
+        await frames.Handshake();
+        Assert.Null(await frames.Subscribe("1", runId));
+    }
+
+    private WebApplication BuildHost(Guid owner, MutableTokenBlacklist? blacklist = null, bool realJwt = false)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -126,16 +181,22 @@ public sealed class AgentHubAdmissionSurfaceTests(AgentB10DatabaseFixture fixtur
         builder.Services.AddAgentSignalRAdmission(new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?> { ["SignalRRateLimit:MaxInvocationsPerMinute"] = "2" }).Build());
         builder.Services.AddSingleton<IAgentRunNotifier, SignalRAgentRunNotifier>();
+        builder.Services.AddSingleton<ITokenBlacklistService>(blacklist ?? new MutableTokenBlacklist());
+        builder.Services.AddJwtAuthentication(AgentCredentialLifetimeTests.Configuration());
         var app = builder.Build();
         app.UseWebSockets();
+        app.UseAuthentication();
+        app.UseAuthorization();
         app.Use((context, next) =>
         {
-            context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("userId", owner.ToString("D"))], "test"));
+            if (!realJwt)
+                context.User = new ClaimsPrincipal(new ClaimsIdentity(
+                    new JwtSecurityTokenHandler().ReadJwtToken(AgentCredentialLifetimeTests.Generate(owner)).Claims, "test"));
             context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.20");
             return next(context);
         });
         app.UseMiddleware<SignalRConnectionLimitMiddleware>();
-        app.MapHub<AgentRunsHub>(AgentRunsHub.HubPath);
+        app.MapAgentRunsHub();
         return app;
     }
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics;
 using System.Text.Json.Serialization;
 using System.Data.Common;
 using BlogApp.BuildingBlocks.Messaging;
@@ -42,6 +43,7 @@ public sealed class AgentEventProjectionConsumer(
     : RabbitMqAgentConsumer(connections, settings, AgentMessagingTopology.BackendEventsQueue)
 {
     public const string ConsumerName = AgentRunEventProjectionHandler.ConsumerName;
+    private static readonly ActivitySource TraceSource = new("BlogApp");
 
     private static readonly JsonSerializerOptions PayloadOptions = new()
     {
@@ -85,6 +87,11 @@ public sealed class AgentEventProjectionConsumer(
         }
 
         var envelope = validation.Envelope!;
+        using var activity = ActivityContext.TryParse(envelope.TraceContext, null, isRemote: true, out var parent)
+            ? TraceSource.StartActivity("agent.event.project", ActivityKind.Consumer, parent)
+            : TraceSource.StartActivity("agent.event.project", ActivityKind.Consumer);
+        activity?.SetTag("messaging.system", "rabbitmq");
+        activity?.SetTag("messaging.operation.name", "process");
         logger.LogInformation(
             "[AgentEvents] teslim işleniyor: type {Type} message {MessageId} run {RunId} rk {RoutingKey}",
             envelope.MessageType, envelope.MessageId, envelope.RunId, routingKey);

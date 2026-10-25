@@ -1,4 +1,6 @@
 using BlogApp.Core.Application.Common.Interfaces.Data;
+using BlogApp.Core.Application.Common.Interfaces.Services;
+using BlogApp.Presentation.Api.Security;
 using BlogApp.Presentation.Api.Services;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +24,7 @@ namespace BlogApp.Presentation.Api.Hubs;
 /// </summary>
 public sealed class AgentRunsHub(
     IApplicationDbContext dbContext,
+    ITokenBlacklistService blacklist,
     ILogger<AgentRunsHub> logger) : Hub
 {
     public const string HubPath = "/hubs/agent-runs";
@@ -68,6 +71,11 @@ public sealed class AgentRunsHub(
         {
             userId = parsedUser;
         }
+
+        if (userId is not null && (Context.User?.Identity?.IsAuthenticated != true
+            || AccessTokenRevocationPolicy.IsExpired(Context.User)
+            || await AccessTokenRevocationPolicy.IsRevokedAsync(Context.User, blacklist, cancellationToken)))
+            return false;
 
         var guestSessionId = Context.GetHttpContext()?.Request.Cookies[AgentGuestSessionService.CookieName];
 

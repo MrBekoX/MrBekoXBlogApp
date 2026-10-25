@@ -1,4 +1,5 @@
 using BlogApp.Presentation.Api.Middlewares;
+using BlogApp.Presentation.Api.Hubs;
 using BlogApp.Presentation.Api.Security;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -7,6 +8,10 @@ namespace BlogApp.Presentation.Api.Extensions;
 
 public static class AgentSignalRAdmissionExtensions
 {
+    public static HubEndpointConventionBuilder MapAgentRunsHub(this IEndpointRouteBuilder endpoints) =>
+        endpoints.MapHub<AgentRunsHub>(AgentRunsHub.HubPath,
+            options => options.CloseOnAuthenticationExpiration = true).AllowAnonymous();
+
     public static IServiceCollection AddAgentSignalRAdmission(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<SignalRRateLimitOptions>().Bind(configuration.GetSection(SignalRRateLimitOptions.SectionName))

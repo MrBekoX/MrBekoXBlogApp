@@ -247,6 +247,10 @@ public sealed class AgentEventProjectionFixture : IAsyncLifetime
                 $"api/vhosts/{Uri.EscapeDataString(TestVirtualHost)}", null);
             response.EnsureSuccessStatusCode();
 
+            // A management administrator still needs explicit AMQP permission
+            // on a newly created test vhost. Application roles remain bounded.
+            await PutPermissionAsync(client, ".*", ".*", ".*", BrokerTestEnvironment.AdminUser.User);
+
             foreach (var (user, password) in new[]
                      {
                          BrokerTestEnvironment.BackendUser,
@@ -283,7 +287,12 @@ public sealed class AgentEventProjectionFixture : IAsyncLifetime
                 await action(client);
                 return;
             }
-            catch (HttpRequestException exception)
+            catch (HttpRequestException exception) when (exception.StatusCode is null || (int)exception.StatusCode.Value >= 500)
+            {
+                lastError = exception;
+                await Task.Delay(TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt)));
+            }
+            catch (TaskCanceledException exception) when (exception.InnerException is TimeoutException)
             {
                 lastError = exception;
                 await Task.Delay(TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt)));
@@ -307,7 +316,8 @@ public sealed class AgentEventProjectionFixture : IAsyncLifetime
         settings.DeclarerUserName = BrokerTestEnvironment.AdminUser.User;
         settings.DeclarerPassword = BrokerTestEnvironment.AdminUser.Password;
         await using var initializer = new AgentTopologyInitializer(settings);
-        await initializer.InitializeAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await initializer.InitializeAsync(timeout.Token);
     }
 
     private static HttpClient CreateManagementClient()

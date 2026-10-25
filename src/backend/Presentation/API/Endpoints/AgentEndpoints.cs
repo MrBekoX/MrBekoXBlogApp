@@ -13,6 +13,8 @@ using BlogApp.Core.Application.Features.AgentFeature.Queries.GetAgentRunQuery;
 using BlogApp.Core.Application.Features.AgentFeature.Services;
 using BlogApp.Presentation.Api.Helpers;
 using BlogApp.Presentation.Api.Services;
+using BlogApp.Presentation.Api.Security;
+using BlogApp.Core.Application.Common.Interfaces.Services;
 using MediatR;
 
 namespace BlogApp.Presentation.Api.Endpoints;
@@ -456,7 +458,11 @@ public static class AgentEndpoints
             while (!cancellationToken.IsCancellationRequested
                    && DateTimeOffset.UtcNow - startedAt < SseMaxDuration)
             {
+                if (!await StreamCredentialsCurrentAsync(httpContext, cancellationToken)) return;
                 var page = await mediator.Send(request with { After = cursor }, cancellationToken);
+                // The replay query may await while a password change or logout
+                // revokes this connection's captured principal.
+                if (!await StreamCredentialsCurrentAsync(httpContext, cancellationToken)) return;
                 if (page.IsFailure)
                 {
                     // Sahiplik oturumu koptu / run silindi: akışı sonlandır.
@@ -467,6 +473,7 @@ public static class AgentEndpoints
 
                 foreach (var item in page.Value!.Events)
                 {
+                    if (!await StreamCredentialsCurrentAsync(httpContext, cancellationToken)) return;
                     var payload = System.Text.Json.JsonSerializer.Serialize(new
                     {
                         item.EventSequence,
@@ -511,6 +518,20 @@ public static class AgentEndpoints
         {
             // İstemci bağlantıyı kesti: normal kapanış.
         }
+    }
+
+    private static async Task<bool> StreamCredentialsCurrentAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        // Guest capability cookies still use the replay handler's resource
+        // ownership checks. Authenticated streams also recheck current tokens.
+        if (context.User.Identity?.IsAuthenticated != true) return true;
+        if (!AccessTokenRevocationPolicy.IsExpired(context.User, context.RequestServices.GetService<TimeProvider>())
+            && !await AccessTokenRevocationPolicy.IsRevokedAsync(context.User,
+                context.RequestServices.GetRequiredService<ITokenBlacklistService>(), cancellationToken)) return true;
+        // Headers/body may already have been flushed: close the SSE stream with
+        // a safe error event instead of rewriting its HTTP status.
+        await WriteSseEventAsync(context.Response, "error", "credentials_expired_or_revoked", cancellationToken);
+        return false;
     }
 
     private static async Task WriteSseEventAsync(HttpResponse response, string eventName, string data, CancellationToken cancellationToken)

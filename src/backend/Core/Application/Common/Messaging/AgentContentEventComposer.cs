@@ -42,6 +42,7 @@ public static class AgentContentEventComposer
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
+            TraceContext = AgentTraceContext.Capture(),
             DeliveryAttempt = 0,
             Payload = JsonSerializer.SerializeToElement(
                 new ArticleContentChangedV1
@@ -78,6 +79,7 @@ public static class AgentContentEventComposer
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
+            TraceContext = AgentTraceContext.Capture(),
             DeliveryAttempt = 0,
             Payload = JsonSerializer.SerializeToElement(
                 new ContentSnapshotBatchV1
@@ -117,6 +119,7 @@ public static class AgentContentEventComposer
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
+            TraceContext = AgentTraceContext.Capture(),
             DeliveryAttempt = 0,
             Payload = JsonSerializer.SerializeToElement(
                 new ContentSnapshotCompletedV1
@@ -148,6 +151,7 @@ public static class AgentContentEventComposer
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
+            TraceContext = AgentTraceContext.Capture(),
             DeliveryAttempt = 0,
             Payload = JsonSerializer.SerializeToElement(
                 new ProfileContentChangedV1
@@ -181,6 +185,7 @@ public static class AgentContentEventComposer
             CorrelationId = correlationId ?? messageId,
             OccurredAt = AgentCommandEnvelopeComposer.FormatUtc(DateTimeOffset.UtcNow),
             Producer = producer,
+            TraceContext = AgentTraceContext.Capture(),
             DeliveryAttempt = 0,
             Payload = JsonSerializer.SerializeToElement(
                 new ProjectContentChangedV1

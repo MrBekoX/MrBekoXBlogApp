@@ -1,7 +1,12 @@
 # Verification ledger
 
 Date: 2026-10-25 (Europe/Istanbul). Baseline: `fca834626560829420de9320978c96ad5c71d23d`.
-Commands below never authorize paid requests or production operations. Final revision is recorded after delivery.
+Validated implementation: `5ee54d12c06b66fbde8a3c2949aa8106719386bb`.
+Runtime commit: `b8718029f80b5ee8f256d045cd4829237768ecdc`; API/security commit:
+`4295bd1ecc6cff69d16c28e398e125d275b1b2ad`. The following delivery-receipt commit
+changes documentation only. Exact delivery HEAD and remote CI runs are recorded in the PR description;
+no local result substitutes for those checks. Local main remains at the baseline pending explicit merge approval.
+Commands below never authorize paid requests or production operations.
 
 ## Final gate summary
 
@@ -22,11 +27,11 @@ Counts from focused suites overlap. Do not sum them into a fabricated total.
 | Production frontend build | PASS, Next 16.4.1/Turbopack, types enabled | Removed unsupported webpack-only CSS option; no source/type error ignored. Expected no-store routes remain dynamic; no production backend/provider acceptance inferred |
 | Final Chrome agent fixture | PASS: **8/8** | Final source, real Chrome155, loopback API/SignalR fixtures; no live backend/provider |
 | Final Chrome Mermaid | PASS | Actual component/route/document/CSP/bundle; empty/A/B/clear/same-A; source/token/opaque DOM guards; 0 external/canary/console errors. Not sanitizer-byte remediation or public deployment proof |
-| Secret scan | PASS: Gitleaks 8.30.1, staged diff 673.67 KB, no leaks | No network/private-file mount; repeat after final staging; not full-history scan |
+| Secret scan | PASS: Gitleaks 8.30.1, final staged diff 766.32 KB, no leaks | No network/private-file mount, full redaction; not a full-history or ignored-file scan |
 | Dependency audit | Python runtime **60/0**, dev **74/0** known vulnerabilities | Current advisory query, not proof against unknown vulnerabilities |
 | .NET advisory inventory | Completed; five ImageSharp 3.1.12 warnings | Named sinks triaged against existing guards; library not called clean |
 
-Source revision/PR and final frontend/CI results will be added at delivery. A task-owned npm process
+Remote CI/review is checked against the pushed delivery HEAD and reported with the PR. A task-owned npm process
 was temporarily suspended during measured shared-host I/O pressure, then resumed and completed;
 no process remains suspended. Global settings and existing virtual environment were preserved.
 
